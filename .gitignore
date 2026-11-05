@@ -1,0 +1,22 @@
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# PHP
+backend/vendor/
+backend/.env
+backend/.phpunit.cache/
+backend/.phpunit.result.cache
+
+# Uploaded guest ID images (contain personal data — never commit)
+backend/storage/uploads/*
+!backend/storage/uploads/.gitkeep
+
+# DB backups
+database/backups/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

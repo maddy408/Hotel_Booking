@@ -1,0 +1,10 @@
+RewriteEngine On
+
+# Allow the Authorization header through on some Apache/PHP-FPM setups.
+RewriteCond %{HTTP:Authorization} ^(.*)
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%1]
+
+# Serve existing files/directories directly, everything else goes through the front controller.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.php [L]

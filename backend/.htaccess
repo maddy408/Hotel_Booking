@@ -1,0 +1,3 @@
+# Keep requests to the backend root inside the public/ front controller.
+RewriteEngine On
+RewriteRule ^(?!public/)(.*)$ public/$1 [L]
