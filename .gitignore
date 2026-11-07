@@ -23,3 +23,11 @@ Thumbs.db
 
 # PHP server logs
 *.log
+
+# Ignore PHP log files
+/backend/php_log.txt
+/backend/php_err.log
+/backend/php_out.log
+/backend/php_server.log
+/backend/server_stderr.log
+/backend/server_stdout.log
