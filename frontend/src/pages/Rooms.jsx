@@ -58,9 +58,16 @@ export default function Rooms() {
 
   const { rooms, counts } = data;
   const leaving = rooms.filter((r) => r.status === 'occupied' && r.dueToday).length;
+  const displayCounts = counts || { free: 0, booked: 0, occupied: 0, cleaning: 0, repair: 0 };
+
+  const roomMatchesFilter = (r, f) => {
+    if (f === 'all') return true;
+    return r.status === f;
+  };
+
   const sub = {
     free: 'Ready to give',
-    booked: 'Guest coming today',
+    booked: 'Active booking',
     occupied: `${leaving} leaving today`,
     cleaning: 'Being cleaned',
     repair: 'Not usable',
@@ -72,6 +79,8 @@ export default function Rooms() {
     else if (room.status === 'booked') setSheet({ type: 'booking', reservationId: room.bookingId });
     else setSheet({ type: 'housekeeping', room });
   };
+
+  const matchingRoomsCount = rooms.filter((r) => roomMatchesFilter(r, filter)).length;
 
   return (
     <div>
@@ -93,7 +102,7 @@ export default function Rooms() {
             aria-pressed={filter === k}
             onClick={() => setFilter(filter === k ? 'all' : k)}
           >
-            <span className="n">{counts[k]}</span>
+            <span className="n">{displayCounts[k]}</span>
             <span className="l">
               <b>{LABEL[k]}</b>
               <span>{sub[k]}</span>
@@ -120,9 +129,12 @@ export default function Rooms() {
       </div>
 
       {!rooms.length && <div className="panel empty">No rooms yet. Add your rooms in the Room Master tab.</div>}
+      {rooms.length > 0 && filter !== 'all' && matchingRoomsCount === 0 && (
+        <div className="panel empty">No {LABEL[filter]?.toLowerCase() || filter} rooms.</div>
+      )}
 
       {floors.map((f) => {
-        const rs = rooms.filter((r) => r.floor === f && (filter === 'all' || r.status === filter)).sort((a, b) => a.roomNo - b.roomNo);
+        const rs = rooms.filter((r) => r.floor === f && roomMatchesFilter(r, filter)).sort((a, b) => a.roomNo - b.roomNo);
         if (!rs.length) return null;
         return (
           <div className="floor" key={f}>
@@ -140,13 +152,13 @@ export default function Rooms() {
         <DirectCheckInPicker rooms={rooms} onClose={() => setSheet(null)} onPick={(room) => setSheet({ type: 'checkin', room })} />
       )}
       {sheet?.type === 'checkin' && <CheckInSheet room={sheet.room} onClose={() => setSheet(null)} />}
-      {sheet?.type === 'checkin-from-reservation' && <CheckInSheet reservation={sheet.reservation} onClose={() => setSheet(null)} />}
+      {sheet?.type === 'checkin-from-reservation' && <CheckInSheet reservation={sheet.reservation} triggerAdvanceError={sheet.triggerAdvanceError} onClose={() => setSheet(null)} />}
       {sheet?.type === 'checkout' && <CheckoutSheet stayId={sheet.stayId} onClose={() => setSheet(null)} />}
       {sheet?.type === 'booking' && (
         <BookingDetailSheet
           reservationId={sheet.reservationId}
           onClose={() => setSheet(null)}
-          onCheckIn={(reservation) => setSheet({ type: 'checkin-from-reservation', reservation })}
+          onCheckIn={(reservation) => setSheet({ type: 'checkin-from-reservation', reservation, triggerAdvanceError: Number(reservation.advance_paid ?? 0) <= 0 })}
           onEdit={(reservation) => setSheet({ type: 'editBooking', reservation })}
         />
       )}

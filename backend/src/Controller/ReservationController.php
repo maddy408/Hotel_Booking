@@ -34,6 +34,9 @@ final class ReservationController
             'checkIn' => 'required|date',
             'checkOut' => 'required|date',
         ]);
+        if ((string) $data['checkOut'] <= (string) $data['checkIn']) {
+            throw \App\Support\ApiException::validation(['checkOut' => 'Checkout date must be after check-in date.']);
+        }
         return $this->reservations->freeRooms(
             (int) $request->attribute('hotelId'),
             (string) $data['checkIn'],
@@ -57,11 +60,15 @@ final class ReservationController
             'advanceAmount' => 'numeric|min:0',
             'advanceMethod' => 'in:cash,upi,card',
         ]);
+        $name = trim((string) ($data['name'] ?? ''));
+        if ($name === '') {
+            throw \App\Support\ApiException::validation(['name' => 'Guest name cannot be empty.']);
+        }
         return $this->reservations->create(
             (int) $request->attribute('hotelId'),
             (int) $data['roomId'],
             (string) $data['phone'],
-            trim((string) $data['name']),
+            $name,
             (string) $data['checkIn'],
             (string) $data['checkOut'],
             (int) $data['persons'],
@@ -69,6 +76,7 @@ final class ReservationController
             (float) ($data['advanceAmount'] ?? 0),
             (string) ($data['advanceMethod'] ?? 'cash'),
             (int) $request->attribute('userId'),
+            isset($data['checkOutTime']) ? (string) $data['checkOutTime'] : null,
         );
     }
 
@@ -95,6 +103,32 @@ final class ReservationController
             (float) ($data['advanceAmount'] ?? 0),
             (string) ($data['advanceMethod'] ?? 'cash'),
             (int) $request->attribute('userId'),
+            isset($data['checkOutTime']) ? (string) $data['checkOutTime'] : null,
+            isset($data['name']) ? (string) $data['name'] : (isset($data['guestName']) ? (string) $data['guestName'] : null),
+        );
+    }
+
+    public function recordAdvancePayment(Request $request): array
+    {
+        $data = $request->all();
+        Validator::assert($data, [
+            'amount' => 'required|numeric|min:0.01',
+            'method' => 'required|in:cash,upi,card',
+        ]);
+        return $this->reservations->recordAdvancePayment(
+            (int) $request->routeParams['id'],
+            (int) $request->attribute('hotelId'),
+            (float) $data['amount'],
+            (string) $data['method'],
+            (int) $request->attribute('userId'),
+        );
+    }
+
+    public function cancellationPreview(Request $request): array
+    {
+        return $this->reservations->cancellationPreview(
+            (int) $request->routeParams['id'],
+            (int) $request->attribute('hotelId')
         );
     }
 
@@ -108,6 +142,36 @@ final class ReservationController
             (float) ($data['refundAmount'] ?? 0),
             (string) ($data['refundMethod'] ?? 'cash'),
             (int) $request->attribute('userId'),
+            isset($data['cancellationFee']) ? (float) $data['cancellationFee'] : null,
+            filter_var($data['processRefund'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            isset($data['parentPaymentId']) ? (int) $data['parentPaymentId'] : null
+        );
+    }
+
+    public function refundSummary(Request $request): array
+    {
+        return $this->reservations->refundSummary(
+            (int) $request->routeParams['id'],
+            (int) $request->attribute('hotelId')
+        );
+    }
+
+    public function processRefund(Request $request): array
+    {
+        $data = $request->all();
+        Validator::assert($data, [
+            'amount' => 'required|numeric|min:0.01',
+            'method' => 'required|in:cash,upi,card',
+        ]);
+        return $this->reservations->processRefund(
+            (int) $request->routeParams['id'],
+            (int) $request->attribute('hotelId'),
+            (float) $data['amount'],
+            (string) $data['method'],
+            isset($data['reason']) ? (string) $data['reason'] : null,
+            isset($data['parentPaymentId']) && $data['parentPaymentId'] !== '' ? (int) $data['parentPaymentId'] : null,
+            (int) $request->attribute('userId'),
+            isset($data['status']) ? (string) $data['status'] : 'successful'
         );
     }
 

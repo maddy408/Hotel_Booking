@@ -44,7 +44,7 @@ final class GuestRepository
     /** @param array<string,mixed> $fields */
     public function update(int $id, array $fields): void
     {
-        $columns = ['name', 'id_proof_type', 'id_proof_number_enc', 'id_proof_last4', 'city', 'is_foreign', 'nationality', 'passport_number_enc', 'visa_number_enc', 'visa_expiry', 'id_image_path'];
+        $columns = ['name', 'phone', 'id_proof_type', 'id_proof_number_enc', 'id_proof_last4', 'city', 'is_foreign', 'nationality', 'passport_number_enc', 'visa_number_enc', 'visa_expiry', 'id_image_path'];
         $set = [];
         $params = ['id' => $id];
         foreach ($columns as $column) {

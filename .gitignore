@@ -20,3 +20,6 @@ database/backups/
 Thumbs.db
 .vscode/
 .idea/
+
+# PHP server logs
+*.log

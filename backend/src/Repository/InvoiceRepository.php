@@ -24,13 +24,17 @@ final class InvoiceRepository
 
     public function create(array $invoice): int
     {
+        $invoice['discount_amount'] = (float) ($invoice['discount_amount'] ?? 0.0);
+        $invoice['early_checkout_fee'] = (float) ($invoice['early_checkout_fee'] ?? 0.0);
+        $invoice['refund_amount'] = (float) ($invoice['refund_amount'] ?? 0.0);
+
         $stmt = $this->db->prepare(
             'INSERT INTO invoices (hotel_id, stay_id, invoice_number, financial_year, sequence_no, guest_gstin,
                     room_amount, gst_rate, room_gst_amount, extras_amount, extras_gst_amount, cgst_amount, sgst_amount,
-                    total_amount, advance_paid, balance_amount)
+                    total_amount, advance_paid, balance_amount, discount_amount, early_checkout_fee, refund_amount)
              VALUES (:hotel_id, :stay_id, :invoice_number, :financial_year, :sequence_no, :guest_gstin,
                     :room_amount, :gst_rate, :room_gst_amount, :extras_amount, :extras_gst_amount, :cgst_amount, :sgst_amount,
-                    :total_amount, :advance_paid, :balance_amount)'
+                    :total_amount, :advance_paid, :balance_amount, :discount_amount, :early_checkout_fee, :refund_amount)'
         );
         $stmt->execute($invoice);
         return (int) $this->db->lastInsertId();
@@ -50,6 +54,12 @@ final class InvoiceRepository
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch();
         return $row === false ? null : $row;
+    }
+
+    public function updateGstin(int $id, ?string $guestGstin): void
+    {
+        $stmt = $this->db->prepare('UPDATE invoices SET guest_gstin = :gstin WHERE id = :id');
+        $stmt->execute(['gstin' => $guestGstin, 'id' => $id]);
     }
 
     /** @return array<int,array<string,mixed>> */

@@ -48,13 +48,37 @@ export default function Bookings() {
     ['Later', all.filter((s) => s.check_in_date > tomorrow)],
   ].filter(([, list]) => list.length);
 
-  const roomStatus = (roomId) => roomsData?.rooms.find((r) => r.id === roomId)?.status;
+  const getRoom = (roomId) => roomsData?.rooms.find((r) => r.id === roomId);
 
   const quickCheckIn = async (res) => {
+    const r = getRoom(res.room_id);
+    const hkStatus = r?.housekeepingStatus || r?.housekeeping_status || res.housekeeping_status || 'ok';
+    if (hkStatus !== 'ok' || r?.status === 'occupied') {
+      setSheet({ type: 'open', id: res.id });
+      return;
+    }
+    const advancePaid = Number(res.advance_paid ?? 0);
+    if (advancePaid <= 0) {
+      setSheet({ type: 'checkinFrom', reservation: res, triggerAdvanceError: true });
+      return;
+    }
     try {
       await checkIn.mutateAsync(res.id);
       toast(`${res.guest_name.split(' ')[0]} checked in to Room ${res.room_no}.`);
     } catch (err) {
+      if (err.fields?.room || err.fields?.housekeepingStatus || err.message?.includes('not ready') || err.message?.includes('maintenance')) {
+        setSheet({ type: 'open', id: res.id });
+        toast(err.message);
+        return;
+      }
+      if (err.fields?.advanceAmount || err.message?.includes('advance amount before check-in') || err.message?.includes('Advance payment is required') || err.message?.includes('advance')) {
+        setSheet({ type: 'checkinFrom', reservation: res, triggerAdvanceError: true });
+        return;
+      }
+      if (err.fields?.persons || err.message?.includes('allows a maximum of')) {
+        setSheet({ type: 'checkinFrom', reservation: res });
+        return;
+      }
       toast(err.message);
     }
   };
@@ -79,8 +103,13 @@ export default function Bookings() {
             <ul className="blist">
               {list.map((s) => {
                 const nights = nightsBetween(s.check_in_date, s.check_out_date);
-                const st = roomStatus(s.room_id);
-                const canIn = s.check_in_date <= today && st === 'booked';
+                const r = getRoom(s.room_id);
+                const hkStatus = r?.housekeepingStatus || r?.housekeeping_status || s.housekeeping_status || 'ok';
+                const isOccupied = r?.status === 'occupied';
+                const isMaintenance = hkStatus === 'repair';
+                const isReady = hkStatus === 'ok';
+                const isNotReady = !isReady && !isMaintenance;
+                const canIn = s.check_in_date <= today && !isOccupied && !isMaintenance && isReady;
                 return (
                   <li key={s.id}>
                     <span className="bno">{s.booking_code}</span>
@@ -91,10 +120,16 @@ export default function Bookings() {
                       <span>
                         {' '}
                         · {fd(s.check_in_date)} → {fd(s.check_out_date)} · {nights} day{nights > 1 ? 's' : ''} · {s.persons} person
-                        {s.persons > 1 ? 's' : ''} · advance {inr(s.advance_amount)}
+                        {s.persons > 1 ? 's' : ''}{Number(s.advance_paid) > 0 ? ` · advance ${inr(s.advance_paid)}` : ' · advance not paid'}
                       </span>
-                      {s.check_in_date <= today && !canIn && (
-                        <span style={{ color: 'var(--mnt)' }}> · Room {st === 'occupied' ? 'still occupied' : 'not ready'}</span>
+                      {isOccupied ? (
+                        <span style={{ color: 'var(--occ)' }}> · Room still occupied</span>
+                      ) : isMaintenance ? (
+                        <span style={{ color: 'var(--mnt)' }}> · Room under maintenance</span>
+                      ) : isNotReady ? (
+                        <span style={{ color: 'var(--cln)' }}> · Room not ready (cleaning)</span>
+                      ) : (
+                        <span style={{ color: 'var(--ok)' }}> · Room ready</span>
                       )}
                     </div>
                     {canIn && (
@@ -120,11 +155,17 @@ export default function Bookings() {
         <BookingDetailSheet
           reservationId={sheet.id}
           onClose={() => setSheet(null)}
-          onCheckIn={(reservation) => setSheet({ type: 'checkinFrom', reservation })}
+          onCheckIn={(reservation) => setSheet({ type: 'checkinFrom', reservation, triggerAdvanceError: Number(reservation.advance_paid ?? 0) <= 0 })}
           onEdit={(reservation) => setSheet({ type: 'edit', reservation })}
         />
       )}
-      {sheet?.type === 'checkinFrom' && <CheckInSheet reservation={sheet.reservation} onClose={() => setSheet(null)} />}
+      {sheet?.type === 'checkinFrom' && (
+        <CheckInSheet
+          reservation={sheet.reservation}
+          triggerAdvanceError={sheet.triggerAdvanceError}
+          onClose={() => setSheet(null)}
+        />
+      )}
       {sheet?.type === 'edit' && <NewBookingSheet editReservation={sheet.reservation} onClose={() => setSheet(null)} />}
     </div>
   );

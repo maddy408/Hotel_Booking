@@ -1,0 +1,174 @@
+
+/* ==========================================================================
+   Tamarind Court Light Lavender, Berry & Pastel Theme
+   Centralized Reusable Theme Configuration
+   Approved Global Palette
+   ========================================================================== */
+
+:root {
+  /* --------------------------------------------------------------------------
+     1. Approved Global Colour Palette
+     -------------------------------------------------------------------------- */
+
+  /* Primary & Secondary */
+  --color-primary: #802C62;
+  --color-primary-hover: #692450;
+  --color-secondary: #C77BA8;
+
+  /* Application Backgrounds */
+  --color-background: #FCF9FD;
+  --color-header: #FFFFFF;
+  --color-navigation: #F0EAF9;
+  --color-navigation-active: #FFFFFF;
+
+  /* Cards & Borders */
+  --color-card: #FFFBFC;
+  --color-card-border: #EDE5F2;
+
+  /* Typography Colours */
+  --color-heading: #38264F;
+  --color-text: #51465F;
+  --color-text-secondary: #70647E;
+  --color-muted: #82758F;
+
+  /* Light Accent Colours */
+  --color-lavender-light: #EDE5F7;
+  --color-pink-light: #F9EDF2;
+  --color-mauve-light: #E8D2E0;
+
+  /* Semantic Status Backgrounds */
+  --color-success-bg: #EDF7F0;
+  --color-warning-bg: #FFF7E9;
+  --color-info-bg: #EDF3FC;
+  --color-cleaning-bg: #F3EEFA;
+  --color-danger-bg: #FCEFF1;
+
+  /* Button & General Borders */
+  --color-button-text: #FFFFFF;
+  --color-border: #EDE5F2;
+
+  /* --------------------------------------------------------------------------
+     2. Semantic Status Colours
+     -------------------------------------------------------------------------- */
+
+  /* Status Borders */
+  --color-success: #B8DFC9;
+  --color-warning: #F7E2B8;
+  --color-info: #C8D8F0;
+  --color-cleaning: #D9CBF0;
+  --color-danger: #EDBBC5;
+
+  --color-success-border: #B8DFC9;
+  --color-warning-border: #F7E2B8;
+  --color-info-border: #C8D8F0;
+  --color-cleaning-border: #D9CBF0;
+  --color-danger-border: #EDBBC5;
+
+  /* High-Contrast Status Text */
+  --color-success-text: #236B43;
+  --color-warning-text: #8A5707;
+  --color-info-text: #27539B;
+  --color-cleaning-text: #6B4897;
+  --color-danger-text: #9E3349;
+
+  /* --------------------------------------------------------------------------
+     3. Component & Feedback Styling
+     -------------------------------------------------------------------------- */
+
+  --color-focus: var(--color-primary);
+  --color-focus-ring: rgba(128, 44, 98, 0.20);
+
+  /* Shadows */
+  --shadow-subtle: 0 1px 4px rgba(56, 38, 79, 0.04);
+  --shadow-card: 0 1px 3px rgba(56, 38, 79, 0.04);
+  --shadow-hover: 0 4px 10px rgba(56, 38, 79, 0.07);
+  --shadow-pop: 0 20px 60px -20px rgba(56, 38, 79, 0.35);
+
+  --shadow-primary: 0 2px 6px rgba(128, 44, 98, 0.18);
+  --shadow-primary-hover: 0 4px 12px rgba(128, 44, 98, 0.28);
+
+  --color-scrim: rgba(56, 38, 79, 0.45);
+
+  /* --------------------------------------------------------------------------
+     4. Application-Wide Semantic Aliases
+     -------------------------------------------------------------------------- */
+
+  color-scheme: light;
+
+  --bg: var(--color-background);
+  --surface: var(--color-card);
+  --sunk: var(--color-lavender-light);
+  --ink: var(--color-text);
+  --muted: var(--color-muted);
+  --line: var(--color-border);
+  --accent: var(--color-primary);
+  --accent-ink: var(--color-button-text);
+  --mark: var(--color-warning-text);
+  --focus: var(--color-focus);
+
+  /* --------------------------------------------------------------------------
+     5. Status Semantic Aliases
+     -------------------------------------------------------------------------- */
+
+  /* Available / Free */
+  --ok: var(--color-success-text);
+  --ok-bg: var(--color-success-bg);
+  --ok-border: var(--color-success-border);
+
+  /* Occupied */
+  --occ: var(--color-info-text);
+  --occ-bg: var(--color-info-bg);
+  --occ-border: var(--color-info-border);
+
+  /* Cleaning */
+  --cln: var(--color-cleaning-text);
+  --cln-bg: var(--color-cleaning-bg);
+  --cln-border: var(--color-cleaning-border);
+
+  /* Booked */
+  --bk: var(--color-warning-text);
+  --bk-bg: var(--color-warning-bg);
+  --bk-border: var(--color-warning-border);
+
+  /* Repair */
+  --mnt: var(--color-danger-text);
+  --mnt-bg: var(--color-danger-bg);
+  --mnt-border: var(--color-danger-border);
+
+  /* --------------------------------------------------------------------------
+     6. Typography
+     -------------------------------------------------------------------------- */
+
+  --display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+  --body: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+}
+
+/* ==========================================================================
+   7. Room Status Classes
+   ========================================================================== */
+
+.s-free {
+  --s: var(--ok);
+  --sb: var(--ok-bg);
+}
+
+.s-occupied {
+  --s: var(--occ);
+  --sb: var(--occ-bg);
+}
+
+.s-cleaning {
+  --s: var(--cln);
+  --sb: var(--cln-bg);
+}
+
+.s-repair {
+  --s: var(--mnt);
+  --sb: var(--mnt-bg);
+}
+
+.s-booked {
+  --s: var(--bk);
+  --sb: var(--bk-bg);
+}

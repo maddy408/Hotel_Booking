@@ -6,6 +6,7 @@ import { fdLong, todayIso } from '../lib/format';
 const ALL_TABS = [
   { to: '/', label: 'Rooms', roles: null },
   { to: '/bookings', label: 'Bookings', roles: null },
+  { to: '/today-checkouts', label: 'Daily Ops', roles: ['admin', 'manager', 'receptionist'] },
   { to: '/guests', label: 'Guests', roles: null },
   { to: '/bills', label: 'Bills', roles: null },
   { to: '/reports', label: 'Reports', roles: ['admin', 'manager'] },

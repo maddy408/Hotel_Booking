@@ -17,7 +17,7 @@ use App\Support\ApiException;
  * Callers MUST run this inside a transaction that already holds RoomRepository::lockById()
  * on the room, or two concurrent requests can both see "free" before either commits.
  */
-final class AvailabilityService
+class AvailabilityService
 {
     public function __construct(
         private readonly ReservationRepository $reservations,
@@ -53,21 +53,41 @@ final class AvailabilityService
         }
     }
 
-    /** Rooms free for [checkIn, checkOut), optionally filtered by room type — used by the New Booking room picker. */
+    /** Rooms with availability and readiness for [checkIn, checkOut), optionally filtered by room type — used by the New Booking room picker. */
     public function freeRooms(RoomRepository $rooms, int $hotelId, string $checkIn, string $checkOut, ?int $roomTypeId, ?int $excludeReservationId = null): array
     {
-        $free = [];
+        $result = [];
         foreach ($rooms->allForHotel($hotelId) as $room) {
-            if ($room['housekeeping_status'] === 'repair') {
-                continue;
-            }
             if ($roomTypeId !== null && (int) $room['room_type_id'] !== $roomTypeId) {
                 continue;
             }
-            if ($this->isFree((int) $room['id'], $checkIn, $checkOut, $excludeReservationId)) {
-                $free[] = $room;
-            }
+            $isAvailable = $this->isFree((int) $room['id'], $checkIn, $checkOut, $excludeReservationId);
+            $hk = $room['housekeeping_status'];
+            $isReady = ($hk === 'ok');
+            $isMaintenance = ($hk === 'repair');
+
+            $bookingStatus = match (true) {
+                $isMaintenance => 'maintenance',
+                !$isAvailable => 'unavailable',
+                $isReady => 'available_ready',
+                default => 'available_not_ready',
+            };
+
+            $statusLabel = match ($bookingStatus) {
+                'maintenance' => 'Maintenance (not bookable)',
+                'unavailable' => 'Unavailable (already booked)',
+                'available_ready' => 'Available + Ready',
+                'available_not_ready' => 'Available + Not Ready',
+            };
+
+            $room['is_available'] = $isAvailable;
+            $room['is_ready'] = $isReady;
+            $room['is_bookable'] = ($isAvailable && !$isMaintenance);
+            $room['booking_status'] = $bookingStatus;
+            $room['status_label'] = $statusLabel;
+
+            $result[] = $room;
         }
-        return $free;
+        return $result;
     }
 }

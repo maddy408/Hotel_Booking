@@ -7,6 +7,7 @@ use App\Controller\ReportController;
 use App\Middleware\RoleMiddleware;
 use App\Repository\HotelRepository;
 use App\Repository\InvoiceRepository;
+use App\Repository\PaymentRepository;
 use App\Repository\ReportRepository;
 use App\Repository\StayChargeRepository;
 use App\Repository\StayRepository;
@@ -23,7 +24,14 @@ return static function (Router $router, PDO $db, callable $auth): void {
     $router->get('/reports/revenue', [$reportController, 'revenue'], [$auth, $staffOnly]);
     $router->get('/reports/invoices.csv', [$reportController, 'exportCsv'], [$auth, $staffOnly]);
 
-    $invoiceController = new InvoiceController(new InvoiceRepository($db), new StayRepository($db), new StayChargeRepository($db), new HotelRepository($db));
+    $invoiceController = new InvoiceController(
+        new InvoiceRepository($db),
+        new StayRepository($db),
+        new StayChargeRepository($db),
+        new HotelRepository($db),
+        new PaymentRepository($db)
+    );
     $router->get('/invoices/{id}', [$invoiceController, 'show'], [$auth]);
+    $router->put('/invoices/{id}', [$invoiceController, 'update'], [$auth, $staffOnly]);
     $router->get('/stays/{stayId}/invoice', [$invoiceController, 'byStay'], [$auth]);
 };

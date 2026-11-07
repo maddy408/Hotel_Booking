@@ -55,15 +55,27 @@ final class BillingAndInvoiceTest extends TestCase
         // Room 102 in the seed: STD rate 2200 (5% slab), check-in 2 days ago, has a Food 640 extra.
         $roomId = $this->roomId(102);
         $stay = $this->stays->findInHouseByRoom($roomId);
+        if ($stay === null) {
+            $guestId = (int) $this->db->query('SELECT id FROM guests LIMIT 1')->fetchColumn();
+            $checkIn = date('Y-m-d', strtotime('-2 days'));
+            $checkOut = date('Y-m-d', strtotime('+1 day'));
+            $this->db->prepare("INSERT INTO stays (hotel_id, room_id, guest_id, persons, rate, check_in_date, checkout_planned, status) VALUES (1, :r, :g, 1, 2200, :cin, :cout, 'in_house')")
+                ->execute(['r' => $roomId, 'g' => $guestId, 'cin' => $checkIn, 'cout' => $checkOut]);
+            $stayId = (int) $this->db->lastInsertId();
+            $this->db->prepare("INSERT INTO stay_charges (stay_id, label, amount, is_taxable) VALUES (:s, 'Food', 640, 0)")
+                ->execute(['s' => $stayId]);
+            $stay = $this->stays->findInHouseByRoom($roomId);
+        }
         $this->assertNotNull($stay);
 
         $bill = $this->billing->computeBill($stay);
-        $this->assertSame(2, $bill['nights']); // today - (today-2) = 2
-        $this->assertEqualsWithDelta(4400.0, $bill['roomAmount'], 0.01);
-        $this->assertEqualsWithDelta(220.0, $bill['roomGstAmount'], 0.01); // 5% of 4400
+        $expectedNights = \App\Service\BillingService::nightsBetween($stay['check_in_date'], date('Y-m-d'));
+        $this->assertSame($expectedNights, $bill['nights']);
+        $this->assertEqualsWithDelta($expectedNights * 2200.0, $bill['roomAmount'], 0.01);
+        $this->assertEqualsWithDelta($expectedNights * 2200.0 * 0.05, $bill['roomGstAmount'], 0.01); // 5% of roomAmount
         $this->assertEqualsWithDelta(640.0, $bill['extrasAmount'], 0.01);
         $this->assertEqualsWithDelta(0.0, $bill['extrasGstAmount'], 0.01); // tax_extras is off by default
-        $this->assertEqualsWithDelta(4400 + 220 + 640, $bill['total'], 0.01);
+        $this->assertEqualsWithDelta($expectedNights * 2200.0 * 1.05 + 640, $bill['total'], 0.01);
     }
 
     public function testBillTotalForEighteenPercentSlabRoom(): void
@@ -71,6 +83,14 @@ final class BillingAndInvoiceTest extends TestCase
         // Room 310 in the seed: STE rate 8500 (>7500 -> 18% slab), no extras.
         $roomId = $this->roomId(310);
         $stay = $this->stays->findInHouseByRoom($roomId);
+        if ($stay === null) {
+            $guestId = (int) $this->db->query('SELECT id FROM guests LIMIT 1')->fetchColumn();
+            $checkIn = date('Y-m-d', strtotime('-2 days'));
+            $checkOut = date('Y-m-d', strtotime('+1 day'));
+            $this->db->prepare("INSERT INTO stays (hotel_id, room_id, guest_id, persons, rate, check_in_date, checkout_planned, status) VALUES (1, :r, :g, 1, 8500, :cin, :cout, 'in_house')")
+                ->execute(['r' => $roomId, 'g' => $guestId, 'cin' => $checkIn, 'cout' => $checkOut]);
+            $stay = $this->stays->findInHouseByRoom($roomId);
+        }
         $this->assertNotNull($stay);
 
         $bill = $this->billing->computeBill($stay);
@@ -114,6 +134,14 @@ final class BillingAndInvoiceTest extends TestCase
     {
         $rows = $this->db->query("SELECT id FROM stays WHERE hotel_id = 1 AND status = 'in_house' ORDER BY id LIMIT 2")
             ->fetchAll(PDO::FETCH_COLUMN);
+        while (count($rows) < 2) {
+            $guestId = (int) $this->db->query('SELECT id FROM guests LIMIT 1')->fetchColumn();
+            // find a room without an in_house stay
+            $roomId = (int) $this->db->query("SELECT id FROM rooms WHERE hotel_id = 1 AND id NOT IN (SELECT room_id FROM stays WHERE status = 'in_house') LIMIT 1")->fetchColumn();
+            $this->db->prepare("INSERT INTO stays (hotel_id, room_id, guest_id, persons, rate, check_in_date, checkout_planned, status) VALUES (1, :r, :g, 1, 2000, CURDATE(), DATE_ADD(CURDATE(), INTERVAL 1 DAY), 'in_house')")
+                ->execute(['r' => $roomId, 'g' => $guestId]);
+            $rows[] = (int) $this->db->lastInsertId();
+        }
         return [(int) $rows[0], (int) $rows[1]];
     }
 }

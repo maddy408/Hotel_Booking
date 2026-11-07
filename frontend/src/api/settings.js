@@ -14,3 +14,24 @@ export function useUpdateGst() {
   const qc = useQueryClient();
   return useMutation({ mutationFn: (payload) => api.put('/settings/gst', payload), onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }) });
 }
+
+export function useUpdateWhatsapp() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => api.put('/settings/whatsapp', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings'] });
+      qc.invalidateQueries({ queryKey: ['today-checkouts'] });
+    },
+  });
+}
+
+export function useUpdatePolicies() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => api.put('/settings/policies', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings'] });
+    },
+  });
+}

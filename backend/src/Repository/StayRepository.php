@@ -6,7 +6,7 @@ namespace App\Repository;
 
 use PDO;
 
-final class StayRepository
+class StayRepository
 {
     public function __construct(private readonly PDO $db)
     {
@@ -28,12 +28,21 @@ final class StayRepository
         return $row === false ? null : $row;
     }
 
-    public function findInHouseByRoom(int $roomId): ?array
+    public function findInHouseByRoom(int $roomId, bool $lockForUpdate = false): ?array
     {
-        $stmt = $this->db->prepare("SELECT * FROM stays WHERE room_id = :room_id AND status = 'in_house' LIMIT 1");
+        $sql = "SELECT * FROM stays WHERE room_id = :room_id AND status = 'in_house' LIMIT 1";
+        if ($lockForUpdate) {
+            $sql .= ' FOR UPDATE';
+        }
+        $stmt = $this->db->prepare($sql);
         $stmt->execute(['room_id' => $roomId]);
         $row = $stmt->fetch();
         return $row === false ? null : $row;
+    }
+
+    public function findActiveStayByRoom(int $roomId, bool $lockForUpdate = false): ?array
+    {
+        return $this->findInHouseByRoom($roomId, $lockForUpdate);
     }
 
     public function findInHouseByGuest(int $guestId): ?array
@@ -56,11 +65,11 @@ final class StayRepository
     public function overlapping(int $roomId, string $checkIn, string $checkOut, string $today, ?int $excludeId = null): array
     {
         $sql = "SELECT *,
-                    CASE WHEN checkout_planned > :today1 THEN checkout_planned ELSE DATE_ADD(:today2, INTERVAL 1 DAY) END AS effective_out
+                    CASE WHEN checkout_planned >= :today1 THEN checkout_planned ELSE DATE_ADD(:today2, INTERVAL 1 DAY) END AS effective_out
                 FROM stays
                 WHERE room_id = :room_id AND status = 'in_house'
                   AND check_in_date < :check_out
-                  AND :check_in < (CASE WHEN checkout_planned > :today3 THEN checkout_planned ELSE DATE_ADD(:today4, INTERVAL 1 DAY) END)";
+                  AND :check_in < (CASE WHEN checkout_planned >= :today3 THEN checkout_planned ELSE DATE_ADD(:today4, INTERVAL 1 DAY) END)";
         $params = [
             'room_id' => $roomId, 'check_in' => $checkIn, 'check_out' => $checkOut,
             'today1' => $today, 'today2' => $today, 'today3' => $today, 'today4' => $today,
@@ -74,37 +83,89 @@ final class StayRepository
         return $stmt->fetchAll();
     }
 
-    public function create(int $hotelId, ?int $reservationId, int $roomId, int $guestId, int $persons, float $rate, string $checkIn, string $checkoutPlanned, ?int $createdBy): int
-    {
+    public function create(
+        int $hotelId,
+        ?int $reservationId,
+        int $roomId,
+        int $guestId,
+        int $persons,
+        float $rate,
+        string $checkIn,
+        string $checkoutPlanned,
+        ?int $createdBy,
+        string $checkoutTime = '12:00:00'
+    ): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO stays (hotel_id, reservation_id, room_id, guest_id, persons, rate, check_in_date, checkout_planned, status, created_by)
-             VALUES (:hotel_id, :reservation_id, :room_id, :guest_id, :persons, :rate, :check_in, :checkout_planned, \'in_house\', :created_by)'
+            'INSERT INTO stays (hotel_id, reservation_id, room_id, guest_id, persons, rate, check_in_date, checkout_planned, checkout_time, status, created_by)
+             VALUES (:hotel_id, :reservation_id, :room_id, :guest_id, :persons, :rate, :check_in, :checkout_planned, :checkout_time, \'in_house\', :created_by)'
         );
         $stmt->execute([
-            'hotel_id' => $hotelId, 'reservation_id' => $reservationId, 'room_id' => $roomId, 'guest_id' => $guestId,
-            'persons' => $persons, 'rate' => $rate, 'check_in' => $checkIn, 'checkout_planned' => $checkoutPlanned, 'created_by' => $createdBy,
+            'hotel_id' => $hotelId,
+            'reservation_id' => $reservationId,
+            'room_id' => $roomId,
+            'guest_id' => $guestId,
+            'persons' => $persons,
+            'rate' => $rate,
+            'check_in' => $checkIn,
+            'checkout_planned' => $checkoutPlanned,
+            'checkout_time' => $checkoutTime,
+            'created_by' => $createdBy,
         ]);
         return (int) $this->db->lastInsertId();
     }
 
-    public function extend(int $id, string $newCheckoutPlanned): void
+    public function extend(int $id, string $newCheckoutPlanned, ?string $checkoutTime = null): void
     {
-        $this->db->prepare('UPDATE stays SET checkout_planned = :out WHERE id = :id')
-            ->execute(['out' => $newCheckoutPlanned, 'id' => $id]);
+        if ($checkoutTime !== null) {
+            $this->db->prepare('UPDATE stays SET checkout_planned = :out, checkout_time = :ctime WHERE id = :id')
+                ->execute(['out' => $newCheckoutPlanned, 'ctime' => $checkoutTime, 'id' => $id]);
+        } else {
+            $this->db->prepare('UPDATE stays SET checkout_planned = :out WHERE id = :id')
+                ->execute(['out' => $newCheckoutPlanned, 'id' => $id]);
+        }
     }
 
-    public function checkout(int $id, string $checkoutActual, string $paymentMethod): void
+    public function updateCheckout(int $id, string $checkoutPlanned, string $checkoutTime): void
+    {
+        $this->db->prepare('UPDATE stays SET checkout_planned = :out, checkout_time = :ctime WHERE id = :id')
+            ->execute(['out' => $checkoutPlanned, 'ctime' => $checkoutTime, 'id' => $id]);
+    }
+
+    public function checkout(
+        int $id,
+        string $checkoutActual,
+        string $paymentMethod,
+        float $discountAmount = 0.0,
+        ?string $discountReason = null,
+        float $earlyCheckoutFee = 0.0
+    ): void {
+        $this->db->prepare(
+            "UPDATE stays
+             SET status = 'checked_out', checkout_actual = :out, payment_method = :method,
+                 discount_amount = :discount, discount_reason = :reason, early_checkout_fee = :fee
+             WHERE id = :id"
+        )->execute([
+            'out' => $checkoutActual,
+            'method' => $paymentMethod,
+            'discount' => $discountAmount,
+            'reason' => $discountReason,
+            'fee' => $earlyCheckoutFee,
+            'id' => $id,
+        ]);
+    }
+
+    public function applyDiscount(int $id, float $amount, ?string $reason): void
     {
         $this->db->prepare(
-            "UPDATE stays SET status = 'checked_out', checkout_actual = :out, payment_method = :method WHERE id = :id"
-        )->execute(['out' => $checkoutActual, 'method' => $paymentMethod, 'id' => $id]);
+            'UPDATE stays SET discount_amount = :discount, discount_reason = :reason WHERE id = :id'
+        )->execute(['discount' => $amount, 'reason' => $reason, 'id' => $id]);
     }
 
     /** @return array<int,array<string,mixed>> */
     public function listDoneForHotel(int $hotelId, ?string $from = null, ?string $to = null): array
     {
         $sql = "SELECT s.*, g.name AS guest_name, g.phone AS guest_phone, r.room_no,
-                       i.invoice_number, i.total_amount AS invoice_total
+                       i.invoice_number, i.total_amount AS invoice_total, i.guest_gstin
                 FROM stays s JOIN guests g ON g.id = s.guest_id JOIN rooms r ON r.id = s.room_id
                 LEFT JOIN invoices i ON i.stay_id = s.id
                 WHERE s.hotel_id = :hotel_id AND s.status = 'checked_out'";

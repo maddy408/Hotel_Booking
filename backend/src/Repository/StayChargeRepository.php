@@ -6,7 +6,7 @@ namespace App\Repository;
 
 use PDO;
 
-final class StayChargeRepository
+class StayChargeRepository
 {
     public function __construct(private readonly PDO $db)
     {

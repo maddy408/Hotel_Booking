@@ -4,6 +4,7 @@ import ProtectedRoute from './components/ProtectedRoute.jsx';
 import Login from './pages/Login.jsx';
 import Rooms from './pages/Rooms.jsx';
 import Bookings from './pages/Bookings.jsx';
+import TodayCheckouts from './pages/TodayCheckouts.jsx';
 import Guests from './pages/Guests.jsx';
 import Bills from './pages/Bills.jsx';
 import Reports from './pages/Reports.jsx';
@@ -34,6 +35,22 @@ export default function App() {
       >
         <Route index element={<Rooms />} />
         <Route path="bookings" element={<Bookings />} />
+        <Route
+          path="today-checkouts"
+          element={
+            <ProtectedRoute roles={['admin', 'manager', 'receptionist']}>
+              <TodayCheckouts />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="daily-ops"
+          element={
+            <ProtectedRoute roles={['admin', 'manager', 'receptionist']}>
+              <TodayCheckouts />
+            </ProtectedRoute>
+          }
+        />
         <Route path="guests" element={<Guests />} />
         <Route path="bills" element={<Bills />} />
         <Route

@@ -11,6 +11,7 @@ use App\Router\Request;
 use App\Router\Router;
 use App\Service\AuthService;
 
+
 /**
  * Registers every API route. Kept as one file (vs. a full DI container) to match
  * the brief's "no heavy framework" constraint — each phase appends its own section.

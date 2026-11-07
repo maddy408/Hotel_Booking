@@ -44,6 +44,25 @@ final class RoomController
         return $this->roomService->changeRoomType((int) $request->routeParams['id'], (int) $data['roomTypeId'], (int) $request->attribute('hotelId'));
     }
 
+    public function update(Request $request): array
+    {
+        $data = $request->all();
+        Validator::assert($data, [
+            'roomNo' => 'required|integer|min:1',
+            'floor' => 'required|integer|min:0',
+            'roomTypeId' => 'required|integer|min:1',
+        ]);
+        return $this->roomService->updateRoom(
+            (int) $request->routeParams['id'],
+            (int) $data['roomNo'],
+            (int) $data['floor'],
+            (int) $data['roomTypeId'],
+            isset($data['note']) ? trim((string) $data['note']) : null,
+            (int) $request->attribute('hotelId'),
+            (int) $request->attribute('userId'),
+        );
+    }
+
     public function delete(Request $request): array
     {
         $this->roomService->deleteRoom(
