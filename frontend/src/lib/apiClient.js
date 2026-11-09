@@ -1,4 +1,4 @@
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost/tamarind-court/backend/public';
+export const BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
 const STORAGE_KEY = 'tamarind-court-auth';
 
 export class ApiError extends Error {

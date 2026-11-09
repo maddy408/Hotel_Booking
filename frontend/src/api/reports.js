@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { api, getTokens } from '../lib/apiClient';
+import { api, BASE_URL, getTokens } from '../lib/apiClient';
 
 export function useTodayReport() {
   return useQuery({ queryKey: ['report-today'], queryFn: () => api.get('/reports/today'), refetchInterval: 60000 });
@@ -17,7 +17,7 @@ export function useRevenueReport(from, to) {
   return useQuery({ queryKey: ['report-revenue', from, to], queryFn: () => api.get(`/reports/revenue?from=${from}&to=${to}`), enabled: !!from && !!to });
 }
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost/tamarind-court/backend/public';
+
 
 /** CSV download isn't JSON, so it bypasses the api client's envelope handling. */
 export async function downloadInvoicesCsv(from, to) {

@@ -1,7 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { getTokens } from '../lib/apiClient';
-
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost/tamarind-court/backend/public';
+import { BASE_URL, getTokens } from '../lib/apiClient';
 
 export function idImageUrl(guestId) {
   return `${BASE_URL}/guests/${guestId}/id-image`;
