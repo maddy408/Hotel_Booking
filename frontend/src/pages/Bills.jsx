@@ -1,13 +1,18 @@
 import { useState } from 'react';
 import { useDoneStays } from '../api/stays';
+import { useTodayReport } from '../api/reports';
 import GuestProfileSheet from '../components/sheets/GuestProfileSheet.jsx';
 import NewBookingSheet from '../components/sheets/NewBookingSheet.jsx';
 import CheckoutSheet from '../components/sheets/CheckoutSheet.jsx';
 import { useRooms } from '../api/rooms';
-import { fd, inr, todayIso } from '../lib/format';
+import { fd, inr } from '../lib/format';
 
 export default function Bills() {
   const { data: stays, isLoading, isError, error, refetch } = useDoneStays();
+  // Reuses the same /reports/today the Reports screen shows, rather than re-deriving
+  // "today" from the browser's clock — keeps the two screens' numbers identical and
+  // avoids a client/server timezone mismatch at the day boundary.
+  const { data: today } = useTodayReport();
   const { data: roomsData } = useRooms();
   const [sheet, setSheet] = useState(null);
 
@@ -33,10 +38,7 @@ export default function Bills() {
     );
   }
 
-  const today = todayIso();
   const done = [...stays].sort((a, b) => b.checkout_actual.localeCompare(a.checkout_actual) || b.id - a.id);
-  const todaysBills = done.filter((s) => s.checkout_actual === today);
-  const tTotal = todaysBills.reduce((a, s) => a + Number(s.invoice_total || 0), 0);
 
   const openRoomByNo = (roomNo) => {
     const room = roomsData?.rooms.find((r) => r.roomNo === roomNo);
@@ -48,16 +50,16 @@ export default function Bills() {
       <div className="panel" style={{ marginBottom: 14 }}>
         <div className="ph">
           <h2>Today</h2>
-          <span className="muted">{fd(today)}</span>
+          <span className="muted">{today ? fd(today.date) : ''}</span>
         </div>
         <div className="sumrow" style={{ padding: '14px 16px' }}>
           <div>
             <span>Check-outs</span>
-            <b className="mono">{todaysBills.length}</b>
+            <b className="mono">{today?.checkouts ?? '—'}</b>
           </div>
           <div>
             <span>Billed at check-out</span>
-            <b className="mono">{inr(tTotal)}</b>
+            <b className="mono">{inr(today?.billedAtCheckout ?? 0)}</b>
           </div>
         </div>
       </div>

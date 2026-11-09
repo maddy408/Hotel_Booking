@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import { useGuestLookup } from '../../api/guests';
@@ -6,7 +6,7 @@ import { useDirectCheckIn } from '../../api/stays';
 import { useCheckInReservation } from '../../api/reservations';
 import { useSettings } from '../../api/settings';
 import { useToast } from '../../context/ToastContext.jsx';
-import { addDaysIso, estimateGstRate, fd, inr, todayIso } from '../../lib/format';
+import { addDaysIso, estimateGstRate, fd, formatCheckoutHour, inr, todayIso } from '../../lib/format';
 
 const IDS = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport'];
 
@@ -221,7 +221,7 @@ export default function CheckInSheet({ room, reservation, onClose }) {
           <tbody>
             <tr>
               <td>
-                {days || 1} day{(Number(days) || 1) > 1 ? 's' : ''} × {inr(rate)} <span className="muted">(leaves {fd(out)}, 12 noon)</span>
+                {days || 1} day{(Number(days) || 1) > 1 ? 's' : ''} × {inr(rate)} <span className="muted">(leaves {fd(out)}, {formatCheckoutHour(settings?.settings?.checkout_hour)})</span>
               </td>
               <td>{inr(roomAmt)}</td>
             </tr>

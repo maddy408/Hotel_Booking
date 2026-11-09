@@ -26,11 +26,19 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
 
   const today = todayIso();
   const room = roomsData?.rooms.find((r) => r.id === reservation.room_id);
-  const canIn = reservation.check_in_date <= today && room?.status === 'booked';
+  const isPending = reservation.status === 'pending';
+  const canIn = isPending && reservation.check_in_date <= today && room?.status === 'booked';
+
+  const maxRefund = Number(reservation.advance_amount) || 0;
 
   const doCancel = async () => {
+    const amount = Number(refundAmount) || 0;
+    if (amount > maxRefund) {
+      toast(`Refund cannot exceed the advance paid (${inr(maxRefund)}).`);
+      return;
+    }
     try {
-      await cancel.mutateAsync({ id: reservation.id, reason: 'Cancelled by front desk', refundAmount: Number(refundAmount) || 0, refundMethod: 'cash' });
+      await cancel.mutateAsync({ id: reservation.id, reason: 'Cancelled by front desk', refundAmount: amount, refundMethod: 'cash' });
       onClose();
       toast(`Booking ${reservation.booking_code} cancelled. Room ${reservation.room_no} is free on those dates.`);
     } catch (err) {
@@ -76,13 +84,17 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
           )
         )}
 
-        {cancelling ? (
+        {!isPending ? (
+          <div className="warn">
+            This booking is {reservation.status.replace('_', '-')} and can no longer be changed or cancelled.
+          </div>
+        ) : cancelling ? (
           <div className="confirm">
             <b>Cancel booking {reservation.booking_code}?</b>
             {Number(reservation.advance_amount) > 0 ? (
               <>
                 <span className="muted">Advance paid was {inr(reservation.advance_amount)}. Refund amount, if any:</span>
-                <input type="number" min="0" step="100" placeholder="0" value={refundAmount} onChange={(e) => setRefundAmount(e.target.value)} />
+                <input type="number" min="0" max={maxRefund} step="100" placeholder="0" value={refundAmount} onChange={(e) => setRefundAmount(e.target.value)} />
               </>
             ) : (
               <span className="muted">No advance was paid.</span>
