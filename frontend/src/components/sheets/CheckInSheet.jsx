@@ -7,7 +7,7 @@ import { useCheckInReservation, useRecordAdvancePayment } from '../../api/reserv
 import { useRooms, useHousekeepingAction } from '../../api/rooms';
 import { useSettings } from '../../api/settings';
 import { useToast } from '../../context/ToastContext.jsx';
-import { addDaysIso, estimateGstRate, fd, inr, todayIso } from '../../lib/format';
+import { addDaysIso, estimateGstRate, fd, formatCheckoutHour, inr, todayIso } from '../../lib/format';
 
 const IDS = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport'];
 const ADVANCE_REQUIRED_MSG = 'Please enter and collect the advance amount before check-in.';
@@ -493,7 +493,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
           <tbody>
             <tr>
               <td>
-                {days || 1} day{(Number(days) || 1) > 1 ? 's' : ''} × {inr(rate)} <span className="muted">(leaves {fd(out)}, 12 noon)</span>
+                {days || 1} day{(Number(days) || 1) > 1 ? 's' : ''} × {inr(rate)} <span className="muted">(leaves {fd(out)}, {formatCheckoutHour(settings?.settings?.checkout_hour)})</span>
               </td>
               <td>{inr(roomAmt)}</td>
             </tr>

@@ -34,6 +34,17 @@ export function inr(n) {
   return '₹' + Math.round(Number(n) || 0).toLocaleString('en-IN');
 }
 
+/** Formats the hotel's configured checkout hour (settings.checkout_hour, 0-23) for display. */
+export function formatCheckoutHour(hour) {
+  const h = Number(hour);
+  if (!Number.isFinite(h)) return '12 noon';
+  if (h === 0) return 'midnight';
+  if (h === 12) return '12 noon';
+  const period = h < 12 ? 'AM' : 'PM';
+  const twelveHour = h % 12 === 0 ? 12 : h % 12;
+  return `${twelveHour} ${period}`;
+}
+
 /** Client-side estimate only — the server recomputes and is authoritative. */
 export function estimateGstRate(rate, settings) {
   if (!settings) return rate <= 1000 ? 0 : rate <= 7500 ? 0.05 : 0.18;

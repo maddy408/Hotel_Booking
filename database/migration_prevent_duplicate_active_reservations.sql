@@ -1,6 +1,7 @@
 -- Tamarind Court: Prevent duplicate overlapping active reservations
 -- Active reservations have status IN ('pending', 'checked_in')
 -- Two active reservations cannot have overlapping half-open date intervals [check_in_date, check_out_date) for the same room.
+USE tamarind_court;
 
 DELIMITER $$
 

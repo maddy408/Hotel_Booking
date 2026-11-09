@@ -6,7 +6,7 @@ import { useGuestLookup } from '../../api/guests';
 import { useRoomTypes, useRooms } from '../../api/rooms';
 import { useSettings } from '../../api/settings';
 import { useToast } from '../../context/ToastContext.jsx';
-import { addDaysIso, estimateGstRate, fd, inr, nightsBetween, todayIso } from '../../lib/format';
+import { addDaysIso, estimateGstRate, fd, formatCheckoutHour, inr, nightsBetween, todayIso } from '../../lib/format';
 
 export default function NewBookingSheet({ editReservation, presetGuest, onClose }) {
   const isEdit = !!editReservation;
@@ -236,7 +236,7 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
           </div>
           <div className="f">
             <label>Leaves on</label>
-            <input type="text" value={`${fd(checkOut)}, 12 noon`}  />
+            <input type="text" value={`${fd(checkOut)}, ${formatCheckoutHour(settings?.settings?.checkout_hour)}`} disabled />
           </div>
           <div className="f full">
             <label>Room type</label>

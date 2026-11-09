@@ -193,6 +193,7 @@ CREATE TABLE reservations (
   guest_id          INT UNSIGNED      NOT NULL,
   check_in_date     DATE              NOT NULL,
   check_out_date    DATE              NOT NULL,
+  check_out_time    TIME              NOT NULL DEFAULT '12:00:00',
   persons           TINYINT UNSIGNED  NOT NULL DEFAULT 1,
   rate              DECIMAL(10,2)     NOT NULL,
   advance_amount    DECIMAL(10,2)     NOT NULL DEFAULT 0.00,

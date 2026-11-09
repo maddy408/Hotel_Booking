@@ -69,33 +69,13 @@ final class RoomActiveBookingStatusTest extends TestCase
         $this->db->exec("DELETE FROM hotels WHERE id = " . self::HOTEL_ID);
     }
 
-    public function testActualHotel1RamyaReservationAppearsInBookedRooms(): void
-    {
-        // Tests the real record in MySQL Hotel 1 without modifying anything
-        $data = $this->roomService->listRooms(1);
-
-        $r101 = null;
-        $bookedRoom = null;
-        foreach ($data['rooms'] as $r) {
-            if ($r['roomNo'] === 101) {
-                $r101 = $r;
-            }
-            if ($r['status'] === 'booked') {
-                $bookedRoom = $r;
-            }
-        }
-
-        $this->assertNotNull($r101, 'Room 101 must exist in Hotel 1');
-        // If Room 101 has an active in-house stay, in-house stay takes priority over booked
-        if ($r101['stayId'] !== null) {
-            $this->assertSame('occupied', $r101['status']);
-        } else {
-            $this->assertSame('booked', $r101['status']);
-        }
-        $this->assertNotNull($bookedRoom, 'At least one room must appear as booked in Hotel 1');
-        $this->assertSame('booked', $bookedRoom['status']);
-        $this->assertGreaterThanOrEqual(1, $data['counts']['booked']);
-    }
+    // Note: an earlier version of this file had a test here that asserted against
+    // hotel_id=1's live data directly ("the real record in MySQL Hotel 1 without
+    // modifying anything") instead of the isolated hotel_id=993 fixture every other
+    // test in this file uses. That makes it dependent on whatever ad-hoc records
+    // happened to exist in one developer's local database at the time, not on the
+    // shared seed.sql — it fails on any fresh/reseeded database. Removed as
+    // non-portable; the fixture-based tests below cover the same behavior.
 
     public function testFutureBookingsTomorrowNextWeekNextMonthAppearInBooked(): void
     {
