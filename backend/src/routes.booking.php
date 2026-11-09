@@ -31,14 +31,14 @@ use App\Service\TodayCheckoutsService;
 use App\Support\IdImageUploader;
 
 return static function (Router $router, PDO $db, callable $auth): void {
+    $audit = new AuditLogger(new AuditLogRepository($db));
     $guestRepo = new GuestRepository($db);
-    $guestService = new GuestService($guestRepo, new IdImageUploader(dirname(__DIR__) . '/storage/uploads'));
+    $guestService = new GuestService($guestRepo, new IdImageUploader(dirname(__DIR__) . '/storage/uploads'), $audit);
     $roomRepo = new RoomRepository($db);
     $reservationRepo = new ReservationRepository($db);
     $stayRepo = new StayRepository($db);
     $paymentRepo = new PaymentRepository($db);
     $settingsRepo = new SettingsRepository($db);
-    $audit = new AuditLogger(new AuditLogRepository($db));
     $availability = new AvailabilityService($reservationRepo, $stayRepo);
     $billing = new BillingService(new GstService($settingsRepo), new StayChargeRepository($db), $paymentRepo, $settingsRepo);
     $invoiceService = new InvoiceService($db, new InvoiceRepository($db));

@@ -4,6 +4,8 @@ import assert from 'node:assert/strict';
 describe('Rooms Filter and State Derivation Logic (All Active Bookings)', () => {
   const roomMatchesFilter = (r, f) => {
     if (f === 'all') return true;
+    if (f === 'booked') return r.status === 'booked' || r.hasPendingBooking === true;
+    if (f === 'occupied') return r.status === 'occupied';
     return r.status === f;
   };
 
@@ -86,5 +88,82 @@ describe('Rooms Filter and State Derivation Logic (All Active Bookings)', () => 
     assert.equal(deriveRoomStatus({ hasActiveStay: false, activeBooking: null, housekeepingStatus: 'repair' }), 'repair');
     assert.equal(deriveRoomStatus({ hasActiveStay: false, activeBooking: null, housekeepingStatus: 'cleaning' }), 'cleaning');
     assert.equal(deriveRoomStatus({ hasActiveStay: false, activeBooking: null, housekeepingStatus: 'ok' }), 'free');
+  });
+
+  it('matches an occupied room with a pending reservation in both Booked and Occupied filters', () => {
+    const room101 = {
+      id: 1,
+      roomNo: 101,
+      status: 'occupied',
+      guestName: 'Madhavi',
+      hasPendingBooking: true,
+      pendingBooking: {
+        id: 806,
+        bookingCode: 'BK-1806',
+        guestName: 'Ramya',
+        checkInDate: '2026-11-08',
+        checkOutDate: '2026-11-10',
+      },
+    };
+
+    // 1. Matches Booked filter because hasPendingBooking is true
+    assert.equal(roomMatchesFilter(room101, 'booked'), true);
+
+    // 2. Matches Occupied filter because status is occupied
+    assert.equal(roomMatchesFilter(room101, 'occupied'), true);
+
+    // 3. Matches All filter
+    assert.equal(roomMatchesFilter(room101, 'all'), true);
+
+    // 4. Does not match other filters
+    assert.equal(roomMatchesFilter(room101, 'cleaning'), false);
+    assert.equal(roomMatchesFilter(room101, 'repair'), false);
+    assert.equal(roomMatchesFilter(room101, 'free'), false);
+  });
+
+  it('does not match Booked filter when room is occupied without a pending reservation', () => {
+    const occupiedRoomWithoutBooking = {
+      id: 2,
+      roomNo: 102,
+      status: 'occupied',
+      guestName: 'Another Guest',
+      hasPendingBooking: false,
+      pendingBooking: null,
+    };
+
+    assert.equal(roomMatchesFilter(occupiedRoomWithoutBooking, 'occupied'), true);
+    assert.equal(roomMatchesFilter(occupiedRoomWithoutBooking, 'booked'), false);
+  });
+
+  it('keeps room primary status as occupied when active stay exists even with pending booking', () => {
+    const status = deriveRoomStatus({
+      hasActiveStay: true,
+      activeBooking: { id: 806, status: 'pending' },
+      housekeepingStatus: 'ok',
+    });
+    assert.equal(status, 'occupied', 'Primary status must remain occupied');
+  });
+
+  it('correctly handles pending booking indicator data structure', () => {
+    const room101 = {
+      id: 1,
+      roomNo: 101,
+      status: 'occupied',
+      guestName: 'Madhavi',
+      hasPendingBooking: true,
+      pendingBooking: {
+        id: 806,
+        bookingCode: 'BK-1806',
+        guestName: 'Ramya',
+        checkInDate: '2026-11-08',
+        checkOutDate: '2026-11-10',
+      },
+    };
+
+    assert.equal(room101.hasPendingBooking, true);
+    assert.ok(room101.pendingBooking);
+    assert.equal(room101.pendingBooking.bookingCode, 'BK-1806');
+    assert.equal(room101.pendingBooking.guestName, 'Ramya');
+    assert.equal(room101.pendingBooking.id, 806);
   });
 });

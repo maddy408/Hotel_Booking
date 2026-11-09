@@ -67,7 +67,11 @@ export function useUpdateReservation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, ...payload }) => api.put(`/reservations/${id}`, payload),
-    onSuccess: () => invalidate(qc),
+    onSuccess: (_, vars) => {
+      invalidate(qc);
+      qc.invalidateQueries({ queryKey: ['reservation', vars.id] });
+      qc.invalidateQueries({ queryKey: ['guests'] });
+    },
   });
 }
 

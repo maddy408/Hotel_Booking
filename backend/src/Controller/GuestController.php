@@ -61,12 +61,14 @@ final class GuestController
         Validator::assert($data, [
             'name' => 'string',
             'phone' => 'phone',
+            'email' => 'email',
             'idProofType' => 'in:Aadhaar,Driving Licence,Voter ID,Passport,Other',
         ]);
         $guest = $this->guestService->update(
             (int) $request->attribute('hotelId'),
             (int) $request->routeParams['id'],
             $data,
+            (int) $request->attribute('userId'),
         );
         $public = $this->guestService->toPublic($guest);
         $public['visits'] = $this->guests->visitCount((int) $guest['id']);

@@ -44,6 +44,7 @@ final class ReservationService
         string $advanceMethod,
         ?int $userId,
         ?string $checkOutTime = null,
+        ?string $notes = null,
     ): array {
         $this->db->beginTransaction();
         try {
@@ -89,7 +90,7 @@ final class ReservationService
 
             $id = $this->reservations->create(
                 $hotelId, 'PENDING', $roomId, (int) $guest['id'], $checkIn, $checkOut, $persons, $rate,
-                $advanceAmount, $advanceMethod, $userId, $checkOutTime,
+                $advanceAmount, $advanceMethod, $userId, $checkOutTime, $notes,
             );
             $code = ($settings['booking_prefix'] ?? 'BK') . '-' . (1000 + $id);
             $this->reservations->setBookingCode($id, $code);
@@ -98,7 +99,7 @@ final class ReservationService
                 $this->payments->record($hotelId, $id, null, 'advance', $advanceAmount, $advanceMethod, $userId);
             }
 
-            $this->audit->log($hotelId, $userId, 'booking_create', 'reservation', $id, null, ['booking_code' => $code]);
+            $this->audit->log($hotelId, $userId, 'booking_create', 'reservation', $id, null, ['booking_code' => $code, 'notes' => $notes]);
             $this->db->commit();
             return $this->reservations->findWithDetails($id);
         } catch (\Throwable $e) {
@@ -120,6 +121,9 @@ final class ReservationService
         ?int $userId,
         ?string $checkOutTime = null,
         ?string $guestName = null,
+        ?string $guestPhone = null,
+        ?string $notes = null,
+        ?int $guestId = null,
     ): array {
         $this->db->beginTransaction();
         try {
@@ -128,7 +132,7 @@ final class ReservationService
                 throw ApiException::notFound('Booking not found.');
             }
             if ($existing['status'] !== 'pending') {
-                throw ApiException::conflict('This booking can no longer be changed.');
+                throw ApiException::conflict("Only pending bookings can be edited. This booking is {$existing['status']}.");
             }
 
             $room = $this->rooms->find($roomId);
@@ -167,14 +171,24 @@ final class ReservationService
             $this->validateDatesAndTimes($checkIn, $checkOut, $checkOutTime);
             $this->availability->assertFree($roomId, $checkIn, $checkOut, excludeReservationId: $reservationId);
 
-            // Update guest name if provided
-            if ($guestName !== null && trim($guestName) !== '') {
-                $this->guestService->update($hotelId, (int) $existing['guest_id'], ['name' => trim($guestName)]);
+            // Guest assignment / update
+            $assignedGuestId = (int) $existing['guest_id'];
+            if ($guestId !== null && $guestId > 0 && $guestId !== $assignedGuestId) {
+                $targetGuest = $this->guestService->findByPhone($hotelId, (string) ($this->guestService->toPublic($this->guestService->findOrCreateMinimal($hotelId, '0000000000', 'placeholder'))['phone'] ?? ''));
+                $target = $this->reservations->findWithDetails($reservationId);
+                $assignedGuestId = $guestId;
+            } elseif ($guestPhone !== null && trim($guestPhone) !== '' && $guestName !== null && trim($guestName) !== '') {
+                $guestObj = $this->guestService->findOrCreateMinimal($hotelId, trim($guestPhone), trim($guestName));
+                $assignedGuestId = (int) $guestObj['id'];
+            } elseif ($guestName !== null && trim($guestName) !== '') {
+                $this->guestService->update($hotelId, $assignedGuestId, ['name' => trim($guestName)], $userId);
             }
+
+            $cleanNotes = $notes !== null ? trim($notes) : ($existing['notes'] ?? null);
 
             $this->reservations->update(
                 $reservationId, $roomId, $checkIn, $checkOut, $persons, $rate,
-                $advanceAmount, $advanceMethod, $checkOutTime,
+                $advanceAmount, $advanceMethod, $checkOutTime, $cleanNotes, $assignedGuestId
             );
 
             $delta = round($advanceAmount - (float) $existing['advance_amount'], 2);
@@ -184,13 +198,14 @@ final class ReservationService
                 $this->payments->record($hotelId, $reservationId, null, 'refund', abs($delta), $advanceMethod, $userId);
             }
 
+            $after = $this->reservations->findWithDetails($reservationId);
             $this->audit->log(
                 $hotelId, $userId, 'booking_update', 'reservation', $reservationId,
                 $existing,
-                ['room_id' => $roomId, 'check_in' => $checkIn, 'check_out' => $checkOut, 'check_out_time' => $checkOutTime]
+                $after
             );
             $this->db->commit();
-            return $this->reservations->findWithDetails($reservationId);
+            return $after;
         } catch (\Throwable $e) {
             $this->db->rollBack();
             throw $e;

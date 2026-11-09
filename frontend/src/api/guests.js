@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/apiClient';
 
 export function useGuests(q) {
@@ -15,5 +15,18 @@ export function useGuestLookup(phone) {
     queryFn: () => api.get(`/guests/lookup?phone=${encodeURIComponent(phone)}`),
     enabled: /^\d{10}$/.test(phone || ''),
     staleTime: 60000,
+  });
+}
+
+export function useUpdateGuest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }) => api.put(`/guests/${id}`, payload),
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ['guests'] });
+      qc.invalidateQueries({ queryKey: ['guest', vars.id] });
+      qc.invalidateQueries({ queryKey: ['reservations'] });
+      qc.invalidateQueries({ queryKey: ['rooms'] });
+    },
   });
 }

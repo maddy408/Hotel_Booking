@@ -116,6 +116,18 @@ class RoomRepository
         return $stmt->fetchColumn() !== false;
     }
 
+    public function maxActivePersons(int $roomId): int
+    {
+        $stmt = $this->db->prepare(
+            "SELECT GREATEST(
+                COALESCE((SELECT MAX(persons) FROM stays WHERE room_id = :id1 AND status = 'in_house'), 0),
+                COALESCE((SELECT MAX(persons) FROM reservations WHERE room_id = :id2 AND status = 'pending'), 0)
+            )"
+        );
+        $stmt->execute(['id1' => $roomId, 'id2' => $roomId]);
+        return (int) $stmt->fetchColumn();
+    }
+
     public function insert(int $hotelId, int $roomNo, int $floor, int $roomTypeId): int
     {
         $stmt = $this->db->prepare(

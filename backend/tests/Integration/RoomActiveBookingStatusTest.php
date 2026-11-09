@@ -162,10 +162,13 @@ final class RoomActiveBookingStatusTest extends TestCase
             $byNo[$r['roomNo']] = $r;
         }
 
-        // Occupied takes priority
+        // Occupied takes priority for room status, but room contributes to both Occupied and Booked counts
         $this->assertSame('occupied', $byNo[101]['status']);
         $this->assertSame(1, $data['counts']['occupied']);
-        $this->assertSame(0, $data['counts']['booked']);
+        $this->assertSame(1, $data['counts']['booked'], 'Active pending reservation contributes to booked count even when room is occupied');
+        $this->assertTrue($byNo[101]['hasPendingBooking']);
+        $this->assertNotNull($byNo[101]['pendingBooking']);
+        $this->assertSame('BK-NEXT', $byNo[101]['pendingBooking']['bookingCode']);
         $this->assertSame('2026-11-15', $byNo[101]['nextBookingDate']);
     }
 

@@ -62,6 +62,8 @@ export default function Rooms() {
 
   const roomMatchesFilter = (r, f) => {
     if (f === 'all') return true;
+    if (f === 'booked') return r.status === 'booked' || r.hasPendingBooking === true;
+    if (f === 'occupied') return r.status === 'occupied';
     return r.status === f;
   };
 
@@ -141,7 +143,12 @@ export default function Rooms() {
             <h3>{FLOOR_NAME(f)}</h3>
             <div className="rooms">
               {rs.map((r) => (
-                <RoomTile key={r.id} room={r} onClick={() => openRoom(r)} />
+                <RoomTile
+                  key={r.id}
+                  room={r}
+                  onClick={() => openRoom(r)}
+                  onOpenBooking={(bookingId) => setSheet({ type: 'booking', reservationId: bookingId })}
+                />
               ))}
             </div>
           </div>

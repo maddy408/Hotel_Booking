@@ -53,10 +53,12 @@ export default function Guests() {
               <tr>
                 <th>Name</th>
                 <th>Mobile</th>
+                <th>Email</th>
                 <th>ID proof</th>
-                <th>City</th>
+                <th>City / Address</th>
                 <th className="r">Visits</th>
                 <th>Now</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -67,10 +69,11 @@ export default function Guests() {
                       <b>{g.name}</b>
                     </td>
                     <td className="mono">{g.phone}</td>
+                    <td>{g.email ? <span className="mono" style={{ fontSize: 13 }}>{g.email}</span> : <span className="muted">—</span>}</td>
                     <td>
                       {g.idProofType} <span className="mono muted">{g.idProofMasked || '—'}</span>
                     </td>
-                    <td>{g.city || '—'}</td>
+                    <td>{g.address || g.city || '—'}</td>
                     <td className="r mono">{g.visits}</td>
                     <td>
                       {g.now?.type === 'in_house' ? (
@@ -81,11 +84,23 @@ export default function Guests() {
                         <span className="muted">—</span>
                       )}
                     </td>
+                    <td style={{ whiteSpace: 'nowrap', textAlign: 'right' }}>
+                      <button
+                        className="btn sm"
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSheet({ type: 'profile', id: g.id, initialEdit: true });
+                        }}
+                      >
+                        Edit
+                      </button>
+                    </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="empty">
+                  <td colSpan={8} className="empty">
                     No guest found.
                   </td>
                 </tr>
@@ -98,6 +113,7 @@ export default function Guests() {
       {sheet?.type === 'profile' && (
         <GuestProfileSheet
           guestId={sheet.id}
+          initialEdit={!!sheet.initialEdit}
           onClose={() => setSheet(null)}
           onNewBooking={(guest) => setSheet({ type: 'newBooking', guest })}
           onOpenRoomNo={(roomNo) => openRoomByNo(roomNo)}

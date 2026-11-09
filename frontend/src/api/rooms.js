@@ -37,6 +37,17 @@ export function useChangeRoomType() {
   });
 }
 
+export function useUpdateRoom() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...payload }) => api.put(`/rooms/${id}`, payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['rooms'] });
+      qc.invalidateQueries({ queryKey: ['reservations'] });
+    },
+  });
+}
+
 export function useDeleteRoom() {
   const qc = useQueryClient();
   return useMutation({

@@ -163,10 +163,12 @@ CREATE TABLE guests (
   hotel_id              INT UNSIGNED      NOT NULL,
   name                  VARCHAR(150)      NOT NULL,
   phone                 VARCHAR(15)       NOT NULL,
+  email                 VARCHAR(150)      NULL,
   id_proof_type         ENUM('Aadhaar','Driving Licence','Voter ID','Passport','Other') NOT NULL DEFAULT 'Aadhaar',
   id_proof_number_enc   VARBINARY(512)    NULL,      -- full ID number, encrypted at the app layer (AES-256-GCM)
   id_proof_last4        CHAR(4)           NULL,      -- derived, used for masked display without decrypting
   city                  VARCHAR(100)      NULL,
+  address               VARCHAR(255)      NULL,
   is_foreign            TINYINT(1)        NOT NULL DEFAULT 0,
   nationality           VARCHAR(100)      NULL,
   passport_number_enc   VARBINARY(512)    NULL,
@@ -198,6 +200,7 @@ CREATE TABLE reservations (
   rate              DECIMAL(10,2)     NOT NULL,
   advance_amount    DECIMAL(10,2)     NOT NULL DEFAULT 0.00,
   advance_method    ENUM('cash','upi','card') NOT NULL DEFAULT 'cash',
+  notes             VARCHAR(255)      NULL,
   status            ENUM('pending','checked_in','cancelled','no_show') NOT NULL DEFAULT 'pending',
   created_by        INT UNSIGNED      NULL,
   cancelled_at      DATETIME          NULL,

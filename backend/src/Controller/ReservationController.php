@@ -77,6 +77,7 @@ final class ReservationController
             (string) ($data['advanceMethod'] ?? 'cash'),
             (int) $request->attribute('userId'),
             isset($data['checkOutTime']) ? (string) $data['checkOutTime'] : null,
+            isset($data['notes']) ? trim((string) $data['notes']) : null,
         );
     }
 
@@ -91,6 +92,7 @@ final class ReservationController
             'rate' => 'required|numeric|min:0',
             'advanceAmount' => 'numeric|min:0',
             'advanceMethod' => 'in:cash,upi,card',
+            'phone' => 'phone',
         ]);
         return $this->reservations->update(
             (int) $request->routeParams['id'],
@@ -105,6 +107,9 @@ final class ReservationController
             (int) $request->attribute('userId'),
             isset($data['checkOutTime']) ? (string) $data['checkOutTime'] : null,
             isset($data['name']) ? (string) $data['name'] : (isset($data['guestName']) ? (string) $data['guestName'] : null),
+            isset($data['phone']) ? (string) $data['phone'] : null,
+            isset($data['notes']) ? trim((string) $data['notes']) : null,
+            isset($data['guestId']) && $data['guestId'] !== '' ? (int) $data['guestId'] : null,
         );
     }
 

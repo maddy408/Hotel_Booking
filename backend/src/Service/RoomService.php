@@ -49,7 +49,7 @@ final class RoomService
             $activeBooking = $roomReservations[0] ?? null;
             $nextBooking = $roomReservations[1] ?? null;
 
-            // Priority order:
+            // Priority order for primary room status:
             // 1. Occupied: active in-house stay exists (takes priority over Booked)
             // 2. Booked: active pending reservation exists for that room (regardless of booking date)
             // 3. Repair: housekeeping condition under maintenance (when not occupied or booked)
@@ -62,7 +62,35 @@ final class RoomService
                 $room['housekeeping_status'] === 'cleaning' => 'cleaning',
                 default => 'free',
             };
-            $counts[$status]++;
+
+            // Independent summary calculations:
+            // - occupied: rooms with active in-house stays
+            // - booked: rooms with active pending reservations that have not completed check-in
+            // - repair / cleaning / free: based on housekeeping for rooms without an active stay or booking
+            if ($stay !== null) {
+                $counts['occupied']++;
+            }
+            if ($activeBooking !== null) {
+                $counts['booked']++;
+            }
+            if ($stay === null && $activeBooking === null) {
+                if ($room['housekeeping_status'] === 'repair') {
+                    $counts['repair']++;
+                } elseif ($room['housekeeping_status'] === 'cleaning') {
+                    $counts['cleaning']++;
+                } else {
+                    $counts['free']++;
+                }
+            }
+
+            $hasPendingBooking = ($activeBooking !== null);
+            $pendingBookingDto = $hasPendingBooking ? [
+                'id' => (int) ($activeBooking['id'] ?? 0),
+                'bookingCode' => $activeBooking['booking_code'] ?? null,
+                'guestName' => $activeBooking['guest_name'] ?? null,
+                'checkInDate' => $activeBooking['check_in_date'] ?? null,
+                'checkOutDate' => $activeBooking['check_out_date'] ?? null,
+            ] : null;
 
             $dto = [
                 'id' => $roomId,
@@ -87,6 +115,8 @@ final class RoomService
                 'bookingId' => null,
                 'bookingCode' => null,
                 'bookingCheckIn' => null,
+                'hasPendingBooking' => $hasPendingBooking,
+                'pendingBooking' => $pendingBookingDto,
                 'nextBookingDate' => $stay !== null ? ($activeBooking['check_in_date'] ?? null) : ($nextBooking['check_in_date'] ?? null),
             ];
 
@@ -196,6 +226,11 @@ final class RoomService
         if ($type === null || (int) $type['hotel_id'] !== $hotelId) {
             throw ApiException::notFound('Room type not found.');
         }
+        $maxPersons = (int) ($type['max_persons'] ?? 2);
+        $activePersons = $this->rooms->maxActivePersons($roomId);
+        if ($activePersons > $maxPersons) {
+            throw ApiException::conflict("Cannot change room type: an active stay or booking in Room {$room['room_no']} has {$activePersons} persons, but {$type['name']} only allows {$maxPersons} persons.");
+        }
         $this->rooms->updateType($roomId, $roomTypeId);
         return $this->rooms->find($roomId);
     }
@@ -209,6 +244,11 @@ final class RoomService
         $type = $this->roomTypes->find($roomTypeId);
         if ($type === null || (int) $type['hotel_id'] !== $hotelId) {
             throw ApiException::notFound('Room type not found.');
+        }
+        $maxPersons = (int) ($type['max_persons'] ?? 2);
+        $activePersons = $this->rooms->maxActivePersons($roomId);
+        if ($activePersons > $maxPersons) {
+            throw ApiException::conflict("Cannot change room type: an active stay or booking in Room {$room['room_no']} has {$activePersons} persons, but {$type['name']} only allows {$maxPersons} persons.");
         }
         $this->rooms->updateRoom($roomId, $roomNo, $floor, $roomTypeId, $note);
         $updated = $this->rooms->find($roomId);

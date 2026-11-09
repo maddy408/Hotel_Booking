@@ -66,11 +66,12 @@ class ReservationRepository
         float $advanceAmount,
         string $advanceMethod,
         ?int $createdBy,
-        string $checkOutTime = '12:00:00'
+        string $checkOutTime = '12:00:00',
+        ?string $notes = null
     ): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO reservations (hotel_id, booking_code, room_id, guest_id, check_in_date, check_out_date, check_out_time, persons, rate, advance_amount, advance_method, status, created_by)
-             VALUES (:hotel_id, :booking_code, :room_id, :guest_id, :check_in, :check_out, :check_out_time, :persons, :rate, :advance_amount, :advance_method, \'pending\', :created_by)'
+            'INSERT INTO reservations (hotel_id, booking_code, room_id, guest_id, check_in_date, check_out_date, check_out_time, persons, rate, advance_amount, advance_method, notes, status, created_by)
+             VALUES (:hotel_id, :booking_code, :room_id, :guest_id, :check_in, :check_out, :check_out_time, :persons, :rate, :advance_amount, :advance_method, :notes, \'pending\', :created_by)'
         );
         $stmt->execute([
             'hotel_id' => $hotelId,
@@ -84,6 +85,7 @@ class ReservationRepository
             'rate' => $rate,
             'advance_amount' => $advanceAmount,
             'advance_method' => $advanceMethod,
+            'notes' => $notes,
             'created_by' => $createdBy,
         ]);
         return (int) $this->db->lastInsertId();
@@ -104,15 +106,14 @@ class ReservationRepository
         float $rate,
         float $advanceAmount,
         string $advanceMethod,
-        string $checkOutTime = '12:00:00'
+        string $checkOutTime = '12:00:00',
+        ?string $notes = null,
+        ?int $guestId = null
     ): void {
-        $stmt = $this->db->prepare(
-            'UPDATE reservations SET room_id = :room_id, check_in_date = :check_in, check_out_date = :check_out,
+        $sql = 'UPDATE reservations SET room_id = :room_id, check_in_date = :check_in, check_out_date = :check_out,
                     check_out_time = :check_out_time, persons = :persons, rate = :rate,
-                    advance_amount = :advance_amount, advance_method = :advance_method
-             WHERE id = :id'
-        );
-        $stmt->execute([
+                    advance_amount = :advance_amount, advance_method = :advance_method, notes = :notes';
+        $params = [
             'room_id' => $roomId,
             'check_in' => $checkIn,
             'check_out' => $checkOut,
@@ -121,8 +122,15 @@ class ReservationRepository
             'rate' => $rate,
             'advance_amount' => $advanceAmount,
             'advance_method' => $advanceMethod,
+            'notes' => $notes,
             'id' => $id,
-        ]);
+        ];
+        if ($guestId !== null) {
+            $sql .= ', guest_id = :guest_id';
+            $params['guest_id'] = $guestId;
+        }
+        $sql .= ' WHERE id = :id';
+        $this->db->prepare($sql)->execute($params);
     }
 
     public function markCheckedIn(int $id): void

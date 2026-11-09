@@ -7,6 +7,7 @@ import { useRoomTypes, useRooms } from '../../api/rooms';
 import { useSettings } from '../../api/settings';
 import { useToast } from '../../context/ToastContext.jsx';
 import { addDaysIso, estimateGstRate, fd, formatCheckoutHour, inr, nightsBetween, todayIso } from '../../lib/format';
+import { BADGE_THEME, getCardDisplay } from '../../lib/roomAvailability.js';
 
 export default function NewBookingSheet({ editReservation, presetGuest, onClose }) {
   const isEdit = !!editReservation;
@@ -20,16 +21,17 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
   const { register, watch, setValue, handleSubmit, formState: { errors } } = useForm({
     defaultValues: isEdit
       ? {
-          phone: editReservation.guest_phone,
-          name: editReservation.guest_name,
+          phone: editReservation.guest_phone || '',
+          name: editReservation.guest_name || '',
           checkIn: editReservation.check_in_date < todayIso() ? todayIso() : editReservation.check_in_date,
           days: nightsBetween(editReservation.check_in_date, editReservation.check_out_date),
           persons: editReservation.persons,
           typeFilter: 'all',
           roomId: editReservation.room_id,
           rate: editReservation.rate,
-          advance: editReservation.advance_amount,
-          pay: editReservation.advance_method,
+          advance: editReservation.advance_amount ?? editReservation.advance_paid ?? 0,
+          pay: editReservation.advance_method || 'cash',
+          notes: editReservation.notes || '',
         }
       : {
           phone: presetGuest?.phone || '',
@@ -42,6 +44,7 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
           rate: '',
           advance: '',
           pay: 'cash',
+          notes: '',
         },
   });
 
@@ -56,6 +59,7 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
   const pay = watch('pay');
   const [rateTouched, setRateTouched] = useState(isEdit);
   const [matchedGuestId, setMatchedGuestId] = useState(null);
+  const [inspectedRoomId, setInspectedRoomId] = useState(null);
 
   const checkOut = addDaysIso(checkIn || todayIso(), Number(days) || 1);
   const { data: freeRooms } = useFreeRooms({
@@ -81,19 +85,32 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
     }
   }, [freeRooms, roomId, setValue]);
 
-  const availableReadyRooms = freeRooms?.filter((r) => r.booking_status === 'available_ready') || [];
-  const availableNotReadyRooms = freeRooms?.filter((r) => r.booking_status === 'available_not_ready') || [];
-  const unavailableRooms = freeRooms?.filter((r) => r.booking_status === 'unavailable') || [];
-  const maintenanceRooms = freeRooms?.filter((r) => r.booking_status === 'maintenance') || [];
-  const totalBookable = availableReadyRooms.length + availableNotReadyRooms.length;
+  const readyCount = freeRooms?.filter((r) => (r.card_badge || (r.booking_status === 'available_ready' ? 'Ready' : '')) === 'Ready').length || 0;
+  const occupiedCount = freeRooms?.filter((r) => (r.card_badge || '') === 'Occupied').length || 0;
+  const cleaningCount = freeRooms?.filter((r) => (r.card_badge || (r.booking_status === 'available_not_ready' ? 'Cleaning' : '')) === 'Cleaning').length || 0;
+  const bookedCount = freeRooms?.filter((r) => (r.card_badge || (r.booking_status === 'unavailable' ? 'Booked' : '')) === 'Booked').length || 0;
+  const repairCount = freeRooms?.filter((r) => (r.card_badge || (r.booking_status === 'maintenance' ? 'Repair' : '')) === 'Repair').length || 0;
+  const overdueCount = freeRooms?.filter((r) => (r.card_badge || '') === 'Overdue').length || 0;
+
+  const totalBookable = freeRooms?.filter((r) => r.is_bookable !== false).length || 0;
 
   const rateNum = Number(rate) || 0;
   const gstRate = estimateGstRate(rateNum, settings?.settings);
   const total = (Number(days) || 1) * rateNum * (1 + gstRate);
 
+  const origDays = isEdit ? nightsBetween(editReservation.check_in_date, editReservation.check_out_date) : 0;
+  const origRate = isEdit ? Number(editReservation.rate) || 0 : 0;
+  const origGstRate = isEdit ? estimateGstRate(origRate, settings?.settings) : 0;
+  const origTotal = isEdit ? origDays * origRate * (1 + origGstRate) : 0;
+  const deltaTotal = isEdit ? total - origTotal : 0;
+
   const selectedRoom = (freeRooms && freeRooms.find((r) => r.id === roomId))
     || (roomsData?.rooms && roomsData.rooms.find((r) => r.id === roomId))
     || (isEdit && editReservation?.room_id === roomId ? editReservation : null);
+
+  const displayRoom = (inspectedRoomId && freeRooms?.find((r) => r.id === inspectedRoomId))
+    || selectedRoom;
+  const displayRoomCardData = displayRoom ? getCardDisplay(displayRoom, checkIn, checkOut) : null;
 
   const roomMaxPersons = selectedRoom?.max_persons
     ?? selectedRoom?.roomType?.maxPersons
@@ -118,7 +135,9 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
     }
     const chosenRoom = freeRooms?.find((r) => r.id === values.roomId);
     if (freeRooms && (!chosenRoom || chosenRoom.is_bookable === false)) {
-      if (chosenRoom && chosenRoom.booking_status === 'maintenance') {
+      if (chosenRoom?.selection_blocked_reason) {
+        toast(chosenRoom.selection_blocked_reason);
+      } else if (chosenRoom && chosenRoom.booking_status === 'maintenance') {
         toast(`Room ${chosenRoom.room_no} is under maintenance and cannot be booked.`);
       } else if (chosenRoom) {
         toast(`Room ${chosenRoom.room_no} is already booked for these dates.`);
@@ -142,19 +161,23 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
           rate: Number(values.rate),
           advanceAmount: Number(values.advance) || 0,
           advanceMethod: values.pay,
+          name: values.name.trim(),
+          phone: values.phone.replace(/\D/g, ''),
+          notes: values.notes ? values.notes.trim() : null,
         });
-        toast('Booking updated.');
+        toast(`Booking ${editReservation.booking_code} updated.`);
       } else {
         const result = await create.mutateAsync({
           roomId: values.roomId,
-          phone: values.phone,
-          name: values.name,
+          phone: values.phone.replace(/\D/g, ''),
+          name: values.name.trim(),
           checkIn: values.checkIn,
           checkOut: checkOutDate,
           persons: Number(values.persons),
           rate: Number(values.rate),
           advanceAmount: Number(values.advance) || 0,
           advanceMethod: values.pay,
+          notes: values.notes ? values.notes.trim() : null,
         });
         toast(`Booking ${result.booking_code} saved. Room ${result.room_no} on ${fd(result.check_in_date)}. Tell the guest this number.`);
       }
@@ -172,26 +195,27 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
 
   return (
     <Sheet onClose={onClose}>
-      <SheetHeader status="booked" badge={isEdit ? editReservation.booking_code : 'NEW'} title={isEdit ? 'Change booking' : 'New booking'} subtitle="Phone call or walk-in booking" onClose={onClose} />
+      <SheetHeader status="booked" badge={isEdit ? editReservation.booking_code : 'NEW'} title={isEdit ? 'Change booking' : 'New booking'} subtitle={isEdit ? 'Update reservation details' : 'Phone call or walk-in booking'} onClose={onClose} />
       <form className="sb" onSubmit={handleSubmit(onSubmit)}>
         <div className="fg">
-          {!isEdit && (
-            <>
-              <div className={`f full ${errors.phone ? 'bad' : ''}`}>
-                <label htmlFor="bk-phone">
-                  Mobile number <i>*</i>
-                </label>
-                <input id="bk-phone" type="tel" inputMode="numeric" maxLength={10} placeholder="10 digits" {...register('phone', { required: true, pattern: /^\d{10}$/ })} />
-                {errors.phone && <span className="err">Enter a 10-digit mobile number.</span>}
-              </div>
-              {matchedGuestId && <div className="found f full">Old guest found. Name filled in.</div>}
-            </>
-          )}
+          <div className={`f full ${errors.phone ? 'bad' : ''}`}>
+            <label htmlFor="bk-phone">
+              Mobile number <i>*</i>
+            </label>
+            <input id="bk-phone" type="tel" inputMode="numeric" maxLength={10} placeholder="10 digits" {...register('phone', { required: true, pattern: /^\d{10}$/ })} />
+            {errors.phone && <span className="err">Enter a 10-digit mobile number.</span>}
+          </div>
+          {!isEdit && matchedGuestId && <div className="found f full">Old guest found. Name filled in.</div>}
           <div className={`f full ${errors.name ? 'bad' : ''}`}>
             <label htmlFor="bk-name">
               Guest name <i>*</i>
             </label>
-            <input id="bk-name" type="text" disabled={isEdit} {...register('name', { required: true })} />
+            <input id="bk-name" type="text" placeholder="Full name" {...register('name', { required: true })} />
+            {errors.name && <span className="err">Guest name is required.</span>}
+          </div>
+          <div className="f full">
+            <label htmlFor="bk-notes">Booking notes (special requests / reference)</label>
+            <input id="bk-notes" type="text" placeholder="e.g. Late check-in, ground floor preferred" {...register('notes')} />
           </div>
           <div className="f">
             <label htmlFor="bk-in">Coming on *</label>
@@ -258,73 +282,89 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 12, margin: '2px 0 8px' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--ok)' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ok)' }} />
-                Available + Ready ({availableReadyRooms.length})
+                Ready ({readyCount})
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--occ)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--occ)' }} />
+                Occupied ({occupiedCount})
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--cln)' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--cln)' }} />
-                Available + Not Ready ({availableNotReadyRooms.length})
+                Cleaning ({cleaningCount})
               </span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--muted)' }}>
-                <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--muted)' }} />
-                Unavailable ({unavailableRooms.length})
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--bk)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--bk)' }} />
+                Booked ({bookedCount})
               </span>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--mnt)' }}>
                 <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--mnt)' }} />
-                Maintenance ({maintenanceRooms.length})
+                Repair ({repairCount})
               </span>
+              {overdueCount > 0 && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--color-danger-text, #ef4444)' }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--color-danger-text, #ef4444)' }} />
+                  Overdue ({overdueCount})
+                </span>
+              )}
             </div>
             {freeRooms?.length ? (
-              <div className="pks" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              <div className="pks" style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                 {freeRooms.map((r) => {
-                  const isReady = r.booking_status === 'available_ready';
-                  const isNotReady = r.booking_status === 'available_not_ready';
-                  const isMnt = r.booking_status === 'maintenance';
+                  const cardData = getCardDisplay(r, checkIn, checkOut);
+                  const badgeText = cardData.badge;
+                  const detailText = cardData.detail;
+                  const theme = BADGE_THEME[badgeText] || BADGE_THEME.Ready;
                   const isSelected = roomId === r.id;
-                  const disabled = !r.is_bookable;
-
-                  const badgeText = isReady ? 'Ready' : isNotReady ? 'Not Ready' : isMnt ? 'Maint' : 'Booked';
-                  const badgeColor = isReady ? 'var(--ok)' : isNotReady ? 'var(--cln)' : isMnt ? 'var(--mnt)' : 'var(--muted)';
-                  const badgeBg = isReady ? 'var(--ok-bg)' : isNotReady ? 'var(--cln-bg)' : isMnt ? 'var(--mnt-bg)' : 'var(--color-navigation)';
+                  const isInspected = inspectedRoomId === r.id;
+                  const isBookable = r.is_bookable !== false;
 
                   return (
                     <button
                       key={r.id}
                       type="button"
-                      className={`pk ${isSelected ? 'active' : ''}`}
-                      disabled={disabled}
+                      className={`pk pk-room-card ${isSelected ? 'active' : ''} ${!isBookable ? 'disabled' : ''}`}
                       aria-pressed={isSelected}
-                      title={`${r.room_no} (${r.type_name}): ${r.status_label || (disabled ? 'Cannot book' : 'Available')}`}
+                      aria-disabled={!isBookable}
+                      aria-label={`Room ${r.room_no}, ${badgeText}, ${detailText}. ${!isBookable ? (cardData.blockedReason || 'Cannot book') : 'Click to select.'}`}
+                      title={`Room ${r.room_no} (${r.type_name}) · ${badgeText} · ${detailText}${cardData.blockedReason ? ' · ' + cardData.blockedReason : ''}`}
                       onClick={() => {
-                        setValue('roomId', r.id);
-                        if (!rateTouched) setValue('rate', Number(r.type_rate));
+                        setInspectedRoomId(r.id);
+                        if (isBookable) {
+                          setValue('roomId', r.id);
+                          if (!rateTouched) setValue('rate', Number(r.type_rate));
+                        }
                       }}
                       style={{
-                        display: 'inline-flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 2,
-                        minWidth: 58,
-                        padding: '6px 8px',
-                        cursor: disabled ? 'not-allowed' : 'pointer',
-                        opacity: disabled ? 0.5 : 1,
-                        borderColor: isSelected ? 'var(--color-primary)' : isNotReady ? 'var(--cln-border)' : isMnt ? 'var(--mnt-border)' : undefined,
-                        background: isSelected ? 'var(--color-primary)' : isNotReady ? 'var(--color-card)' : undefined,
+                        borderColor: isSelected
+                          ? 'var(--color-primary)'
+                          : isInspected
+                          ? 'var(--color-primary)'
+                          : theme.border,
+                        boxShadow: isSelected
+                          ? '0 0 0 1px var(--color-primary)'
+                          : isInspected
+                          ? '0 0 0 1.5px var(--color-primary-light, #93c5fd)'
+                          : undefined,
                       }}
                     >
-                      <span style={{ fontWeight: 700, color: isSelected ? 'var(--color-button-text)' : 'inherit' }}>{r.room_no}</span>
+                      <span className="pk-info-btn" title="View details">ℹ</span>
+                      <span className="pk-num">{r.room_no}</span>
                       <span
+                        className="pk-badge"
                         style={{
-                          fontSize: 10,
-                          fontWeight: 600,
-                          padding: '1px 4px',
-                          borderRadius: 3,
-                          lineHeight: 1.1,
-                          color: isSelected ? 'var(--color-button-text)' : badgeColor,
-                          background: isSelected ? 'rgba(255,255,255,0.25)' : badgeBg,
+                          color: isSelected ? 'var(--color-button-text)' : theme.color,
+                          background: isSelected ? 'rgba(255, 255, 255, 0.25)' : theme.bg,
                         }}
                       >
                         {badgeText}
+                      </span>
+                      <span
+                        className="pk-detail"
+                        style={{
+                          color: isSelected ? 'var(--color-button-text)' : undefined,
+                        }}
+                      >
+                        {detailText}
                       </span>
                     </button>
                   );
@@ -333,16 +373,197 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
             ) : (
               <div className="warn">No room free for these dates. Change the date or days.</div>
             )}
-            {selectedRoom && selectedRoom.booking_status === 'available_not_ready' && (
-              <div className="warn" style={{ marginTop: 10, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span>
-                  ⚠️ <b>Room {selectedRoom.room_no} ({selectedRoom.type_name || selectedRoom.roomType?.name || 'Standard'})</b> is <strong>Available</strong> for these dates, but currently <strong>Not Ready ({selectedRoom.housekeeping_status === 'cleaning' ? 'Cleaning' : 'Dirty'})</strong>. You can book it now, but housekeeping must mark the room Ready before check-in.
-                </span>
-              </div>
-            )}
-            {selectedRoom && selectedRoom.booking_status === 'available_ready' && (
-              <div style={{ marginTop: 10, padding: '6px 12px', background: 'var(--ok-bg)', border: '1px solid var(--ok-border)', borderRadius: 6, fontSize: 13, color: 'var(--ok)' }}>
-                ✓ <b>Room {selectedRoom.room_no}</b> is <strong>Available + Ready</strong> for check-in on arrival.
+
+            {/* Room Details Panel / Popover */}
+            {displayRoom && (
+              <div
+                className="room-details-panel"
+                style={{
+                  marginTop: 10,
+                  padding: '10px 12px',
+                  background: 'var(--color-card, #ffffff)',
+                  border: `1.5px solid ${displayRoom.is_bookable !== false ? 'var(--color-border)' : 'var(--color-warning-border, #fcd34d)'}`,
+                  borderRadius: 8,
+                  fontSize: 12.5,
+                  boxShadow: '0 2px 6px rgba(0,0,0,0.03)',
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--color-heading)' }}>
+                      Room {displayRoom.room_no}
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--color-text-secondary)', fontWeight: 600 }}>
+                      {displayRoom.type_name || displayRoom.roomType?.name || 'Standard'} · ₹{Math.round(displayRoom.type_rate || displayRoom.roomType?.rate || 0).toLocaleString('en-IN')}/day · Max {displayRoom.max_persons || displayRoom.roomType?.maxPersons || 2} persons
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span
+                      style={{
+                        fontSize: 10.5,
+                        fontWeight: 700,
+                        padding: '2px 7px',
+                        borderRadius: 4,
+                        color: BADGE_THEME[displayRoomCardData.badge]?.color || 'inherit',
+                        background: BADGE_THEME[displayRoomCardData.badge]?.bg || 'transparent',
+                        border: `1px solid ${BADGE_THEME[displayRoomCardData.badge]?.border || 'transparent'}`,
+                      }}
+                    >
+                      {displayRoomCardData.badge} · {displayRoomCardData.detail}
+                    </span>
+                    {inspectedRoomId && inspectedRoomId !== roomId && (
+                      <button
+                        type="button"
+                        onClick={() => setInspectedRoomId(null)}
+                        title="Close details"
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          cursor: 'pointer',
+                          color: 'var(--color-text-secondary)',
+                          fontSize: 14,
+                          padding: '0 4px',
+                          lineHeight: 1,
+                        }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                    gap: '4px 12px',
+                    padding: '7px 9px',
+                    background: 'var(--color-lavender-light, #f8fafc)',
+                    borderRadius: 6,
+                    marginBottom: 7,
+                    fontSize: 11.5,
+                  }}
+                >
+                  <div>
+                    <span style={{ color: 'var(--color-text-secondary)' }}>Current Guest: </span>
+                    <strong>{displayRoom.current_stay?.guest_name || 'None (Vacant)'}</strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--color-text-secondary)' }}>Expected Checkout: </span>
+                    <strong>
+                      {displayRoom.current_stay
+                        ? `${fd(displayRoom.current_stay.checkout_planned)}${displayRoom.current_stay.checkout_time ? ' (' + formatCheckoutHour(displayRoom.current_stay.checkout_time.split(':')[0]) + ')' : ''}`
+                        : '—'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--color-text-secondary)' }}>Housekeeping: </span>
+                    <strong
+                      style={{
+                        color:
+                          displayRoom.housekeeping_status === 'ok'
+                            ? 'var(--ok)'
+                            : displayRoom.housekeeping_status === 'repair'
+                            ? 'var(--mnt)'
+                            : 'var(--cln)',
+                      }}
+                    >
+                      {displayRoom.housekeeping_status === 'ok'
+                        ? 'Ready (Clean)'
+                        : displayRoom.housekeeping_status === 'repair'
+                        ? 'Repair (Maintenance)'
+                        : 'Cleaning in progress'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ color: 'var(--color-text-secondary)' }}>Requested Dates: </span>
+                    <strong style={{ color: displayRoom.is_bookable !== false ? 'var(--ok)' : 'var(--mnt)' }}>
+                      {displayRoom.is_bookable !== false ? `Available (${fd(checkIn)} – ${fd(checkOut)})` : 'Unavailable for dates'}
+                    </strong>
+                  </div>
+                  {displayRoom.next_reservation && (
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <span style={{ color: 'var(--color-text-secondary)' }}>Existing Booking: </span>
+                      <strong>
+                        {displayRoom.next_reservation.booking_code} · {displayRoom.next_reservation.guest_name} ({fd(displayRoom.next_reservation.check_in_date)} – {fd(displayRoom.next_reservation.check_out_date)})
+                      </strong>
+                    </div>
+                  )}
+                </div>
+
+                {displayRoom.is_bookable === false ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 9px',
+                      background: 'var(--color-danger-bg, #fef2f2)',
+                      border: '1px solid var(--color-danger-border, #fca5a5)',
+                      borderRadius: 6,
+                      color: 'var(--color-danger-text, #b91c1c)',
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    <span>🚫</span>
+                    <span>{displayRoomCardData.blockedReason || displayRoom.selection_blocked_reason || `Room ${displayRoom.room_no} cannot be selected for these dates.`}</span>
+                  </div>
+                ) : displayRoom.turnover_notice || displayRoomCardData.turnoverNotice ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 9px',
+                      background: 'var(--occ-bg)',
+                      border: '1px solid var(--occ-border)',
+                      borderRadius: 6,
+                      color: 'var(--occ)',
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    <span>ℹ️</span>
+                    <span>{displayRoom.turnover_notice || displayRoomCardData.turnoverNotice}</span>
+                  </div>
+                ) : displayRoom.housekeeping_status === 'cleaning' ? (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 9px',
+                      background: 'var(--cln-bg)',
+                      border: '1px solid var(--cln-border)',
+                      borderRadius: 6,
+                      color: 'var(--cln)',
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    <span>⚠️</span>
+                    <span>Room is currently being cleaned. Housekeeping must mark the room Ready before check-in.</span>
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      padding: '6px 9px',
+                      background: 'var(--ok-bg)',
+                      border: '1px solid var(--ok-border)',
+                      borderRadius: 6,
+                      color: 'var(--ok)',
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    <span>✓</span>
+                    <span>Room is Available + Ready for check-in on arrival.</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -375,16 +596,34 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
 
         <table className="bill">
           <tbody>
-            <tr>
-              <td>Estimated bill with GST</td>
-              <td>{inr(total)}</td>
-            </tr>
+            {isEdit && (
+              <>
+                <tr className="sub">
+                  <td>Original booking estimated total</td>
+                  <td>{inr(origTotal)}</td>
+                </tr>
+                <tr>
+                  <td>New estimated bill with GST</td>
+                  <td>{inr(total)}</td>
+                </tr>
+                <tr className="sub" style={{ fontWeight: 600, color: deltaTotal > 0 ? 'var(--color-primary)' : deltaTotal < 0 ? 'var(--ok)' : 'inherit' }}>
+                  <td>Amount difference</td>
+                  <td>{deltaTotal > 0 ? `+${inr(deltaTotal)}` : deltaTotal < 0 ? `−${inr(Math.abs(deltaTotal))}` : 'No change'}</td>
+                </tr>
+              </>
+            )}
+            {!isEdit && (
+              <tr>
+                <td>Estimated bill with GST</td>
+                <td>{inr(total)}</td>
+              </tr>
+            )}
             <tr className="sub">
-              <td>Advance</td>
+              <td>Advance collected</td>
               <td>−{inr(Number(advance) || 0)}</td>
             </tr>
             <tr className="bal">
-              <td>Balance on arrival</td>
+              <td>Balance due on arrival</td>
               <td>{inr(Math.max(0, total - (Number(advance) || 0)))}</td>
             </tr>
           </tbody>

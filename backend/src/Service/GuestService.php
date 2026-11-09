@@ -18,6 +18,7 @@ class GuestService
     public function __construct(
         private readonly GuestRepository $guests,
         private readonly ?IdImageUploader $uploader = null,
+        private readonly ?\App\Support\AuditLogger $audit = null,
     ) {
     }
 
@@ -101,7 +102,7 @@ class GuestService
     /**
      * Updates an existing guest profile.
      */
-    public function update(int $hotelId, int $guestId, array $data): array
+    public function update(int $hotelId, int $guestId, array $data, ?int $userId = null): array
     {
         $guest = $this->guests->find($guestId);
         if ($guest === null || (int) $guest['hotel_id'] !== $hotelId) {
@@ -126,8 +127,20 @@ class GuestService
             $fields['phone'] = $phone;
         }
 
+        if (array_key_exists('email', $data)) {
+            $email = $data['email'] !== null ? trim((string) $data['email']) : null;
+            if ($email !== null && $email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                throw ApiException::validation(['email' => 'Enter a valid email address.']);
+            }
+            $fields['email'] = ($email !== '' && $email !== null) ? $email : null;
+        }
+
         if (array_key_exists('city', $data)) {
             $fields['city'] = $data['city'] !== null ? trim((string) $data['city']) : null;
+        }
+
+        if (array_key_exists('address', $data)) {
+            $fields['address'] = $data['address'] !== null ? trim((string) $data['address']) : null;
         }
 
         if (isset($data['idProofType'])) {
@@ -143,11 +156,28 @@ class GuestService
             $fields['id_proof_last4'] = Crypto::lastFour($num);
         }
 
+        if (array_key_exists('isForeign', $data)) {
+            $fields['is_foreign'] = !empty($data['isForeign']) ? 1 : 0;
+        }
+
+        if (array_key_exists('nationality', $data)) {
+            $fields['nationality'] = $data['nationality'] !== null ? trim((string) $data['nationality']) : null;
+        }
+
+        if (array_key_exists('visaExpiry', $data)) {
+            $fields['visa_expiry'] = $data['visaExpiry'] !== null && trim((string) $data['visaExpiry']) !== '' ? (string) $data['visaExpiry'] : null;
+        }
+
         if ($fields !== []) {
             $this->guests->update($guestId, $fields);
         }
 
-        return $this->guests->find($guestId);
+        $updated = $this->guests->find($guestId);
+        if ($this->audit !== null && $userId !== null) {
+            $this->audit->log($hotelId, $userId, 'guest_update', 'guest', $guestId, $guest, $updated);
+        }
+
+        return $updated;
     }
 
     /**
@@ -177,9 +207,11 @@ class GuestService
             'id' => (int) $guest['id'],
             'name' => $guest['name'],
             'phone' => $guest['phone'],
+            'email' => $guest['email'] ?? null,
             'idProofType' => $guest['id_proof_type'],
             'idProofMasked' => $guest['id_proof_last4'] ? Crypto::mask($guest['id_proof_type'], $guest['id_proof_last4']) : null,
             'city' => $guest['city'],
+            'address' => $guest['address'] ?? null,
             'isForeign' => (bool) $guest['is_foreign'],
             'nationality' => $guest['nationality'] ?? null,
             'visaExpiry' => $guest['visa_expiry'] ?? null,

@@ -31,6 +31,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
   const { data: roomsData } = useRooms();
   const hkAction = useHousekeepingAction();
   const currentRoom = room || roomsData?.rooms.find((r) => r.id === reservation?.room_id);
+  const isRoomOccupied = currentRoom?.status === 'occupied';
   const hkStatus = currentRoom?.housekeepingStatus || currentRoom?.housekeeping_status || reservation?.housekeeping_status || 'ok';
   const isRoomReady = hkStatus === 'ok';
   const isRoomMaintenance = hkStatus === 'repair';
@@ -41,18 +42,20 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
   const roomTypeName = room?.roomType?.name ?? reservation?.room_type_name ?? '';
 
   const roomReadinessError = serverRoomError || (
-    isRoomMaintenance
-      ? `Room ${roomNo} is under maintenance. Check-in is blocked until repairs are completed.`
-      : isRoomNotReady
-        ? `Room ${roomNo} is not ready (cleaning in progress). Check-in is blocked until housekeeping marks the room ready.`
-        : ''
+    isRoomOccupied
+      ? `Room ${roomNo} is already occupied by another active stay. Complete the previous checkout before assigning this room.`
+      : isRoomMaintenance
+        ? `Room ${roomNo} is under maintenance. Check-in is blocked until repairs are completed.`
+        : isRoomNotReady
+          ? `Room ${roomNo} is not ready (cleaning in progress). Check-in is blocked until housekeeping marks the room ready.`
+          : ''
   );
 
   useEffect(() => {
-    if (isRoomReady && serverRoomError) {
+    if (isRoomReady && !isRoomOccupied && serverRoomError) {
       setServerRoomError('');
     }
-  }, [isRoomReady, serverRoomError]);
+  }, [isRoomReady, isRoomOccupied, serverRoomError]);
 
   const roomMaxPersons = room?.roomType?.maxPersons
     ?? room?.max_persons
@@ -176,7 +179,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
 
   const onSubmit = async (values) => {
     setAdvanceSubmitted(true);
-    if (!isRoomReady) {
+    if (isRoomOccupied || !isRoomReady) {
       setServerRoomError(roomReadinessError);
       return;
     }
@@ -516,8 +519,8 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
           </tbody>
         </table>
 
-        <button className="btn go big" type="submit" disabled={isPending || !isRoomReady}>
-          {isPending ? 'Checking in…' : !isRoomReady ? `Room ${roomNo} not ready for check-in` : `Check in to Room ${roomNo}`}
+        <button className="btn go big" type="submit" disabled={isPending || !isRoomReady || isRoomOccupied}>
+          {isPending ? 'Checking in…' : isRoomOccupied ? `Room ${roomNo} is occupied` : !isRoomReady ? `Room ${roomNo} not ready for check-in` : `Check in to Room ${roomNo}`}
         </button>
       </form>
     </Sheet>

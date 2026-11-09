@@ -65,17 +65,24 @@ final class BillingAndInvoiceTest extends TestCase
             $this->db->prepare("INSERT INTO stay_charges (stay_id, label, amount, is_taxable) VALUES (:s, 'Food', 640, 0)")
                 ->execute(['s' => $stayId]);
             $stay = $this->stays->findInHouseByRoom($roomId);
+        } else {
+            $hasCharge = (int) $this->db->query("SELECT COUNT(*) FROM stay_charges WHERE stay_id = {$stay['id']} AND amount = 640")->fetchColumn();
+            if ($hasCharge === 0) {
+                $this->db->prepare("INSERT INTO stay_charges (stay_id, label, amount, is_taxable) VALUES (:s, 'Food', 640, 0)")
+                    ->execute(['s' => (int) $stay['id']]);
+            }
         }
         $this->assertNotNull($stay);
 
         $bill = $this->billing->computeBill($stay);
         $expectedNights = \App\Service\BillingService::nightsBetween($stay['check_in_date'], date('Y-m-d'));
+        $rate = (float) $stay['rate'];
         $this->assertSame($expectedNights, $bill['nights']);
-        $this->assertEqualsWithDelta($expectedNights * 2200.0, $bill['roomAmount'], 0.01);
-        $this->assertEqualsWithDelta($expectedNights * 2200.0 * 0.05, $bill['roomGstAmount'], 0.01); // 5% of roomAmount
+        $this->assertEqualsWithDelta($expectedNights * $rate, $bill['roomAmount'], 0.01);
+        $this->assertEqualsWithDelta($expectedNights * $rate * 0.05, $bill['roomGstAmount'], 0.01); // 5% of roomAmount
         $this->assertEqualsWithDelta(640.0, $bill['extrasAmount'], 0.01);
         $this->assertEqualsWithDelta(0.0, $bill['extrasGstAmount'], 0.01); // tax_extras is off by default
-        $this->assertEqualsWithDelta($expectedNights * 2200.0 * 1.05 + 640, $bill['total'], 0.01);
+        $this->assertEqualsWithDelta($expectedNights * $rate * 1.05 + 640, $bill['total'], 0.01);
     }
 
     public function testBillTotalForEighteenPercentSlabRoom(): void

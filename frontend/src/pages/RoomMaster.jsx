@@ -10,6 +10,7 @@ import {
   useChangeRoomType,
   useDeleteRoom,
 } from '../api/rooms';
+import EditRoomSheet from '../components/sheets/EditRoomSheet.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { inr, estimateGstRate } from '../lib/format';
 
@@ -85,10 +86,23 @@ function RoomTypesPanel() {
     }
     try {
       await updateType.mutateAsync({ id: t.id, name, rate, maxPersons });
+      setEdits((e) => {
+        const next = { ...e };
+        delete next[t.id];
+        return next;
+      });
       toast(`${name} saved at ${inr(rate)} per day.`);
     } catch (err) {
       toast(err.message);
     }
+  };
+
+  const revertType = (t) => {
+    setEdits((e) => {
+      const next = { ...e };
+      delete next[t.id];
+      return next;
+    });
   };
 
   const removeType = async (t) => {
@@ -123,7 +137,7 @@ function RoomTypesPanel() {
         <span className="muted">{types?.length ?? 0} types</span>
       </div>
       <p className="sec-note" style={{ paddingTop: 12 }}>
-        The rate here fills in automatically at check-in and booking. Changing it does not change bills of guests already staying.
+        The rate here fills in automatically at check-in and booking. Rate changes apply to future bookings only; existing confirmed bookings and completed invoices keep their original rates. GST percentage is computed based on tariff slabs in Settings.
       </p>
       <div className="tw">
         <table className="mt">
@@ -132,7 +146,7 @@ function RoomTypesPanel() {
               <th>Type name</th>
               <th>Rate / day (₹)</th>
               <th>Max persons</th>
-              <th>GST</th>
+              <th>GST (Slab)</th>
               <th>Rooms</th>
               <th></th>
             </tr>
@@ -168,8 +182,13 @@ function RoomTypesPanel() {
                 <td className="mono">{countFor(t.id)}</td>
                 <td style={{ whiteSpace: 'nowrap' }}>
                   <button className="btn sm" type="button" disabled={updateType.isPending} onClick={() => saveType(t)}>
-                    Save
+                    {updateType.isPending ? 'Saving…' : 'Save'}
                   </button>{' '}
+                  {edits[t.id] && (
+                    <button className="btn sm" type="button" onClick={() => revertType(t)} title="Revert changes">
+                      Revert
+                    </button>
+                  )}{' '}
                   <button
                     className="btn sm red"
                     type="button"
@@ -238,6 +257,7 @@ function RoomsPanel() {
   const toast = useToast();
   const [form, setForm] = useState({ floor: 1, from: '', to: '', typeId: '' });
   const [armed, setArmed] = useState(null);
+  const [editingRoom, setEditingRoom] = useState(null);
 
   const rooms = roomsData?.rooms ?? [];
   const floors = [...new Set(rooms.map((r) => r.floor))].sort((a, b) => a - b);
@@ -355,6 +375,16 @@ function RoomsPanel() {
                     ))}
                   </select>
                   <button
+                    className="btn sm"
+                    type="button"
+                    style={{ padding: '2px 7px', fontSize: 11, minHeight: 0 }}
+                    aria-label={`Edit room ${r.roomNo}`}
+                    title="Edit room number, floor, or notes"
+                    onClick={() => setEditingRoom(r)}
+                  >
+                    Edit
+                  </button>
+                  <button
                     className={`del${armed === r.id ? ' armed' : ''}`}
                     type="button"
                     aria-label={`Remove room ${r.roomNo}`}
@@ -369,6 +399,14 @@ function RoomsPanel() {
         </div>
       ))}
       {!floors.length && <div className="empty">No rooms yet. Add your first room above.</div>}
+
+      {editingRoom && (
+        <EditRoomSheet
+          room={editingRoom}
+          roomTypes={types}
+          onClose={() => setEditingRoom(null)}
+        />
+      )}
     </div>
   );
 }

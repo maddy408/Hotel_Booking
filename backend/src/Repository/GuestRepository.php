@@ -28,15 +28,15 @@ final class GuestRepository
         return $row === false ? null : $row;
     }
 
-    public function create(int $hotelId, string $name, string $phone, string $idProofType, ?string $idProofNumberEnc, ?string $idProofLast4, ?string $city): int
+    public function create(int $hotelId, string $name, string $phone, string $idProofType, ?string $idProofNumberEnc, ?string $idProofLast4, ?string $city, ?string $email = null, ?string $address = null): int
     {
         $stmt = $this->db->prepare(
-            'INSERT INTO guests (hotel_id, name, phone, id_proof_type, id_proof_number_enc, id_proof_last4, city)
-             VALUES (:hotel_id, :name, :phone, :id_proof_type, :id_proof_number_enc, :id_proof_last4, :city)'
+            'INSERT INTO guests (hotel_id, name, phone, email, id_proof_type, id_proof_number_enc, id_proof_last4, city, address)
+             VALUES (:hotel_id, :name, :phone, :email, :id_proof_type, :id_proof_number_enc, :id_proof_last4, :city, :address)'
         );
         $stmt->execute([
-            'hotel_id' => $hotelId, 'name' => $name, 'phone' => $phone, 'id_proof_type' => $idProofType,
-            'id_proof_number_enc' => $idProofNumberEnc, 'id_proof_last4' => $idProofLast4, 'city' => $city,
+            'hotel_id' => $hotelId, 'name' => $name, 'phone' => $phone, 'email' => $email, 'id_proof_type' => $idProofType,
+            'id_proof_number_enc' => $idProofNumberEnc, 'id_proof_last4' => $idProofLast4, 'city' => $city, 'address' => $address,
         ]);
         return (int) $this->db->lastInsertId();
     }
@@ -44,7 +44,7 @@ final class GuestRepository
     /** @param array<string,mixed> $fields */
     public function update(int $id, array $fields): void
     {
-        $columns = ['name', 'phone', 'id_proof_type', 'id_proof_number_enc', 'id_proof_last4', 'city', 'is_foreign', 'nationality', 'passport_number_enc', 'visa_number_enc', 'visa_expiry', 'id_image_path'];
+        $columns = ['name', 'phone', 'email', 'id_proof_type', 'id_proof_number_enc', 'id_proof_last4', 'city', 'address', 'is_foreign', 'nationality', 'passport_number_enc', 'visa_number_enc', 'visa_expiry', 'id_image_path'];
         $set = [];
         $params = ['id' => $id];
         foreach ($columns as $column) {
@@ -64,11 +64,11 @@ final class GuestRepository
     {
         $stmt = $this->db->prepare(
             "SELECT * FROM guests WHERE hotel_id = :hotel_id
-             AND (:q = '' OR name LIKE :like1 OR phone LIKE :like2 OR city LIKE :like3)
+             AND (:q = '' OR name LIKE :like1 OR phone LIKE :like2 OR city LIKE :like3 OR (email IS NOT NULL AND email LIKE :like4) OR (address IS NOT NULL AND address LIKE :like5))
              ORDER BY name"
         );
         $like = '%' . $query . '%';
-        $stmt->execute(['hotel_id' => $hotelId, 'q' => $query, 'like1' => $like, 'like2' => $like, 'like3' => $like]);
+        $stmt->execute(['hotel_id' => $hotelId, 'q' => $query, 'like1' => $like, 'like2' => $like, 'like3' => $like, 'like4' => $like, 'like5' => $like]);
         return $stmt->fetchAll();
     }
 

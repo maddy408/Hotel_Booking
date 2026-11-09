@@ -114,6 +114,12 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
             <dd>{reservation.persons}</dd>
             <dt>Daily Rate</dt>
             <dd className="mono">{inr(reservation.rate)} / day</dd>
+            {reservation.notes && (
+              <>
+                <dt>Notes</dt>
+                <dd>{reservation.notes}</dd>
+              </>
+            )}
             <dt>Advance Paid</dt>
             <dd className="mono">
               {Number(reservation.advance_paid) > 0 ? (
@@ -281,7 +287,7 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
           ) : isPending ? (
             <div className="row2" style={{ flexWrap: 'wrap', gap: 8 }}>
               <button className="btn" type="button" onClick={() => onEdit(reservation)}>
-                Change dates / room
+                Edit booking (dates, room, guest)
               </button>
               {isPastArrival && (
                 <button className="btn" type="button" disabled={noShow.isPending} onClick={doNoShow}>
@@ -292,7 +298,20 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
                 Cancel booking
               </button>
             </div>
-          ) : null}
+          ) : reservation.status === 'checked_in' ? (
+            <div style={{ marginTop: 12, padding: 12, borderRadius: 8, background: 'var(--occ-bg)', border: '1px solid var(--occ-border)' }}>
+              <strong style={{ color: 'var(--occ)', display: 'block', marginBottom: 4 }}>
+                Active In-House Stay
+              </strong>
+              <p className="muted" style={{ margin: '0 0 10px', fontSize: 12 }}>
+                This guest has already checked in. To change room, extend the stay, add extra charges, or settle the bill, please use Stay operations on the Rooms or Daily Operations screen.
+              </p>
+            </div>
+          ) : (
+            <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: 'var(--color-bg-secondary)', border: '1px solid var(--color-border)', fontSize: 12.5, color: 'var(--color-muted)' }}>
+              ℹ️ Historical record ({reservation.status.toUpperCase()}). Completed financial, cancellation, and stay records are protected from ordinary editing.
+            </div>
+          )}
         </div>
       </Sheet>
 
