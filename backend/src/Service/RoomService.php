@@ -11,8 +11,8 @@ use App\Support\ApiException;
 use App\Support\AuditLogger;
 
 /**
- * Mirrors the prototype's room-status derivation 1:1:
- * occupied > cleaning > repair > booked > free (first match wins).
+ * Mirrors the prototype's room-status derivation:
+ * Priority: occupied > repair > booked > cleaning > free (first match wins).
  */
 final class RoomService
 {
@@ -44,22 +44,22 @@ final class RoomService
         foreach ($rooms as $room) {
             $roomId = (int) $room['id'];
             $stay = $inHouse[$roomId] ?? null;
-            $roomReservations = $reservations[$roomId] ?? [];
-            $bookingNow = null;
-            $nextBooking = null;
-            foreach ($roomReservations as $res) {
-                if ($res['check_in_date'] <= $today) {
-                    $bookingNow ??= $res;
-                } else {
-                    $nextBooking ??= $res;
-                }
-            }
 
+            $roomReservations = $reservations[$roomId] ?? [];
+            $activeBooking = $roomReservations[0] ?? null;
+            $nextBooking = $roomReservations[1] ?? null;
+
+            // Priority order:
+            // 1. Occupied: active in-house stay exists (takes priority over Booked)
+            // 2. Booked: active pending reservation exists for that room (regardless of booking date)
+            // 3. Repair: housekeeping condition under maintenance (when not occupied or booked)
+            // 4. Cleaning: housekeeping condition awaiting cleaning (when not occupied or booked)
+            // 5. Free: available and ready
             $status = match (true) {
                 $stay !== null => 'occupied',
-                $room['housekeeping_status'] === 'cleaning' => 'cleaning',
+                $activeBooking !== null => 'booked',
                 $room['housekeeping_status'] === 'repair' => 'repair',
-                $bookingNow !== null => 'booked',
+                $room['housekeeping_status'] === 'cleaning' => 'cleaning',
                 default => 'free',
             };
             $counts[$status]++;
@@ -69,6 +69,8 @@ final class RoomService
                 'roomNo' => (int) $room['room_no'],
                 'floor' => (int) $room['floor'],
                 'status' => $status,
+                'housekeepingStatus' => $room['housekeeping_status'],
+                'isReady' => ($room['housekeeping_status'] === 'ok'),
                 'roomType' => [
                     'id' => (int) $room['room_type_id'],
                     'code' => $room['type_code'],
@@ -80,23 +82,25 @@ final class RoomService
                 'guestName' => null,
                 'stayId' => null,
                 'checkoutPlanned' => null,
+                'checkoutTime' => null,
                 'dueToday' => false,
                 'bookingId' => null,
                 'bookingCode' => null,
                 'bookingCheckIn' => null,
-                'nextBookingDate' => $nextBooking['check_in_date'] ?? null,
+                'nextBookingDate' => $stay !== null ? ($activeBooking['check_in_date'] ?? null) : ($nextBooking['check_in_date'] ?? null),
             ];
 
             if ($status === 'occupied') {
                 $dto['guestName'] = $stay['guest_name'];
                 $dto['stayId'] = (int) $stay['stay_id'];
                 $dto['checkoutPlanned'] = $stay['checkout_planned'];
+                $dto['checkoutTime'] = $stay['checkout_time'] ?? null;
                 $dto['dueToday'] = $stay['checkout_planned'] <= $today;
-            } elseif ($status === 'booked' && $bookingNow !== null) {
-                $dto['guestName'] = $bookingNow['guest_name'];
-                $dto['bookingId'] = (int) $bookingNow['id'];
-                $dto['bookingCode'] = $bookingNow['booking_code'];
-                $dto['bookingCheckIn'] = $bookingNow['check_in_date'];
+            } elseif ($status === 'booked' && $activeBooking !== null) {
+                $dto['guestName'] = $activeBooking['guest_name'];
+                $dto['bookingId'] = (int) $activeBooking['id'];
+                $dto['bookingCode'] = $activeBooking['booking_code'];
+                $dto['bookingCheckIn'] = $activeBooking['check_in_date'];
             }
 
             $result[] = $dto;
@@ -196,6 +200,24 @@ final class RoomService
         return $this->rooms->find($roomId);
     }
 
+    public function updateRoom(int $roomId, int $roomNo, int $floor, int $roomTypeId, ?string $note, int $hotelId, ?int $userId): array
+    {
+        $room = $this->getOwnedRoom($roomId, $hotelId);
+        if ($roomNo !== (int) $room['room_no'] && $this->rooms->roomNoExists($hotelId, $roomNo)) {
+            throw ApiException::conflict("Room {$roomNo} already exists.");
+        }
+        $type = $this->roomTypes->find($roomTypeId);
+        if ($type === null || (int) $type['hotel_id'] !== $hotelId) {
+            throw ApiException::notFound('Room type not found.');
+        }
+        $this->rooms->updateRoom($roomId, $roomNo, $floor, $roomTypeId, $note);
+        $updated = $this->rooms->find($roomId);
+        if ($userId !== null) {
+            $this->audit->log($hotelId, $userId, 'room_update', 'room', $roomId, $room, $updated);
+        }
+        return $updated;
+    }
+
     public function deleteRoom(int $roomId, int $hotelId, int $userId): void
     {
         $room = $this->getOwnedRoom($roomId, $hotelId);
@@ -213,6 +235,9 @@ final class RoomService
         $target = $action === 'ready' ? 'ok' : $action;
         if (!in_array($target, ['ok', 'cleaning', 'repair'], true)) {
             throw ApiException::validation(['action' => 'Must be ready, cleaning or repair.']);
+        }
+        if ($target === 'cleaning' && $this->rooms->hasActiveStay($roomId)) {
+            throw ApiException::conflict("Room {$room['room_no']} is currently occupied. Housekeeping cannot mark an occupied room as awaiting cleaning.");
         }
         if ($current !== 'ok' && !in_array($target, self::HK_TRANSITIONS[$current] ?? [], true)) {
             throw ApiException::conflict("Room {$room['room_no']} cannot move from {$current} to {$target} directly.");

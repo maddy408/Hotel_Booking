@@ -12,7 +12,7 @@ use PDO;
  * transaction must lock the hotel's `settings` row first (see lockMutex()) so two
  * concurrent checkouts can never be issued the same sequence number.
  */
-final class InvoiceService
+class InvoiceService
 {
     public function __construct(
         private readonly PDO $db,
@@ -38,7 +38,7 @@ final class InvoiceService
     }
 
     /** @param array<string,mixed> $bill */
-    public function issue(int $hotelId, int $stayId, array $settings, array $bill, ?string $guestGstin): array
+    public function issue(int $hotelId, int $stayId, array $settings, array $bill, ?string $guestGstin, ?float $advancePaid = null, ?float $refundAmount = null): array
     {
         $fy = $this->financialYear(date('Y-m-d'), (int) $settings['financial_year_start_month']);
         $sequence = $this->invoices->nextSequence($hotelId, $fy);
@@ -61,8 +61,11 @@ final class InvoiceService
             'cgst_amount' => $halfGst,
             'sgst_amount' => $halfGst,
             'total_amount' => $bill['total'],
-            'advance_paid' => $bill['advancePaid'],
-            'balance_amount' => max(0, $bill['balance']),
+            'advance_paid' => $advancePaid !== null ? round($advancePaid, 2) : $bill['advancePaid'],
+            'balance_amount' => max(0.0, round((float) ($bill['balance'] ?? 0.0), 2)),
+            'discount_amount' => round((float) ($bill['discountAmount'] ?? 0.0), 2),
+            'early_checkout_fee' => round((float) ($bill['earlyCheckoutFee'] ?? 0.0), 2),
+            'refund_amount' => $refundAmount !== null ? round($refundAmount, 2) : round((float) ($bill['refundAmount'] ?? 0.0), 2),
         ]);
 
         return $this->invoices->find($id);

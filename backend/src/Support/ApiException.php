@@ -32,6 +32,11 @@ class ApiException extends \RuntimeException
         return $this->fields;
     }
 
+    public static function badRequest(string $message = 'Bad request'): self
+    {
+        return new self($message, 400, 'bad_request');
+    }
+
     public static function notFound(string $message = 'Not found'): self
     {
         return new self($message, 404, 'not_found');

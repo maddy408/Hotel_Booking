@@ -6,7 +6,7 @@ namespace App\Repository;
 
 use PDO;
 
-final class RoomTypeRepository
+class RoomTypeRepository
 {
     public function __construct(private readonly PDO $db)
     {

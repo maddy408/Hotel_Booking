@@ -6,7 +6,7 @@ namespace App\Repository;
 
 use PDO;
 
-final class SettingsRepository
+class SettingsRepository
 {
     public function __construct(private readonly PDO $db)
     {
@@ -26,6 +26,10 @@ final class SettingsRepository
             'gst_slab1_max_rate', 'gst_slab1_gst_rate', 'gst_slab2_max_rate', 'gst_slab2_gst_rate',
             'gst_slab3_gst_rate', 'tax_extras', 'checkout_hour', 'currency',
             'financial_year_start_month', 'invoice_prefix', 'booking_prefix',
+            'whatsapp_checkout_template', 'whatsapp_checkin_template', 'whatsapp_checkin_enabled', 'timezone',
+            'cancellation_deadline_hours', 'cancellation_free_allowed', 'cancellation_fee_type', 'cancellation_fee_value',
+            'cancellation_late_fee_type', 'cancellation_late_fee_value',
+            'early_checkout_refund_unused_nights', 'early_checkout_fee_type', 'early_checkout_fee_value',
         ];
         $set = [];
         $params = ['hotel_id' => $hotelId];

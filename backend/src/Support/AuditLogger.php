@@ -7,7 +7,7 @@ namespace App\Support;
 use App\Repository\AuditLogRepository;
 
 /** Thin convenience wrapper so services don't need to know the repository's full signature. */
-final class AuditLogger
+class AuditLogger
 {
     public function __construct(private readonly AuditLogRepository $repository)
     {

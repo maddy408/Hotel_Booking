@@ -19,6 +19,12 @@ export function fd(iso) {
   return new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
 }
 
+export function fdWithYear(iso) {
+  if (!iso) return '';
+  const d = new Date(iso.includes('T') ? iso : `${iso}T00:00:00`);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
 export function fdLong(iso) {
   if (!iso) return '';
   return new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });

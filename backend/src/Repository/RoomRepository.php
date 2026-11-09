@@ -6,7 +6,7 @@ namespace App\Repository;
 
 use PDO;
 
-final class RoomRepository
+class RoomRepository
 {
     public function __construct(private readonly PDO $db)
     {
@@ -69,7 +69,7 @@ final class RoomRepository
     public function inHouseStaysByRoom(int $hotelId): array
     {
         $stmt = $this->db->prepare(
-            "SELECT s.room_id, s.id AS stay_id, s.check_in_date, s.checkout_planned, s.guest_id, g.name AS guest_name
+            "SELECT s.room_id, s.id AS stay_id, s.check_in_date, s.checkout_planned, s.checkout_time, s.guest_id, g.name AS guest_name
              FROM stays s JOIN guests g ON g.id = s.guest_id
              WHERE s.hotel_id = :hotel_id AND s.status = 'in_house'"
         );
@@ -85,7 +85,7 @@ final class RoomRepository
     public function pendingReservationsByRoom(int $hotelId): array
     {
         $stmt = $this->db->prepare(
-            "SELECT b.room_id, b.id, b.booking_code, b.check_in_date, b.check_out_date, b.guest_id, g.name AS guest_name
+            "SELECT b.room_id, b.id, b.booking_code, b.check_in_date, b.check_out_date, b.check_out_time, b.guest_id, g.name AS guest_name
              FROM reservations b JOIN guests g ON g.id = b.guest_id
              WHERE b.hotel_id = :hotel_id AND b.status = 'pending'
              ORDER BY b.check_in_date"
@@ -109,6 +109,13 @@ final class RoomRepository
         return (int) $stmt->fetchColumn();
     }
 
+    public function hasActiveStay(int $roomId): bool
+    {
+        $stmt = $this->db->prepare("SELECT 1 FROM stays WHERE room_id = :room_id AND status = 'in_house' LIMIT 1");
+        $stmt->execute(['room_id' => $roomId]);
+        return $stmt->fetchColumn() !== false;
+    }
+
     public function insert(int $hotelId, int $roomNo, int $floor, int $roomTypeId): int
     {
         $stmt = $this->db->prepare(
@@ -122,6 +129,19 @@ final class RoomRepository
     {
         $this->db->prepare('UPDATE rooms SET room_type_id = :type WHERE id = :id')
             ->execute(['type' => $roomTypeId, 'id' => $roomId]);
+    }
+
+    public function updateRoom(int $roomId, int $roomNo, int $floor, int $roomTypeId, ?string $note = null): void
+    {
+        $this->db->prepare(
+            'UPDATE rooms SET room_no = :room_no, floor = :floor, room_type_id = :type, note = :note WHERE id = :id'
+        )->execute([
+            'room_no' => $roomNo,
+            'floor' => $floor,
+            'type' => $roomTypeId,
+            'note' => $note,
+            'id' => $roomId,
+        ]);
     }
 
     public function updateHousekeeping(int $roomId, string $status, ?string $note): void

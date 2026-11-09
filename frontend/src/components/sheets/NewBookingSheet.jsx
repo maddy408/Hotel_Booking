@@ -3,7 +3,7 @@ import { useForm } from 'react-hook-form';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import { useFreeRooms, useCreateReservation, useUpdateReservation } from '../../api/reservations';
 import { useGuestLookup } from '../../api/guests';
-import { useRoomTypes } from '../../api/rooms';
+import { useRoomTypes, useRooms } from '../../api/rooms';
 import { useSettings } from '../../api/settings';
 import { useToast } from '../../context/ToastContext.jsx';
 import { addDaysIso, estimateGstRate, fd, formatCheckoutHour, inr, nightsBetween, todayIso } from '../../lib/format';
@@ -11,6 +11,7 @@ import { addDaysIso, estimateGstRate, fd, formatCheckoutHour, inr, nightsBetween
 export default function NewBookingSheet({ editReservation, presetGuest, onClose }) {
   const isEdit = !!editReservation;
   const { data: roomTypes } = useRoomTypes();
+  const { data: roomsData } = useRooms();
   const { data: settings } = useSettings();
   const create = useCreateReservation();
   const update = useUpdateReservation();
@@ -75,18 +76,58 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
   }, [lookup, isEdit, setValue]);
 
   useEffect(() => {
-    if (freeRooms && roomId && !freeRooms.some((r) => r.id === roomId)) {
+    if (freeRooms && roomId && !freeRooms.some((r) => r.id === roomId && r.is_bookable !== false)) {
       setValue('roomId', null);
     }
   }, [freeRooms, roomId, setValue]);
+
+  const availableReadyRooms = freeRooms?.filter((r) => r.booking_status === 'available_ready') || [];
+  const availableNotReadyRooms = freeRooms?.filter((r) => r.booking_status === 'available_not_ready') || [];
+  const unavailableRooms = freeRooms?.filter((r) => r.booking_status === 'unavailable') || [];
+  const maintenanceRooms = freeRooms?.filter((r) => r.booking_status === 'maintenance') || [];
+  const totalBookable = availableReadyRooms.length + availableNotReadyRooms.length;
 
   const rateNum = Number(rate) || 0;
   const gstRate = estimateGstRate(rateNum, settings?.settings);
   const total = (Number(days) || 1) * rateNum * (1 + gstRate);
 
+  const selectedRoom = (freeRooms && freeRooms.find((r) => r.id === roomId))
+    || (roomsData?.rooms && roomsData.rooms.find((r) => r.id === roomId))
+    || (isEdit && editReservation?.room_id === roomId ? editReservation : null);
+
+  const roomMaxPersons = selectedRoom?.max_persons
+    ?? selectedRoom?.roomType?.maxPersons
+    ?? (isEdit && editReservation?.room_id === roomId ? editReservation?.max_persons : null);
+
+  const [serverPersonsError, setServerPersonsError] = useState('');
+  const personCount = Number(persons) || 1;
+  const isPersonsExceeded = roomMaxPersons != null && personCount > Number(roomMaxPersons);
+  const maxPersonsMsg = roomMaxPersons != null ? `This room allows a maximum of ${roomMaxPersons} persons.` : '';
+  const personsError = isPersonsExceeded ? maxPersonsMsg : (serverPersonsError || '');
+
+  useEffect(() => {
+    if (serverPersonsError && roomMaxPersons != null && personCount <= Number(roomMaxPersons)) {
+      setServerPersonsError('');
+    }
+  }, [personCount, roomMaxPersons, serverPersonsError]);
+
   const onSubmit = async (values) => {
     if (!values.roomId) {
       toast('Pick a room.');
+      return;
+    }
+    const chosenRoom = freeRooms?.find((r) => r.id === values.roomId);
+    if (freeRooms && (!chosenRoom || chosenRoom.is_bookable === false)) {
+      if (chosenRoom && chosenRoom.booking_status === 'maintenance') {
+        toast(`Room ${chosenRoom.room_no} is under maintenance and cannot be booked.`);
+      } else if (chosenRoom) {
+        toast(`Room ${chosenRoom.room_no} is already booked for these dates.`);
+      } else {
+        toast('Selected room is not available for these dates.');
+      }
+      return;
+    }
+    if (isPersonsExceeded) {
       return;
     }
     try {
@@ -119,6 +160,10 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
       }
       onClose();
     } catch (err) {
+      if (err.fields?.persons || err.message?.includes('allows a maximum of')) {
+        setServerPersonsError(err.fields?.persons || err.message);
+        return;
+      }
       toast(err.message);
     }
   };
@@ -164,17 +209,30 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
               </button>
             </div>
           </div>
-          <div className="f">
+          <div className={`f ${personsError ? 'bad' : ''}`}>
             <label>Persons *</label>
             <div className="step">
-              <button type="button" onClick={() => setValue('persons', Math.max(1, (Number(persons) || 1) - 1))}>
+              <button
+                type="button"
+                onClick={() => {
+                  setServerPersonsError('');
+                  setValue('persons', Math.max(1, (Number(persons) || 1) - 1));
+                }}
+              >
                 −
               </button>
               <input type="number" readOnly {...register('persons')} />
-              <button type="button" onClick={() => setValue('persons', (Number(persons) || 1) + 1)}>
+              <button
+                type="button"
+                onClick={() => {
+                  setServerPersonsError('');
+                  setValue('persons', (Number(persons) || 1) + 1);
+                }}
+              >
                 +
               </button>
             </div>
+            {personsError && <span className="err">{personsError}</span>}
           </div>
           <div className="f">
             <label>Leaves on</label>
@@ -195,28 +253,97 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
           </div>
           <div className="f full">
             <label>
-              Pick a room <i>*</i> <span className="muted" style={{ fontWeight: 500 }}>· {freeRooms?.length ?? 0} free for these dates</span>
+              Pick a room <i>*</i> <span className="muted" style={{ fontWeight: 500 }}>· {totalBookable} available for these dates</span>
             </label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 12, margin: '2px 0 8px' }}>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--ok)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--ok)' }} />
+                Available + Ready ({availableReadyRooms.length})
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--cln)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--cln)' }} />
+                Available + Not Ready ({availableNotReadyRooms.length})
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--muted)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--muted)' }} />
+                Unavailable ({unavailableRooms.length})
+              </span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--mnt)' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--mnt)' }} />
+                Maintenance ({maintenanceRooms.length})
+              </span>
+            </div>
             {freeRooms?.length ? (
-              <div className="pks">
-                {freeRooms.map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    className="pk"
-                    aria-pressed={roomId === r.id}
-                    title={r.type_name}
-                    onClick={() => {
-                      setValue('roomId', r.id);
-                      if (!rateTouched) setValue('rate', Number(r.type_rate));
-                    }}
-                  >
-                    {r.room_no}
-                  </button>
-                ))}
+              <div className="pks" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {freeRooms.map((r) => {
+                  const isReady = r.booking_status === 'available_ready';
+                  const isNotReady = r.booking_status === 'available_not_ready';
+                  const isMnt = r.booking_status === 'maintenance';
+                  const isSelected = roomId === r.id;
+                  const disabled = !r.is_bookable;
+
+                  const badgeText = isReady ? 'Ready' : isNotReady ? 'Not Ready' : isMnt ? 'Maint' : 'Booked';
+                  const badgeColor = isReady ? 'var(--ok)' : isNotReady ? 'var(--cln)' : isMnt ? 'var(--mnt)' : 'var(--muted)';
+                  const badgeBg = isReady ? 'var(--ok-bg)' : isNotReady ? 'var(--cln-bg)' : isMnt ? 'var(--mnt-bg)' : 'var(--color-navigation)';
+
+                  return (
+                    <button
+                      key={r.id}
+                      type="button"
+                      className={`pk ${isSelected ? 'active' : ''}`}
+                      disabled={disabled}
+                      aria-pressed={isSelected}
+                      title={`${r.room_no} (${r.type_name}): ${r.status_label || (disabled ? 'Cannot book' : 'Available')}`}
+                      onClick={() => {
+                        setValue('roomId', r.id);
+                        if (!rateTouched) setValue('rate', Number(r.type_rate));
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 2,
+                        minWidth: 58,
+                        padding: '6px 8px',
+                        cursor: disabled ? 'not-allowed' : 'pointer',
+                        opacity: disabled ? 0.5 : 1,
+                        borderColor: isSelected ? 'var(--color-primary)' : isNotReady ? 'var(--cln-border)' : isMnt ? 'var(--mnt-border)' : undefined,
+                        background: isSelected ? 'var(--color-primary)' : isNotReady ? 'var(--color-card)' : undefined,
+                      }}
+                    >
+                      <span style={{ fontWeight: 700, color: isSelected ? 'var(--color-button-text)' : 'inherit' }}>{r.room_no}</span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          padding: '1px 4px',
+                          borderRadius: 3,
+                          lineHeight: 1.1,
+                          color: isSelected ? 'var(--color-button-text)' : badgeColor,
+                          background: isSelected ? 'rgba(255,255,255,0.25)' : badgeBg,
+                        }}
+                      >
+                        {badgeText}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             ) : (
               <div className="warn">No room free for these dates. Change the date or days.</div>
+            )}
+            {selectedRoom && selectedRoom.booking_status === 'available_not_ready' && (
+              <div className="warn" style={{ marginTop: 10, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span>
+                  ⚠️ <b>Room {selectedRoom.room_no} ({selectedRoom.type_name || selectedRoom.roomType?.name || 'Standard'})</b> is <strong>Available</strong> for these dates, but currently <strong>Not Ready ({selectedRoom.housekeeping_status === 'cleaning' ? 'Cleaning' : 'Dirty'})</strong>. You can book it now, but housekeeping must mark the room Ready before check-in.
+                </span>
+              </div>
+            )}
+            {selectedRoom && selectedRoom.booking_status === 'available_ready' && (
+              <div style={{ marginTop: 10, padding: '6px 12px', background: 'var(--ok-bg)', border: '1px solid var(--ok-border)', borderRadius: 6, fontSize: 13, color: 'var(--ok)' }}>
+                ✓ <b>Room {selectedRoom.room_no}</b> is <strong>Available + Ready</strong> for check-in on arrival.
+              </div>
             )}
           </div>
           <div className={`f ${errors.rate ? 'bad' : ''}`}>

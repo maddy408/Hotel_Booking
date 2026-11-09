@@ -13,7 +13,7 @@ use App\Support\IdImageUploader;
  * Finds a guest by phone (matching the prototype's auto-fill-on-phone-match behaviour)
  * or creates one, with the full ID proof number encrypted at rest.
  */
-final class GuestService
+class GuestService
 {
     public function __construct(
         private readonly GuestRepository $guests,
@@ -99,11 +99,67 @@ final class GuestService
     }
 
     /**
+     * Updates an existing guest profile.
+     */
+    public function update(int $hotelId, int $guestId, array $data): array
+    {
+        $guest = $this->guests->find($guestId);
+        if ($guest === null || (int) $guest['hotel_id'] !== $hotelId) {
+            throw ApiException::notFound('Guest not found.');
+        }
+
+        $fields = [];
+        if (isset($data['name'])) {
+            $name = trim((string) $data['name']);
+            if ($name === '') {
+                throw ApiException::validation(['name' => 'Name cannot be empty.']);
+            }
+            $fields['name'] = $name;
+        }
+
+        if (isset($data['phone'])) {
+            $phone = $this->normalizePhone((string) $data['phone']);
+            $byPhone = $this->guests->findByPhone($hotelId, $phone);
+            if ($byPhone !== null && (int) $byPhone['id'] !== $guestId) {
+                throw ApiException::conflict('Another guest already exists with this phone number.');
+            }
+            $fields['phone'] = $phone;
+        }
+
+        if (array_key_exists('city', $data)) {
+            $fields['city'] = $data['city'] !== null ? trim((string) $data['city']) : null;
+        }
+
+        if (isset($data['idProofType'])) {
+            $fields['id_proof_type'] = (string) $data['idProofType'];
+        }
+
+        if (!empty($data['idProofNumber'])) {
+            $num = trim((string) $data['idProofNumber']);
+            if (mb_strlen(preg_replace('/\s+/', '', $num) ?? '') < 4) {
+                throw ApiException::validation(['idProofNumber' => 'Enter a valid ID number (at least 4 characters).']);
+            }
+            $fields['id_proof_number_enc'] = Crypto::encrypt($num);
+            $fields['id_proof_last4'] = Crypto::lastFour($num);
+        }
+
+        if ($fields !== []) {
+            $this->guests->update($guestId, $fields);
+        }
+
+        return $this->guests->find($guestId);
+    }
+
+    /**
      * For a booking taken over the phone: no ID proof is collected yet (it's captured
      * at actual check-in), so a brand-new guest is created with just name/phone/city.
      */
     public function findOrCreateMinimal(int $hotelId, string $phone, string $name, ?string $city = null): array
     {
+        $name = trim($name);
+        if ($name === '') {
+            throw ApiException::validation(['name' => 'Guest name cannot be empty.'], 'Guest name cannot be empty.');
+        }
         $phone = $this->normalizePhone($phone);
         $existing = $this->guests->findByPhone($hotelId, $phone);
         if ($existing !== null) {

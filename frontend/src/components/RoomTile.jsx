@@ -12,7 +12,13 @@ export default function RoomTile({ room, onClick }) {
     due = room.checkoutPlanned <= today;
     meta = due ? 'Leaving today' : 'Till ' + fd(room.checkoutPlanned);
   } else if (room.status === 'booked') {
-    meta = room.bookingCode || '';
+    if (room.housekeepingStatus === 'repair') {
+      meta = 'Maintenance · ' + (room.bookingCode || 'Booked');
+    } else if (room.housekeepingStatus === 'cleaning') {
+      meta = 'Not ready · ' + (room.bookingCode || 'Booked');
+    } else {
+      meta = room.bookingCode ? `${room.bookingCode} · Ready` : 'Ready';
+    }
   } else if (room.status === 'free') {
     meta = room.nextBookingDate ? 'Booked ' + fd(room.nextBookingDate) : inr(room.roomType.rate);
   } else if (room.status === 'repair') {

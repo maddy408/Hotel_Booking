@@ -40,6 +40,19 @@ CREATE TABLE settings (
   financial_year_start_month TINYINT UNSIGNED NOT NULL DEFAULT 4,
   invoice_prefix            VARCHAR(10)       NOT NULL DEFAULT 'INV',
   booking_prefix            VARCHAR(10)       NOT NULL DEFAULT 'BK',
+  whatsapp_checkout_template TEXT             NULL,
+  whatsapp_checkin_template  TEXT             NULL,
+  whatsapp_checkin_enabled   TINYINT(1)       NOT NULL DEFAULT 1,
+  cancellation_deadline_hours INT UNSIGNED    NOT NULL DEFAULT 24,
+  cancellation_free_allowed  TINYINT(1)       NOT NULL DEFAULT 1,
+  cancellation_fee_type     ENUM('none', 'fixed', 'percentage', 'first_night') NOT NULL DEFAULT 'none',
+  cancellation_fee_value    DECIMAL(10,2)    NOT NULL DEFAULT 0.00,
+  cancellation_late_fee_type ENUM('none', 'fixed', 'percentage', 'first_night') NOT NULL DEFAULT 'percentage',
+  cancellation_late_fee_value DECIMAL(10,2)   NOT NULL DEFAULT 10.00,
+  early_checkout_refund_unused_nights TINYINT(1) NOT NULL DEFAULT 1,
+  early_checkout_fee_type   ENUM('none', 'fixed', 'percentage', 'one_night') NOT NULL DEFAULT 'none',
+  early_checkout_fee_value  DECIMAL(10,2)    NOT NULL DEFAULT 0.00,
+  timezone                  VARCHAR(50)      NOT NULL DEFAULT 'Asia/Kolkata',
   created_at                DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at                DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -180,6 +193,7 @@ CREATE TABLE reservations (
   guest_id          INT UNSIGNED      NOT NULL,
   check_in_date     DATE              NOT NULL,
   check_out_date    DATE              NOT NULL,
+  check_out_time    TIME              NOT NULL DEFAULT '12:00:00',
   persons           TINYINT UNSIGNED  NOT NULL DEFAULT 1,
   rate              DECIMAL(10,2)     NOT NULL,
   advance_amount    DECIMAL(10,2)     NOT NULL DEFAULT 0.00,
@@ -188,6 +202,9 @@ CREATE TABLE reservations (
   created_by        INT UNSIGNED      NULL,
   cancelled_at      DATETIME          NULL,
   cancel_reason     VARCHAR(255)      NULL,
+  cancellation_fee  DECIMAL(10,2)     NOT NULL DEFAULT 0.00,
+  refundable_amount DECIMAL(10,2)     NOT NULL DEFAULT 0.00,
+  cancelled_by      INT UNSIGNED      NULL,
   created_at        DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at        DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
@@ -198,8 +215,60 @@ CREATE TABLE reservations (
   CONSTRAINT fk_reservations_room   FOREIGN KEY (room_id)    REFERENCES rooms(id)   ON DELETE RESTRICT,
   CONSTRAINT fk_reservations_guest  FOREIGN KEY (guest_id)   REFERENCES guests(id)  ON DELETE RESTRICT,
   CONSTRAINT fk_reservations_user   FOREIGN KEY (created_by) REFERENCES users(id)   ON DELETE SET NULL,
+  CONSTRAINT fk_reservations_cancelled_by FOREIGN KEY (cancelled_by) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT chk_reservations_dates CHECK (check_out_date > check_in_date)
 ) ENGINE=InnoDB;
+
+DELIMITER $$
+DROP TRIGGER IF EXISTS trg_reservations_prevent_overlap_insert$$
+CREATE TRIGGER trg_reservations_prevent_overlap_insert
+BEFORE INSERT ON reservations
+FOR EACH ROW
+BEGIN
+  IF NEW.status IN ('pending', 'checked_in') THEN
+    IF EXISTS (
+      SELECT 1 FROM reservations r
+      WHERE r.room_id = NEW.room_id
+        AND (
+          r.status = 'pending'
+          OR (r.status = 'checked_in' AND EXISTS (
+            SELECT 1 FROM stays s WHERE s.reservation_id = r.id AND s.status = 'in_house'
+          ))
+        )
+        AND r.check_in_date < NEW.check_out_date
+        AND NEW.check_in_date < r.check_out_date
+    ) THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'This room is already booked for part of those dates. Pick another room or change the dates.';
+    END IF;
+  END IF;
+END$$
+
+DROP TRIGGER IF EXISTS trg_reservations_prevent_overlap_update$$
+CREATE TRIGGER trg_reservations_prevent_overlap_update
+BEFORE UPDATE ON reservations
+FOR EACH ROW
+BEGIN
+  IF NEW.status IN ('pending', 'checked_in') THEN
+    IF EXISTS (
+      SELECT 1 FROM reservations r
+      WHERE r.room_id = NEW.room_id
+        AND r.id != NEW.id
+        AND (
+          r.status = 'pending'
+          OR (r.status = 'checked_in' AND EXISTS (
+            SELECT 1 FROM stays s WHERE s.reservation_id = r.id AND s.status = 'in_house'
+          ))
+        )
+        AND r.check_in_date < NEW.check_out_date
+        AND NEW.check_in_date < r.check_out_date
+    ) THEN
+      SIGNAL SQLSTATE '45000'
+        SET MESSAGE_TEXT = 'This room is already booked for part of those dates. Pick another room or change the dates.';
+    END IF;
+  END IF;
+END$$
+DELIMITER ;
 
 -- ---------------------------------------------------------------------------
 -- stays (actual check-ins, in-house or finished)
@@ -215,13 +284,19 @@ CREATE TABLE stays (
   rate                 DECIMAL(10,2)     NOT NULL,     -- snapshotted at check-in time
   check_in_date        DATE              NOT NULL,     -- actual arrival date
   checkout_planned     DATE              NOT NULL,
+  checkout_time        TIME              NOT NULL DEFAULT '12:00:00',
   checkout_actual      DATE              NULL,
   status               ENUM('in_house','checked_out','cancelled') NOT NULL DEFAULT 'in_house',
   payment_method       ENUM('cash','upi','card') NOT NULL DEFAULT 'cash', -- method of checkout settlement
+  discount_amount      DECIMAL(10,2)     NOT NULL DEFAULT 0.00,
+  discount_reason      VARCHAR(255)      NULL,
+  early_checkout_fee   DECIMAL(10,2)     NOT NULL DEFAULT 0.00,
+  active_room_id       INT UNSIGNED GENERATED ALWAYS AS (CASE WHEN status = 'in_house' THEN room_id ELSE NULL END) VIRTUAL,
   created_by           INT UNSIGNED      NULL,
   created_at           DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at           DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
+  UNIQUE KEY uq_stays_active_room (active_room_id),
   KEY ix_stays_room_status (room_id, status),
   KEY ix_stays_guest (guest_id),
   KEY ix_stays_reservation (reservation_id),
@@ -260,19 +335,24 @@ CREATE TABLE payments (
   hotel_id        INT UNSIGNED     NOT NULL,
   reservation_id  INT UNSIGNED     NULL,
   stay_id         INT UNSIGNED     NULL,
+  parent_payment_id BIGINT UNSIGNED NULL,
   type            ENUM('advance','balance','refund','extra') NOT NULL,
   amount          DECIMAL(10,2)    NOT NULL,
   method          ENUM('cash','upi','card') NOT NULL,
+  status          ENUM('successful','pending','failed') NOT NULL DEFAULT 'successful',
   received_by     INT UNSIGNED     NULL,
   note            VARCHAR(255)     NULL,
+  reason          VARCHAR(255)     NULL,
   created_at      DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   KEY ix_payments_reservation (reservation_id),
   KEY ix_payments_stay (stay_id),
-  CONSTRAINT fk_payments_hotel       FOREIGN KEY (hotel_id)       REFERENCES hotels(id)       ON DELETE CASCADE,
-  CONSTRAINT fk_payments_reservation FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE CASCADE,
-  CONSTRAINT fk_payments_stay        FOREIGN KEY (stay_id)        REFERENCES stays(id)        ON DELETE CASCADE,
-  CONSTRAINT fk_payments_user        FOREIGN KEY (received_by)    REFERENCES users(id)        ON DELETE SET NULL,
+  KEY ix_payments_parent (parent_payment_id),
+  CONSTRAINT fk_payments_hotel       FOREIGN KEY (hotel_id)          REFERENCES hotels(id)       ON DELETE CASCADE,
+  CONSTRAINT fk_payments_reservation FOREIGN KEY (reservation_id)    REFERENCES reservations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_payments_stay        FOREIGN KEY (stay_id)           REFERENCES stays(id)        ON DELETE CASCADE,
+  CONSTRAINT fk_payments_parent      FOREIGN KEY (parent_payment_id) REFERENCES payments(id)     ON DELETE SET NULL,
+  CONSTRAINT fk_payments_user        FOREIGN KEY (received_by)       REFERENCES users(id)        ON DELETE SET NULL,
   CONSTRAINT chk_payments_target     CHECK (reservation_id IS NOT NULL OR stay_id IS NOT NULL)
 ) ENGINE=InnoDB;
 
@@ -298,6 +378,9 @@ CREATE TABLE invoices (
   total_amount       DECIMAL(10,2)    NOT NULL,
   advance_paid       DECIMAL(10,2)    NOT NULL DEFAULT 0.00,
   balance_amount     DECIMAL(10,2)    NOT NULL DEFAULT 0.00,
+  discount_amount    DECIMAL(10,2)    NOT NULL DEFAULT 0.00,
+  early_checkout_fee DECIMAL(10,2)    NOT NULL DEFAULT 0.00,
+  refund_amount      DECIMAL(10,2)    NOT NULL DEFAULT 0.00,
   created_at         DATETIME         NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   UNIQUE KEY uq_invoices_number (invoice_number),

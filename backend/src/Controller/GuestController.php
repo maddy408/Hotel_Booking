@@ -10,6 +10,7 @@ use App\Repository\StayRepository;
 use App\Router\Request;
 use App\Service\GuestService;
 use App\Support\ApiException;
+use App\Support\Validator;
 
 final class GuestController
 {
@@ -47,6 +48,26 @@ final class GuestController
         if ($guest === null || (int) $guest['hotel_id'] !== (int) $request->attribute('hotelId')) {
             throw ApiException::notFound('Guest not found.');
         }
+        $public = $this->guestService->toPublic($guest);
+        $public['visits'] = $this->guests->visitCount((int) $guest['id']);
+        $public['history'] = $this->guests->history((int) $guest['id']);
+        $public['now'] = $this->currentStatus((int) $guest['id']);
+        return $public;
+    }
+
+    public function update(Request $request): array
+    {
+        $data = $request->all();
+        Validator::assert($data, [
+            'name' => 'string',
+            'phone' => 'phone',
+            'idProofType' => 'in:Aadhaar,Driving Licence,Voter ID,Passport,Other',
+        ]);
+        $guest = $this->guestService->update(
+            (int) $request->attribute('hotelId'),
+            (int) $request->routeParams['id'],
+            $data,
+        );
         $public = $this->guestService->toPublic($guest);
         $public['visits'] = $this->guests->visitCount((int) $guest['id']);
         $public['history'] = $this->guests->history((int) $guest['id']);
