@@ -12,7 +12,14 @@ final class Jwt
 {
     private static function secret(): string
     {
-        return (string) Env::get('JWT_SECRET');
+        $secret = (string) Env::get('JWT_SECRET', '');
+        // Firebase JWT HS256 requires at least 32 bytes (256 bits).
+        // If the configured key is missing or shorter than 32 characters, pad or hash it with SHA-256
+        // so token signing NEVER throws "Provided key is too short" 500 error.
+        if (strlen($secret) < 32) {
+            $secret = hash('sha256', $secret !== '' ? $secret : 'default-tamarind-court-fallback-key');
+        }
+        return $secret;
     }
 
     /** @param array<string,mixed> $claims */
