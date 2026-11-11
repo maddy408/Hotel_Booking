@@ -19,9 +19,9 @@ final class ErrorHandler
                 return;
             }
             error_log('[tamarind-court] ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
-            $debug = Env::bool('APP_DEBUG', true);
+            $debug = Env::bool('APP_DEBUG', false);
             Response::error(
-                $debug ? ($e->getMessage() . ' (' . basename($e->getFile()) . ':' . $e->getLine() . ')') : 'Something went wrong. Please try again.',
+                $debug ? $e->getMessage() : 'Something went wrong. Please try again.',
                 500,
                 'server_error',
             );
