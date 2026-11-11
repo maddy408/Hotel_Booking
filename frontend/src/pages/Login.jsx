@@ -35,7 +35,13 @@ export default function Login() {
   return (
     <div className="loginwrap">
       <form className="logincard" onSubmit={handleSubmit(onSubmit)}>
-        <div className="crest">TC</div>
+        <div className="crest" aria-hidden="true">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 3c-1.5 3-4 7-8 9 2.5 1 5.5 1 8-1 2.5 2 5.5 2 8 1-4-2-6.5-6-8-9Z" />
+            <path d="M12 11c-2 2.5-5 4-8 4 2 2 5 2.5 8 0 3 2.5 6 2 8 0-3 0-6-1.5-8-4Z" />
+            <path d="M12 15c-1 2-3 4-6 4 2 1.5 4 1.5 6 0 2 1.5 4 1.5 6 0-3 0-5-2-6-4Z" />
+          </svg>
+        </div>
         <h1>Tamarind Court</h1>
         <p className="muted">Front desk sign in</p>
 

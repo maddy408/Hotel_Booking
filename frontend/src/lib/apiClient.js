@@ -1,4 +1,18 @@
-export const BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+export const BASE_URL = (() => {
+  const configured = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+  if (!configured || typeof window === 'undefined') return configured;
+  try {
+    const url = new URL(configured);
+    if ((url.hostname === '127.0.0.1' || url.hostname === 'localhost') &&
+        window.location.hostname &&
+        window.location.hostname !== '127.0.0.1' &&
+        window.location.hostname !== 'localhost') {
+      url.hostname = window.location.hostname;
+      return url.toString().replace(/\/+$/, '');
+    }
+  } catch {}
+  return configured;
+})();
 const STORAGE_KEY = 'tamarind-court-auth';
 
 export class ApiError extends Error {

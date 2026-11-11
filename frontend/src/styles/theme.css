@@ -1,98 +1,126 @@
-
 /* ==========================================================================
-   Tamarind Court Light Lavender, Berry & Pastel Theme
-   Centralized Reusable Theme Configuration
-   Approved Global Palette
+   TAMARIND COURT HOTEL MANAGEMENT SYSTEM
+   Centralized Theme Architecture - Single Source of Truth
+   Palette: Premium Plum, Deep Plum, Purple, Lavender & Crisp White
    ========================================================================== */
 
 :root {
   /* --------------------------------------------------------------------------
-     1. Approved Global Colour Palette
+     1. Brand & Primary Palette
      -------------------------------------------------------------------------- */
+  --color-primary: #70265F;
+  --color-primary-dark: #542047;
+  --color-primary-hover: #542047;
+  --color-primary-active: #3E1634;
+  --color-secondary: #87377D;
+  --color-secondary-hover: #70265F;
+  --color-secondary-light: #F1EAF8;
 
-  /* Primary & Secondary */
-  --color-primary: #802C62;
-  --color-primary-hover: #692450;
-  --color-secondary: #C77BA8;
+  /* --------------------------------------------------------------------------
+     2. Backgrounds & Surfaces
+     -------------------------------------------------------------------------- */
+  --color-background: #FAF8FC;
+  --color-surface: #FFFFFF;
+  --color-surface-secondary: #F1EAF8;
+  --color-card: #FFFFFF;
+  --color-card-secondary: #FAF6FD;
+  --color-card-border: #EAE4EF;
 
-  /* Application Backgrounds */
-  --color-background: #FCF9FD;
-  --color-header: #FFFFFF;
-  --color-navigation: #F0EAF9;
+  /* Header & Navigation */
+  --color-header: #70265F;
+  --color-header-dark: #542047;
+  --color-header-text: #FFFFFF;
+  --color-navigation: rgba(255, 255, 255, 0.16);
+  --color-navigation-hover: rgba(255, 255, 255, 0.24);
   --color-navigation-active: #FFFFFF;
+  --color-navigation-active-text: #70265F;
 
-  /* Cards & Borders */
-  --color-card: #FFFBFC;
-  --color-card-border: #EDE5F2;
-
-  /* Typography Colours */
-  --color-heading: #38264F;
-  --color-text: #51465F;
-  --color-text-secondary: #70647E;
-  --color-muted: #82758F;
-
-  /* Light Accent Colours */
-  --color-lavender-light: #EDE5F7;
-  --color-pink-light: #F9EDF2;
-  --color-mauve-light: #E8D2E0;
-
-  /* Semantic Status Backgrounds */
-  --color-success-bg: #EDF7F0;
-  --color-warning-bg: #FFF7E9;
-  --color-info-bg: #EDF3FC;
-  --color-cleaning-bg: #F3EEFA;
-  --color-danger-bg: #FCEFF1;
-
-  /* Button & General Borders */
+  /* --------------------------------------------------------------------------
+     3. Typography & Text Colors
+     -------------------------------------------------------------------------- */
+  --color-text-primary: #30223D;
+  --color-heading: #30223D;
+  --color-text: #30223D;
+  --color-text-secondary: #81748C;
+  --color-muted: #81748C;
   --color-button-text: #FFFFFF;
-  --color-border: #EDE5F2;
 
   /* --------------------------------------------------------------------------
-     2. Semantic Status Colours
+     4. Borders & Dividers
      -------------------------------------------------------------------------- */
-
-  /* Status Borders */
-  --color-success: #B8DFC9;
-  --color-warning: #F7E2B8;
-  --color-info: #C8D8F0;
-  --color-cleaning: #D9CBF0;
-  --color-danger: #EDBBC5;
-
-  --color-success-border: #B8DFC9;
-  --color-warning-border: #F7E2B8;
-  --color-info-border: #C8D8F0;
-  --color-cleaning-border: #D9CBF0;
-  --color-danger-border: #EDBBC5;
-
-  /* High-Contrast Status Text */
-  --color-success-text: #236B43;
-  --color-warning-text: #8A5707;
-  --color-info-text: #27539B;
-  --color-cleaning-text: #6B4897;
-  --color-danger-text: #9E3349;
+  --color-border: #EAE4EF;
+  --color-border-subtle: #F3EEF7;
+  --color-border-strong: #D6CBDD;
 
   /* --------------------------------------------------------------------------
-     3. Component & Feedback Styling
+     5. Semantic Status Colors & Backgrounds (Exact Specification)
      -------------------------------------------------------------------------- */
+  /* Available / Free (Green) */
+  --color-success: #218653;
+  --color-success-bg: #E9F6EF;
+  --color-success-border: #C2E5D2;
+  --color-success-text: #218653;
 
+  /* Booked (Amber) */
+  --color-warning: #B77920;
+  --color-warning-bg: #FFF3E4;
+  --color-warning-border: #F7DDB8;
+  --color-warning-text: #B77920;
+
+  /* Occupied (Blue) */
+  --color-info: #3868A8;
+  --color-info-bg: #EAF1FC;
+  --color-info-border: #C8DBF6;
+  --color-info-text: #3868A8;
+
+  /* Cleaning (Purple) */
+  --color-cleaning: #7853A2;
+  --color-cleaning-bg: #F1EBFA;
+  --color-cleaning-border: #DFCFF4;
+  --color-cleaning-text: #7853A2;
+
+  /* Repair / Maintenance (Red) */
+  --color-danger: #B43D50;
+  --color-danger-bg: #FCEBED;
+  --color-danger-border: #F5C7CE;
+  --color-danger-text: #B43D50;
+
+  /* Soft Lavender Accents */
+  --color-lavender-light: #F1EAF8;
+  --color-lavender: #E0D3EC;
+  --color-lavender-border: #EAE4EF;
+  --color-pink-light: #FAF0F5;
+
+  /* --------------------------------------------------------------------------
+     6. Feedback & Interaction
+     -------------------------------------------------------------------------- */
   --color-focus: var(--color-primary);
-  --color-focus-ring: rgba(128, 44, 98, 0.20);
-
-  /* Shadows */
-  --shadow-subtle: 0 1px 4px rgba(56, 38, 79, 0.04);
-  --shadow-card: 0 1px 3px rgba(56, 38, 79, 0.04);
-  --shadow-hover: 0 4px 10px rgba(56, 38, 79, 0.07);
-  --shadow-pop: 0 20px 60px -20px rgba(56, 38, 79, 0.35);
-
-  --shadow-primary: 0 2px 6px rgba(128, 44, 98, 0.18);
-  --shadow-primary-hover: 0 4px 12px rgba(128, 44, 98, 0.28);
-
-  --color-scrim: rgba(56, 38, 79, 0.45);
+  --color-focus-ring: rgba(112, 38, 95, 0.22);
+  --color-scrim: rgba(48, 34, 61, 0.45);
 
   /* --------------------------------------------------------------------------
-     4. Application-Wide Semantic Aliases
+     7. Radii & Dimensions
      -------------------------------------------------------------------------- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+  --radius-full: 9999px;
 
+  /* --------------------------------------------------------------------------
+     8. Shadows
+     -------------------------------------------------------------------------- */
+  --shadow-subtle: 0 1px 3px rgba(48, 34, 61, 0.04);
+  --shadow-card: 0 2px 8px rgba(48, 34, 61, 0.06);
+  --shadow-hover: 0 4px 14px rgba(48, 34, 61, 0.10);
+  --shadow-pop: 0 20px 50px -10px rgba(48, 34, 61, 0.28);
+  --shadow-primary: 0 2px 8px rgba(112, 38, 95, 0.22);
+  --shadow-primary-hover: 0 4px 14px rgba(112, 38, 95, 0.32);
+
+  /* --------------------------------------------------------------------------
+     9. Semantic Aliases for Compatibility & Brevity
+     -------------------------------------------------------------------------- */
   color-scheme: light;
 
   --bg: var(--color-background);
@@ -105,70 +133,70 @@
   --accent-ink: var(--color-button-text);
   --mark: var(--color-warning-text);
   --focus: var(--color-focus);
+  --color-bg: var(--color-background);
+  --color-bg-secondary: var(--color-lavender-light);
 
-  /* --------------------------------------------------------------------------
-     5. Status Semantic Aliases
-     -------------------------------------------------------------------------- */
-
-  /* Available / Free */
-  --ok: var(--color-success-text);
+  /* Status Aliases */
+  --ok: var(--color-success);
   --ok-bg: var(--color-success-bg);
   --ok-border: var(--color-success-border);
 
-  /* Occupied */
-  --occ: var(--color-info-text);
+  --occ: var(--color-info);
   --occ-bg: var(--color-info-bg);
   --occ-border: var(--color-info-border);
 
-  /* Cleaning */
-  --cln: var(--color-cleaning-text);
+  --cln: var(--color-cleaning);
   --cln-bg: var(--color-cleaning-bg);
   --cln-border: var(--color-cleaning-border);
 
-  /* Booked */
-  --bk: var(--color-warning-text);
+  --bk: var(--color-warning);
   --bk-bg: var(--color-warning-bg);
   --bk-border: var(--color-warning-border);
 
-  /* Repair */
-  --mnt: var(--color-danger-text);
+  --mnt: var(--color-danger);
   --mnt-bg: var(--color-danger-bg);
   --mnt-border: var(--color-danger-border);
 
-  /* --------------------------------------------------------------------------
-     6. Typography
-     -------------------------------------------------------------------------- */
+  --go: var(--ok);
+  --bad: var(--mnt);
+  --bad-bg: var(--mnt-bg);
 
+  /* Typography */
   --display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
   --body: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
 }
 
 /* ==========================================================================
-   7. Room Status Classes
+   Room & Entity Status Semantic Classes
    ========================================================================== */
 
 .s-free {
   --s: var(--ok);
   --sb: var(--ok-bg);
+  --s-border: var(--ok-border);
 }
 
 .s-occupied {
   --s: var(--occ);
   --sb: var(--occ-bg);
+  --s-border: var(--occ-border);
 }
 
 .s-cleaning {
   --s: var(--cln);
   --sb: var(--cln-bg);
+  --s-border: var(--cln-border);
 }
 
 .s-repair {
   --s: var(--mnt);
   --sb: var(--mnt-bg);
+  --s-border: var(--mnt-border);
 }
 
 .s-booked {
   --s: var(--bk);
   --sb: var(--bk-bg);
+  --s-border: var(--bk-border);
 }
