@@ -10,10 +10,11 @@ final class Cors
 {
     public static function handle(): void
     {
-        $allowed = array_map('trim', explode(',', (string) Env::get('CORS_ALLOWED_ORIGINS', '')));
+        $allowedConfig = (string) Env::get('CORS_ALLOWED_ORIGINS', '');
+        $allowed = array_filter(array_map('trim', explode(',', $allowedConfig)));
         $origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
-        if ($origin !== '' && in_array($origin, $allowed, true)) {
+        if ($origin !== '' && (in_array('*', $allowed, true) || in_array($origin, $allowed, true))) {
             header("Access-Control-Allow-Origin: {$origin}");
             header('Access-Control-Allow-Credentials: true');
             header('Vary: Origin');

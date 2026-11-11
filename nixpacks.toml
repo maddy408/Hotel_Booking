@@ -1,0 +1,4 @@
+# Root Nixpacks fallback
+[phases.setup]
+nixPkgs = ["nodejs_20", "php82", "php82Packages.composer"]
+
