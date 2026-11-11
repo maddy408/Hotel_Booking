@@ -7,9 +7,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
-  // backend/.env is the single source of truth for backend API configuration
+  // First check standard frontend env, then fallback to backend/.env if present
+  const frontendEnv = loadEnv(mode, __dirname, '')
   const backendEnv = loadEnv(mode, path.resolve(__dirname, '../backend'), '')
-  const rawUrl = backendEnv.APP_URL || backendEnv.VITE_API_URL || 'http://127.0.0.1:8099'
+  const rawUrl = process.env.VITE_API_URL || frontendEnv.VITE_API_URL || backendEnv.APP_URL || backendEnv.VITE_API_URL || 'http://127.0.0.1:8099'
   const apiUrl = rawUrl.replace(/\/+$/, '')
 
   // Ensure VITE_API_URL is populated for Vite client
