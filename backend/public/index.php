@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Config\Env;
 use App\Database\Connection;
+use App\Database\SchemaManager;
 use App\Router\Request;
 use App\Router\Router;
 use App\Support\Cors;
@@ -21,6 +22,7 @@ ErrorHandler::register();
 Cors::handle();
 
 $db = Connection::get();
+SchemaManager::ensureColumns($db);
 $router = new Router();
 (require $basePath . '/src/routes.php')($router, $db);
 

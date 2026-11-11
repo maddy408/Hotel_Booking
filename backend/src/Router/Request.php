@@ -60,7 +60,16 @@ final class Request
             }
         }
         if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
-            $headers['AUTHORIZATION'] = $_SERVER['HTTP_AUTHORIZATION'];
+            $headers['AUTHORIZATION'] = (string) $_SERVER['HTTP_AUTHORIZATION'];
+        } elseif (isset($_SERVER['REDIRECT_HTTP_AUTHORIZATION'])) {
+            $headers['AUTHORIZATION'] = (string) $_SERVER['REDIRECT_HTTP_AUTHORIZATION'];
+        } elseif (function_exists('apache_request_headers')) {
+            $apacheHeaders = apache_request_headers();
+            if (isset($apacheHeaders['Authorization'])) {
+                $headers['AUTHORIZATION'] = (string) $apacheHeaders['Authorization'];
+            } elseif (isset($apacheHeaders['authorization'])) {
+                $headers['AUTHORIZATION'] = (string) $apacheHeaders['authorization'];
+            }
         }
 
         return new self(
