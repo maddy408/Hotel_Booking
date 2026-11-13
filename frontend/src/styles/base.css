@@ -1138,7 +1138,7 @@ input:focus, select:focus, textarea:focus {
   position: fixed;
   inset: 0;
   background: var(--color-scrim);
-  z-index: 50;
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1156,15 +1156,30 @@ input:focus, select:focus, textarea:focus {
   box-shadow: var(--shadow-pop);
 }
 
-@media (max-width: 560px) {
+@media (max-width: 768px) {
   .scrim {
     align-items: flex-end;
     padding: 0;
   }
   .sheet {
-    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-    max-height: 94%;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
+    width: 100% !important;
+    max-height: 85vh !important;
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0 !important;
+    margin-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.28);
+  }
+  .sheet .sb {
+    padding-bottom: 24px;
+  }
+  .sheet form {
+    display: flex;
+    flex-direction: column;
+  }
+  .sheet button[type="submit"] {
+    position: relative;
+    z-index: 10;
+    margin-top: 14px;
+    margin-bottom: 8px;
   }
 }
 
@@ -2777,8 +2792,10 @@ input:focus, select:focus, textarea:focus {
   /* Form & Modal Sheets on Mobile Devices */
   .sheet {
     width: 100% !important;
-    max-height: 90vh !important;
+    max-height: 85vh !important;
     border-radius: 20px 20px 0 0 !important;
+    margin-bottom: calc(60px + env(safe-area-inset-bottom, 0px)) !important;
+    padding-bottom: 24px !important;
   }
 
   .sh {
