@@ -222,8 +222,8 @@ class GuestService
     private function normalizePhone(string $phone): string
     {
         $digits = preg_replace('/\D/', '', $phone) ?? '';
-        if (strlen($digits) !== 10) {
-            throw ApiException::validation(['phone' => 'Enter a 10-digit mobile number.']);
+        if (!preg_match('/^[6-9]\d{9}$/', $digits)) {
+            throw ApiException::validation(['phone' => 'Enter a valid 10-digit mobile number starting with 6-9.']);
         }
         return $digits;
     }

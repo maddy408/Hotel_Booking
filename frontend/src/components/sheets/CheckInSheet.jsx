@@ -384,11 +384,11 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
                 type="tel"
                 inputMode="numeric"
                 maxLength={10}
-                placeholder="10 digits"
+                placeholder="10 digits (6-9)"
                 autoComplete="off"
-                {...register('phone', { required: true, pattern: /^\d{10}$/ })}
+                {...register('phone', { required: true, pattern: /^[6-9]\d{9}$/ })}
               />
-              {errors.phone && <span className="err">Enter a 10-digit mobile number.</span>}
+              {errors.phone && <span className="err">Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.</span>}
             </div>
             {matchedGuestId && <div className="found f full">Old guest found. Details filled in.</div>}
             <div className={`f full ${errors.name ? 'bad' : ''}`}>

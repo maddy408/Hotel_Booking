@@ -202,8 +202,8 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
             <label htmlFor="bk-phone">
               Mobile number <i>*</i>
             </label>
-            <input id="bk-phone" type="tel" inputMode="numeric" maxLength={10} placeholder="10 digits" {...register('phone', { required: true, pattern: /^\d{10}$/ })} />
-            {errors.phone && <span className="err">Enter a 10-digit mobile number.</span>}
+            <input id="bk-phone" type="tel" inputMode="numeric" maxLength={10} placeholder="10 digits (6-9)" {...register('phone', { required: true, pattern: /^[6-9]\d{9}$/ })} />
+            {errors.phone && <span className="err">Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.</span>}
           </div>
           {!isEdit && matchedGuestId && <div className="found f full">Old guest found. Name filled in.</div>}
           <div className={`f full ${errors.name ? 'bad' : ''}`}>

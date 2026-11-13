@@ -85,8 +85,8 @@ export default function GuestProfileSheet({ guestId, initialEdit = false, onClos
       errs.name = 'Guest name is required.';
     }
     const cleanPhone = form.phone.replace(/\D/g, '');
-    if (!/^\d{10}$/.test(cleanPhone)) {
-      errs.phone = 'Enter a valid 10-digit mobile number.';
+    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+      errs.phone = 'Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.';
     }
     if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       errs.email = 'Enter a valid email address.';

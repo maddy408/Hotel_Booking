@@ -13,7 +13,7 @@ export function useGuestLookup(phone) {
   return useQuery({
     queryKey: ['guest-lookup', phone],
     queryFn: () => api.get(`/guests/lookup?phone=${encodeURIComponent(phone)}`),
-    enabled: /^\d{10}$/.test(phone || ''),
+    enabled: /^[6-9]\d{9}$/.test(phone || ''),
     staleTime: 60000,
   });
 }

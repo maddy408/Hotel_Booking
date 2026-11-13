@@ -37,7 +37,7 @@ final class Validator
                         : (is_string($value) && mb_strlen($value) > (int) $param ? "Must be at most {$param} characters." : null),
                     'date' => !self::isDate((string) $value) ? "Must be a valid date (YYYY-MM-DD)." : null,
                     'in' => !in_array((string) $value, explode(',', (string) $param), true) ? "Must be one of: {$param}." : null,
-                    'phone' => !preg_match('/^\d{10}$/', preg_replace('/\D/', '', (string) $value)) ? "Enter a 10-digit mobile number." : null,
+                    'phone' => !preg_match('/^[6-9]\d{9}$/', preg_replace('/\D/', '', (string) $value)) ? "Enter a valid 10-digit mobile number starting with 6-9." : null,
                     'email' => !filter_var($value, FILTER_VALIDATE_EMAIL) ? "Must be a valid email." : null,
                     'array' => !is_array($value) ? "Must be a list." : null,
                     default => null,
