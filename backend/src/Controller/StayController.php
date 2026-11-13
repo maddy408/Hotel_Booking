@@ -42,12 +42,17 @@ final class StayController
                 'Please enter and collect the advance amount before check-in.'
             );
         }
+        $hotelId = (int) $request->attribute('hotelId');
+        $phone = isset($data['phone']) ? preg_replace('/\D/', '', (string) $data['phone']) : '';
+        $existingGuest = $phone !== '' ? $this->stays->getGuestService()->findByPhone($hotelId, $phone) : null;
+        $isExisting = $existingGuest !== null;
+
         Validator::assert($data, [
             'roomId' => 'required|integer|min:1',
             'phone' => 'required|phone',
             'name' => 'required|string',
             'idProofType' => 'required|in:Aadhaar,Driving Licence,Voter ID,Passport,Other',
-            'idProofNumber' => 'required|string',
+            'idProofNumber' => $isExisting ? 'string' : 'required|string',
             'persons' => 'required|integer|min:1',
             'days' => 'required|integer|min:1',
             'rate' => 'required|numeric|min:0',
@@ -55,12 +60,12 @@ final class StayController
             'advanceMethod' => 'required|in:cash,upi,card',
         ]);
         return $this->stays->directCheckIn(
-            (int) $request->attribute('hotelId'),
+            $hotelId,
             (int) $data['roomId'],
             (string) $data['phone'],
             trim((string) $data['name']),
             (string) $data['idProofType'],
-            (string) $data['idProofNumber'],
+            isset($data['idProofNumber']) ? (string) $data['idProofNumber'] : '',
             isset($data['city']) ? trim((string) $data['city']) : null,
             (int) $data['persons'],
             (int) $data['days'],

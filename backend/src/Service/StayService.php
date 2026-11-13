@@ -34,6 +34,11 @@ final class StayService
     ) {
     }
 
+    public function getGuestService(): GuestService
+    {
+        return $this->guestService;
+    }
+
     public function directCheckIn(
         int $hotelId,
         int $roomId,
