@@ -573,14 +573,14 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
               id="bk-rate"
               type="number"
               min="0"
-              step="100"
+              step="any"
               placeholder="Pick a room"
               {...register('rate', { required: true, min: 1, onChange: () => setRateTouched(true) })}
             />
           </div>
           <div className="f">
             <label htmlFor="bk-advance">Advance paid (₹)</label>
-            <input id="bk-advance" type="number" min="0" step="100" placeholder="0" {...register('advance')} />
+            <input id="bk-advance" type="number" min="0" step="any" placeholder="0" {...register('advance')} />
           </div>
           <div className="f full">
             <label>Advance paid by</label>

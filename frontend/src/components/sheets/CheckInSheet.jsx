@@ -343,7 +343,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
                       id="ci-advance"
                       type="number"
                       min="0"
-                      step="100"
+                      step="any"
                       placeholder="Enter advance amount"
                       style={{ flex: 1 }}
                       {...register('advance')}
@@ -463,7 +463,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
             </div>
             <div className="f">
               <label htmlFor="ci-rate">Rate per day (₹) *</label>
-              <input id="ci-rate" type="number" min="0" step="100" {...register('rate', { required: true, min: 1 })} />
+              <input id="ci-rate" type="number" min="0" step="any" {...register('rate', { required: true, min: 1 })} />
             </div>
             <div className={`f ${advanceError ? 'bad' : ''}`}>
               <label htmlFor="ci-advance">
@@ -473,7 +473,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
                 id="ci-advance"
                 type="number"
                 min="0"
-                step="100"
+                step="any"
                 placeholder="0"
                 {...register('advance')}
               />

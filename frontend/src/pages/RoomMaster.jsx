@@ -162,7 +162,7 @@ function RoomTypesPanel() {
                     className="w-m"
                     type="number"
                     min="0"
-                    step="100"
+                    step="any"
                     value={valueFor(t, 'rate')}
                     onChange={(e) => edit(t.id, 'rate', e.target.value)}
                     aria-label="Rate"
@@ -216,7 +216,7 @@ function RoomTypesPanel() {
                   className="w-m"
                   type="number"
                   min="0"
-                  step="100"
+                  step="any"
                   placeholder="₹"
                   aria-label="Rate"
                   value={newType.rate}
