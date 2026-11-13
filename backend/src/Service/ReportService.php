@@ -83,7 +83,7 @@ final class ReportService
     {
         $rows = $this->invoices->listForRange($hotelId, $from, $to);
         $out = fopen('php://temp', 'r+');
-        fputcsv($out, ['Invoice', 'Date', 'Financial Year', 'Room Amount', 'GST', 'Extras', 'Total', 'Advance Paid', 'Balance']);
+        fputcsv($out, ['Invoice', 'Date', 'Financial Year', 'Room Amount', 'GST', 'Extras', 'Total', 'Advance Paid', 'Balance'], ',', '"', '\\');
         foreach ($rows as $r) {
             fputcsv($out, [
                 $r['invoice_number'],
@@ -95,10 +95,10 @@ final class ReportService
                 $r['total_amount'],
                 $r['advance_paid'],
                 $r['balance_amount'],
-            ]);
+            ], ',', '"', '\\');
         }
         rewind($out);
-        $csv = stream_get_contents($out);
+        $csv = stream_get_contents($out) ?: '';
         fclose($out);
         return $csv;
     }
