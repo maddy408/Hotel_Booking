@@ -1,102 +1,102 @@
 /* ==========================================================================
    TAMARIND COURT HOTEL MANAGEMENT SYSTEM
    Centralized Theme Architecture - Single Source of Truth
-   Palette: Premium Plum, Deep Plum, Purple, Lavender & Crisp White
+   Palette: Premium Dark Navy Blue, Deep Ocean Blue, Slate & Crisp White
    ========================================================================== */
 
 :root {
   /* --------------------------------------------------------------------------
-     1. Brand & Primary Palette
+     1. Brand & Primary Palette (Classic Dark Blue Luxury Aesthetic)
      -------------------------------------------------------------------------- */
-  --color-primary: #70265F;
-  --color-primary-dark: #542047;
-  --color-primary-hover: #542047;
-  --color-primary-active: #3E1634;
-  --color-secondary: #87377D;
-  --color-secondary-hover: #70265F;
-  --color-secondary-light: #F1EAF8;
+  --color-primary: #1A365D;          /* Deep Regal Navy Blue */
+  --color-primary-dark: #0F2342;     /* Dark Midnight Blue */
+  --color-primary-hover: #152E52;    /* Dark Blue Hover */
+  --color-primary-active: #0B1930;   /* Deep Blue Active */
+  --color-secondary: #2B6CB0;        /* Royal Blue Secondary */
+  --color-secondary-hover: #1A365D;
+  --color-secondary-light: #EBF4FF;   /* Soft Ice Blue Tint */
 
   /* --------------------------------------------------------------------------
      2. Backgrounds & Surfaces
      -------------------------------------------------------------------------- */
-  --color-background: #FAF8FC;
+  --color-background: #F8FAFC;       /* Clean Cool Slate White */
   --color-surface: #FFFFFF;
-  --color-surface-secondary: #F1EAF8;
+  --color-surface-secondary: #F1F5F9;
   --color-card: #FFFFFF;
-  --color-card-secondary: #FAF6FD;
-  --color-card-border: #EAE4EF;
+  --color-card-secondary: #F8FAFC;
+  --color-card-border: #E2E8F0;
 
   /* Header & Navigation */
-  --color-header: #70265F;
-  --color-header-dark: #542047;
+  --color-header: #1A365D;
+  --color-header-dark: #0F2342;
   --color-header-text: #FFFFFF;
   --color-navigation: rgba(255, 255, 255, 0.16);
   --color-navigation-hover: rgba(255, 255, 255, 0.24);
   --color-navigation-active: #FFFFFF;
-  --color-navigation-active-text: #70265F;
+  --color-navigation-active-text: #1A365D;
 
   /* --------------------------------------------------------------------------
      3. Typography & Text Colors
      -------------------------------------------------------------------------- */
-  --color-text-primary: #30223D;
-  --color-heading: #30223D;
-  --color-text: #30223D;
-  --color-text-secondary: #81748C;
-  --color-muted: #81748C;
+  --color-text-primary: #0F172A;     /* Rich Dark Slate */
+  --color-heading: #0F172A;
+  --color-text: #1E293B;
+  --color-text-secondary: #64748B;
+  --color-muted: #64748B;
   --color-button-text: #FFFFFF;
 
   /* --------------------------------------------------------------------------
      4. Borders & Dividers
      -------------------------------------------------------------------------- */
-  --color-border: #EAE4EF;
-  --color-border-subtle: #F3EEF7;
-  --color-border-strong: #D6CBDD;
+  --color-border: #E2E8F0;
+  --color-border-subtle: #F1F5F9;
+  --color-border-strong: #CBD5E1;
 
   /* --------------------------------------------------------------------------
      5. Semantic Status Colors & Backgrounds (Exact Specification)
      -------------------------------------------------------------------------- */
   /* Available / Free (Green) */
-  --color-success: #218653;
-  --color-success-bg: #E9F6EF;
-  --color-success-border: #C2E5D2;
-  --color-success-text: #218653;
+  --color-success: #15803D;
+  --color-success-bg: #DCFCE7;
+  --color-success-border: #BBF7D0;
+  --color-success-text: #15803D;
 
   /* Booked (Amber) */
-  --color-warning: #B77920;
-  --color-warning-bg: #FFF3E4;
-  --color-warning-border: #F7DDB8;
-  --color-warning-text: #B77920;
+  --color-warning: #B45309;
+  --color-warning-bg: #FEF3C7;
+  --color-warning-border: #FDE68A;
+  --color-warning-text: #B45309;
 
   /* Occupied (Blue) */
-  --color-info: #3868A8;
-  --color-info-bg: #EAF1FC;
-  --color-info-border: #C8DBF6;
-  --color-info-text: #3868A8;
+  --color-info: #0284C7;
+  --color-info-bg: #E0F2FE;
+  --color-info-border: #BAE6FD;
+  --color-info-text: #0284C7;
 
-  /* Cleaning (Purple) */
-  --color-cleaning: #7853A2;
-  --color-cleaning-bg: #F1EBFA;
-  --color-cleaning-border: #DFCFF4;
-  --color-cleaning-text: #7853A2;
+  /* Cleaning (Slate Indigo) */
+  --color-cleaning: #4F46E5;
+  --color-cleaning-bg: #EEF2FF;
+  --color-cleaning-border: #E0E7FF;
+  --color-cleaning-text: #4F46E5;
 
   /* Repair / Maintenance (Red) */
-  --color-danger: #B43D50;
-  --color-danger-bg: #FCEBED;
-  --color-danger-border: #F5C7CE;
-  --color-danger-text: #B43D50;
+  --color-danger: #BE123C;
+  --color-danger-bg: #FFE4E6;
+  --color-danger-border: #FECDD3;
+  --color-danger-text: #BE123C;
 
-  /* Soft Lavender Accents */
-  --color-lavender-light: #F1EAF8;
-  --color-lavender: #E0D3EC;
-  --color-lavender-border: #EAE4EF;
-  --color-pink-light: #FAF0F5;
+  /* Soft Blue Accents */
+  --color-lavender-light: #F1F5F9;
+  --color-lavender: #E2E8F0;
+  --color-lavender-border: #CBD5E1;
+  --color-pink-light: #F8FAFC;
 
   /* --------------------------------------------------------------------------
      6. Feedback & Interaction
      -------------------------------------------------------------------------- */
   --color-focus: var(--color-primary);
-  --color-focus-ring: rgba(112, 38, 95, 0.22);
-  --color-scrim: rgba(48, 34, 61, 0.45);
+  --color-focus-ring: rgba(26, 54, 93, 0.22);
+  --color-scrim: rgba(15, 23, 42, 0.55);
 
   /* --------------------------------------------------------------------------
      7. Radii & Dimensions
