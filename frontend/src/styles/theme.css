@@ -6,34 +6,34 @@
 
 :root {
   /* --------------------------------------------------------------------------
-     1. Brand & Primary Palette (Ultra Deep Navy / Midnight Blue Aesthetic)
+     1. Brand & Primary Palette (Vibrant Rich Dark Blue / Cobalt Navy Aesthetic)
      -------------------------------------------------------------------------- */
-  --color-primary: #0A192F;          /* Ultra Deep Rich Navy Blue */
-  --color-primary-dark: #020C1B;     /* Deepest Midnight Blue */
-  --color-primary-hover: #172A45;    /* Deep Navy Hover */
-  --color-primary-active: #020C1B;   /* Solid Dark Active */
-  --color-secondary: #1E3A8A;        /* Dark Blue Secondary */
-  --color-secondary-hover: #0A192F;
-  --color-secondary-light: #E0E7FF;   /* Soft Cool Navy-Blue Tint */
+  --color-primary: #0F52BA;          /* Rich Sapphire / Vibrant Dark Blue */
+  --color-primary-dark: #0A3D8F;     /* Deep True Dark Blue */
+  --color-primary-hover: #0C46A2;    /* Dark Blue Hover */
+  --color-primary-active: #083275;   /* Deep Blue Active */
+  --color-secondary: #2563EB;        /* Royal Blue Secondary */
+  --color-secondary-hover: #0F52BA;
+  --color-secondary-light: #EFF6FF;   /* Soft Clean Light Blue Tint */
 
   /* --------------------------------------------------------------------------
      2. Backgrounds & Surfaces
      -------------------------------------------------------------------------- */
-  --color-background: #F1F5F9;       /* Crisp Cool Slate White */
+  --color-background: #F8FAFC;       /* Fresh Clean White */
   --color-surface: #FFFFFF;
-  --color-surface-secondary: #E2E8F0;
+  --color-surface-secondary: #F1F5F9;
   --color-card: #FFFFFF;
   --color-card-secondary: #F8FAFC;
-  --color-card-border: #CBD5E1;
+  --color-card-border: #E2E8F0;
 
   /* Header & Navigation */
-  --color-header: #0A192F;
-  --color-header-dark: #020C1B;
+  --color-header: #0F52BA;
+  --color-header-dark: #0A3D8F;
   --color-header-text: #FFFFFF;
-  --color-navigation: rgba(255, 255, 255, 0.16);
-  --color-navigation-hover: rgba(255, 255, 255, 0.24);
+  --color-navigation: rgba(255, 255, 255, 0.18);
+  --color-navigation-hover: rgba(255, 255, 255, 0.28);
   --color-navigation-active: #FFFFFF;
-  --color-navigation-active-text: #0A192F;
+  --color-navigation-active-text: #0F52BA;
 
   /* --------------------------------------------------------------------------
      3. Typography & Text Colors
