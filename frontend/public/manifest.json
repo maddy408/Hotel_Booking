@@ -1,0 +1,22 @@
+{
+  "short_name": "Tamarind Court",
+  "name": "Tamarind Court Front Desk",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512"
+    },
+    {
+      "src": "/favicon.ico",
+      "type": "image/x-icon",
+      "sizes": "64x64 32x32 24x24 16x16"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#1C1427",
+  "theme_color": "#4A154B",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "description": "Professional Hotel Front Desk & Reservation Management System"
+}
