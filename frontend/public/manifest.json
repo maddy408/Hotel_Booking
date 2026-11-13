@@ -14,8 +14,8 @@
     }
   ],
   "start_url": "/",
-  "background_color": "#0A3D8F",
-  "theme_color": "#0F52BA",
+  "background_color": "#07073B",
+  "theme_color": "#0B0B58",
   "display": "standalone",
   "orientation": "portrait-primary",
   "description": "Professional Hotel Front Desk & Reservation Management System"

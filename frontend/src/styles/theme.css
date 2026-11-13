@@ -6,20 +6,20 @@
 
 :root {
   /* --------------------------------------------------------------------------
-     1. Brand & Primary Palette (Vibrant Rich Dark Blue / Cobalt Navy Aesthetic)
+     1. Brand & Primary Palette (Exact Color: #0B0B58 Deep Royal Navy Blue)
      -------------------------------------------------------------------------- */
-  --color-primary: #0F52BA;          /* Rich Sapphire / Vibrant Dark Blue */
-  --color-primary-dark: #0A3D8F;     /* Deep True Dark Blue */
-  --color-primary-hover: #0C46A2;    /* Dark Blue Hover */
-  --color-primary-active: #083275;   /* Deep Blue Active */
-  --color-secondary: #2563EB;        /* Royal Blue Secondary */
-  --color-secondary-hover: #0F52BA;
-  --color-secondary-light: #EFF6FF;   /* Soft Clean Light Blue Tint */
+  --color-primary: #0B0B58;          /* Exact User Dark Blue: #0B0B58 */
+  --color-primary-dark: #07073B;     /* Deep Night Shade */
+  --color-primary-hover: #121272;    /* Dark Blue Hover */
+  --color-primary-active: #050529;   /* Solid Active State */
+  --color-secondary: #1E297A;        /* Harmonized Secondary Blue */
+  --color-secondary-hover: #0B0B58;
+  --color-secondary-light: #EEF2FF;   /* Soft Ice Blue Accent */
 
   /* --------------------------------------------------------------------------
      2. Backgrounds & Surfaces
      -------------------------------------------------------------------------- */
-  --color-background: #F8FAFC;       /* Fresh Clean White */
+  --color-background: #F8FAFC;       /* Fresh Clean Slate White */
   --color-surface: #FFFFFF;
   --color-surface-secondary: #F1F5F9;
   --color-card: #FFFFFF;
@@ -27,13 +27,13 @@
   --color-card-border: #E2E8F0;
 
   /* Header & Navigation */
-  --color-header: #0F52BA;
-  --color-header-dark: #0A3D8F;
+  --color-header: #0B0B58;
+  --color-header-dark: #07073B;
   --color-header-text: #FFFFFF;
   --color-navigation: rgba(255, 255, 255, 0.18);
   --color-navigation-hover: rgba(255, 255, 255, 0.28);
   --color-navigation-active: #FFFFFF;
-  --color-navigation-active-text: #0F52BA;
+  --color-navigation-active-text: #0B0B58;
 
   /* --------------------------------------------------------------------------
      3. Typography & Text Colors
