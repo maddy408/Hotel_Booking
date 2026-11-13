@@ -1,0 +1,120 @@
+/* PWA Install Bottom Banner matching user screenshot styling */
+.pwa-install-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background-color: #212121;
+  color: #ffffff;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.4);
+  padding: 10px 16px;
+  animation: slideUpBanner 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: var(--font-body, inherit);
+}
+
+@keyframes slideUpBanner {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.pwa-banner-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.pwa-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 240px;
+}
+
+.pwa-download-icon {
+  color: #eab308;
+  flex-shrink: 0;
+}
+
+.pwa-banner-text {
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: #f3f4f6;
+  line-height: 1.3;
+}
+
+.pwa-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.pwa-btn-close {
+  background: transparent;
+  border: none;
+  color: #d1d5db;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 4px;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.pwa-btn-close:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.pwa-btn-install {
+  background-color: #eab308;
+  color: #111827;
+  border: none;
+  font-size: 0.88rem;
+  font-weight: 700;
+  padding: 7px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.25);
+  transition: background-color 0.15s ease, transform 0.1s ease;
+}
+
+.pwa-btn-install:hover {
+  background-color: #facc15;
+}
+
+.pwa-btn-install:active {
+  transform: scale(0.97);
+}
+
+/* On mobile where bottom navigation bar is present, elevate above bottom nav */
+@media (max-width: 768px) {
+  .pwa-install-banner {
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+    padding: 8px 12px;
+  }
+
+  .pwa-banner-text {
+    font-size: 0.84rem;
+  }
+
+  .pwa-btn-install {
+    padding: 6px 12px;
+    font-size: 0.82rem;
+  }
+
+  .pwa-btn-close {
+    font-size: 0.82rem;
+    padding: 6px 8px;
+  }
+}

@@ -1,6 +1,7 @@
 import { Route, Routes } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import ProtectedRoute from './components/ProtectedRoute.jsx';
+import PwaInstallBanner from './components/PwaInstallBanner.jsx';
 import Login from './pages/Login.jsx';
 import Rooms from './pages/Rooms.jsx';
 import Bookings from './pages/Bookings.jsx';
@@ -15,6 +16,7 @@ import InvoicePrint from './pages/InvoicePrint.jsx';
 
 export default function App() {
   return (
+    <>
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route
@@ -87,5 +89,7 @@ export default function App() {
         />
       </Route>
     </Routes>
+    <PwaInstallBanner />
+    </>
   );
 }
