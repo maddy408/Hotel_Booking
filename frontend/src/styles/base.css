@@ -468,6 +468,48 @@ main .inner {
   position: relative;
 }
 
+@media (max-width: 640px) {
+  .counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 12px;
+  }
+  .count {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    padding: 10px 12px !important;
+    gap: 6px !important;
+  }
+  .count-icon-box {
+    display: none !important;
+  }
+  .count .count-arrow {
+    display: none !important;
+  }
+  .count .n {
+    font-size: 26px !important;
+    line-height: 1 !important;
+    order: 1;
+  }
+  .count .l {
+    order: 2;
+    width: 100%;
+  }
+  .count .l b {
+    font-size: 13.5px !important;
+    line-height: 1.2 !important;
+  }
+  .count .l span {
+    font-size: 11px !important;
+    white-space: normal !important;
+    line-height: 1.2 !important;
+    margin-top: 2px;
+    display: block;
+    word-break: break-word;
+  }
+}
+
 .count:hover {
   transform: translateY(-2px);
   box-shadow: var(--shadow-hover);
@@ -810,17 +852,30 @@ main .inner {
   display: block;
 }
 
-@media (max-width: 520px) {
+@media (max-width: 600px) {
   .rooms {
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
     gap: 8px;
+    width: 100%;
   }
   .room {
-    min-height: 104px;
-    padding: 8px 10px;
+    min-height: 100px;
+    padding: 10px 10px;
   }
   .room .no {
-    font-size: 18px;
+    font-size: 19px;
+  }
+  .room .ty {
+    font-size: 11.5px;
+  }
+  .room .st {
+    font-size: 11px;
+    font-weight: 800;
+    margin-top: auto;
+    padding-top: 6px;
+    display: block;
+    width: 100%;
+    border-top: 1px dashed rgba(0, 0, 0, 0.08);
   }
 }
 
@@ -2630,66 +2685,93 @@ input:focus, select:focus, textarea:focus {
 
 /* 5. Responsive Mobile Table Transformation (Mobile Cards) */
 @media (max-width: 768px) {
-  /* Prevent horizontal cutoffs and improve touch interaction */
+  /* Prevent horizontal cutoffs and eliminate side scrolling */
+  body, html, #root, .app-shell, .gut, .inner, .mgrid, .panel {
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+  }
+
   .tw {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    border-radius: var(--radius-lg);
+    overflow-x: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
   }
 
-  /* Transform tabular rows into card-like touchable blocks on mobile */
-  table.data {
-    border-collapse: separate;
-    border-spacing: 0 10px;
-    background: transparent;
+  /* Force table into card view so it never overflows or requires side scroll */
+  table.data,
+  table.mt {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    border-collapse: separate !important;
+    border-spacing: 0 10px !important;
+    background: transparent !important;
   }
 
-  table.data thead {
-    display: none; /* Hide standard headers on small screens */
+  table.data thead,
+  table.mt thead {
+    display: none !important; /* Hide traditional table header on mobile */
   }
 
-  table.data tbody tr {
-    display: flex;
-    flex-direction: column;
-    background: var(--color-surface);
-    border: 1.5px solid var(--color-card-border);
-    border-radius: var(--radius-lg);
-    padding: 14px 16px;
-    margin-bottom: 10px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
-    gap: 8px;
-    cursor: pointer;
-    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  table.data tbody,
+  table.mt tbody {
+    display: block !important;
+    width: 100% !important;
   }
 
-  table.data tbody tr:active {
-    transform: scale(0.99);
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  table.data tbody tr,
+  table.mt tbody tr {
+    display: flex !important;
+    flex-direction: column !important;
+    background: var(--color-surface) !important;
+    border: 1.5px solid var(--color-card-border) !important;
+    border-radius: var(--radius-lg) !important;
+    padding: 14px 14px !important;
+    margin-bottom: 10px !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04) !important;
+    gap: 6px !important;
+    cursor: pointer !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    transition: transform 0.12s ease, box-shadow 0.12s ease !important;
   }
 
-  table.data tbody tr td {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 2px 0;
-    border: none;
-    font-size: 14px;
+  table.data tbody tr:active,
+  table.mt tbody tr:active {
+    transform: scale(0.99) !important;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08) !important;
+  }
+
+  table.data tbody tr td,
+  table.mt tbody tr td {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 3px 0 !important;
+    border: none !important;
+    font-size: 13.5px !important;
     text-align: left !important;
+    word-break: break-word !important;
+    min-width: 0 !important;
+    width: 100% !important;
   }
 
-  table.data tbody tr td:first-child {
-    font-size: 16px;
-    font-weight: 700;
-    padding-bottom: 4px;
-    border-bottom: 1px dashed var(--color-card-border);
+  table.data tbody tr td:first-child,
+  table.mt tbody tr td:first-child {
+    font-size: 15.5px !important;
+    font-weight: 700 !important;
+    padding-bottom: 6px !important;
+    border-bottom: 1px dashed var(--color-card-border) !important;
+    color: var(--color-heading) !important;
   }
 
-  table.data tbody tr td:last-child {
-    margin-top: 4px;
-    padding-top: 6px;
-    border-top: 1px solid var(--color-background);
-    justify-content: flex-end;
-    gap: 8px;
+  table.data tbody tr td:last-child,
+  table.mt tbody tr td:last-child {
+    margin-top: 6px !important;
+    padding-top: 8px !important;
+    border-top: 1px solid var(--color-background) !important;
+    justify-content: flex-end !important;
+    gap: 8px !important;
   }
 
   /* Form & Modal Sheets on Mobile Devices */
