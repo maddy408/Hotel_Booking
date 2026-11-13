@@ -87,13 +87,21 @@ export default function Reports() {
       </div>
 
       <div className="panel">
-        <div className="ph">
+        <div className="ph report-range-ph">
           <h2>Occupancy &amp; revenue by range</h2>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input type="date" value={range.from} max={range.to} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} style={{ width: 160 }} />
-            <input type="date" value={range.to} min={range.from} max={todayIso()} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} style={{ width: 160 }} />
-            <button className="btn sm dark" type="button" disabled={exporting} onClick={exportCsv}>
-              {exporting ? 'Exporting…' : 'Export CSV'}
+          <div className="report-range-controls">
+            <div className="report-date-inputs">
+              <input type="date" value={range.from} max={range.to} onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))} />
+              <span className="report-to-sep">to</span>
+              <input type="date" value={range.to} min={range.from} max={todayIso()} onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))} />
+            </div>
+            <button className="btn sm dark report-export-btn" type="button" disabled={exporting} onClick={exportCsv}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7 10 12 15 17 10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              <span>{exporting ? 'Exporting…' : 'Export CSV'}</span>
             </button>
           </div>
         </div>
