@@ -45,6 +45,7 @@ return static function (Router $router, PDO $db, callable $auth): void {
     $router->get('/settings', [$settingsController, 'show'], [$auth]);
     $router->put('/settings/hotel', [$settingsController, 'updateHotel'], [$auth, $adminOnly]);
     $router->put('/settings/gst', [$settingsController, 'updateGst'], [$auth, $adminOnly]);
+    $router->put('/settings/checkout-hour', [$settingsController, 'updateCheckoutHour'], [$auth, $adminOnly]);
     $router->put('/settings/whatsapp', [$settingsController, 'updateWhatsapp'], [$auth, $adminOnly]);
     $router->put('/settings/policies', [$settingsController, 'updatePolicies'], [$auth, $adminOnly]);
 };

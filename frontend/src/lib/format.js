@@ -45,10 +45,29 @@ export function formatCheckoutHour(hour) {
   return `${twelveHour} ${period}`;
 }
 
-/** Client-side estimate only — the server recomputes and is authoritative. */
+/** Client-side estimate only — the server recomputes and is authoritative.
+ * Standard hotel accommodation slabs: up to ₹7,500 is 5%, above ₹7,500 is 18%.
+ */
 export function estimateGstRate(rate, settings) {
-  if (!settings) return rate <= 1000 ? 0 : rate <= 7500 ? 0.05 : 0.18;
-  if (rate <= Number(settings.gst_slab1_max_rate)) return Number(settings.gst_slab1_gst_rate);
-  if (rate <= Number(settings.gst_slab2_max_rate)) return Number(settings.gst_slab2_gst_rate);
-  return Number(settings.gst_slab3_gst_rate);
+  const r = Number(rate) || 0;
+  if (!settings) return r <= 7500 ? 0.05 : 0.18;
+  const s1Max = Number(settings.gst_slab1_max_rate) || 7500;
+  const s1Rate = settings.gst_slab1_gst_rate !== undefined ? Number(settings.gst_slab1_gst_rate) : 0.05;
+  const s2Max = Number(settings.gst_slab2_max_rate) || s1Max;
+  const s2Rate = settings.gst_slab2_gst_rate !== undefined ? Number(settings.gst_slab2_gst_rate) : 0.18;
+  const s3Rate = settings.gst_slab3_gst_rate !== undefined ? Number(settings.gst_slab3_gst_rate) : 0.18;
+
+  if (r <= s1Max) return s1Rate;
+  if (r <= s2Max) return s2Rate;
+  return s3Rate;
+}
+
+/** Formats GST percentage into intra-state CGST + SGST or inter-state IGST label. */
+export function formatGstBreakup(gstRate, isInterState = false) {
+  const totalPct = Math.round((Number(gstRate) || 0) * 1000) / 10;
+  if (isInterState) {
+    return `${totalPct}% IGST`;
+  }
+  const half = (totalPct / 2).toFixed(totalPct % 2 === 0 ? 0 : 1);
+  return `${half}% CGST + ${half}% SGST`;
 }

@@ -6,7 +6,7 @@ import { useGuestLookup } from '../../api/guests';
 import { useRoomTypes, useRooms } from '../../api/rooms';
 import { useSettings } from '../../api/settings';
 import { useToast } from '../../context/ToastContext.jsx';
-import { addDaysIso, estimateGstRate, fd, formatCheckoutHour, inr, nightsBetween, todayIso } from '../../lib/format';
+import { addDaysIso, estimateGstRate, formatGstBreakup, fd, formatCheckoutHour, inr, nightsBetween, todayIso } from '../../lib/format';
 import { BADGE_THEME, getCardDisplay } from '../../lib/roomAvailability.js';
 
 export default function NewBookingSheet({ editReservation, presetGuest, onClose }) {
@@ -96,7 +96,9 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
 
   const rateNum = Number(rate) || 0;
   const gstRate = estimateGstRate(rateNum, settings?.settings);
-  const total = (Number(days) || 1) * rateNum * (1 + gstRate);
+  const roomAmt = (Number(days) || 1) * rateNum;
+  const gstAmt = roomAmt * gstRate;
+  const total = roomAmt + gstAmt;
 
   const origDays = isEdit ? nightsBetween(editReservation.check_in_date, editReservation.check_out_date) : 0;
   const origRate = isEdit ? Number(editReservation.rate) || 0 : 0;
@@ -613,10 +615,22 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
               </>
             )}
             {!isEdit && (
-              <tr>
-                <td>Estimated bill with GST</td>
-                <td>{inr(total)}</td>
-              </tr>
+              <>
+                <tr>
+                  <td>
+                    {days || 1} day{(Number(days) || 1) > 1 ? 's' : ''} × {inr(rateNum)}
+                  </td>
+                  <td>{inr(roomAmt)}</td>
+                </tr>
+                <tr className="sub">
+                  <td>GST {Math.round(gstRate * 100)}% <span className="muted" style={{ fontSize: 12 }}>({formatGstBreakup(gstRate)})</span></td>
+                  <td>{inr(gstAmt)}</td>
+                </tr>
+                <tr className="tot">
+                  <td>Estimated bill with GST</td>
+                  <td>{inr(total)}</td>
+                </tr>
+              </>
             )}
             <tr className="sub">
               <td>Advance collected</td>

@@ -93,11 +93,13 @@ class StayRepository
         string $checkIn,
         string $checkoutPlanned,
         ?int $createdBy,
-        string $checkoutTime = '12:00:00'
+        string $checkoutTime = '12:00:00',
+        ?float $gstRate = null,
+        ?float $roomGstAmount = null
     ): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO stays (hotel_id, reservation_id, room_id, guest_id, persons, rate, check_in_date, checkout_planned, checkout_time, status, created_by)
-             VALUES (:hotel_id, :reservation_id, :room_id, :guest_id, :persons, :rate, :check_in, :checkout_planned, :checkout_time, \'in_house\', :created_by)'
+            'INSERT INTO stays (hotel_id, reservation_id, room_id, guest_id, persons, rate, check_in_date, checkout_planned, checkout_time, status, created_by, gst_rate, room_gst_amount)
+             VALUES (:hotel_id, :reservation_id, :room_id, :guest_id, :persons, :rate, :check_in, :checkout_planned, :checkout_time, \'in_house\', :created_by, :gst_rate, :room_gst_amount)'
         );
         $stmt->execute([
             'hotel_id' => $hotelId,
@@ -110,6 +112,8 @@ class StayRepository
             'checkout_planned' => $checkoutPlanned,
             'checkout_time' => $checkoutTime,
             'created_by' => $createdBy,
+            'gst_rate' => $gstRate,
+            'room_gst_amount' => $roomGstAmount,
         ]);
         return (int) $this->db->lastInsertId();
     }

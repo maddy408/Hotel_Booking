@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use App\Repository\HotelRepository;
 use App\Repository\PaymentRepository;
 use App\Repository\SettingsRepository;
 use App\Repository\StayChargeRepository;
@@ -12,20 +13,25 @@ use App\Repository\StayChargeRepository;
  * Computes billing breakdown for a stay:
  * - Actual stay duration (nightsBetween check_in_date and actual/reference date)
  * - Configured early-checkout policy (refund eligibility for unused nights, fees)
- * - GST based on configured slabs
- * - Extras (taxable if settings.tax_extras is on)
+ * - GST based on configured slabs (evaluated per nightly tariff)
+ * - Extras (taxed based on individual category SAC classification, not room accommodation GST)
  * - Discounts
  * - Successful payments vs refunds -> Net payments
  * - Outstanding balance vs Eligible refund
+ * - CGST / SGST / IGST tax breakup
  */
 class BillingService
 {
+    private readonly ?HotelRepository $hotels;
+
     public function __construct(
         private readonly GstService $gst,
         private readonly StayChargeRepository $charges,
         private readonly PaymentRepository $payments,
         private readonly ?SettingsRepository $settings = null,
+        mixed $hotels = null,
     ) {
+        $this->hotels = ($hotels instanceof HotelRepository) ? $hotels : null;
     }
 
     public static function nightsBetween(string $checkIn, string $referenceDate): int
@@ -86,8 +92,14 @@ class BillingService
             $earlyCheckoutFee = 0.0;
         }
 
-        $slab = $this->gst->slabFor($hotelId, $rate);
-        $gstRate = $slab['rate'];
+        // Determine room GST rate: use locked stay gst_rate if set (preserves confirmed bookings),
+        // otherwise calculate from configured slabs using nightly tariff
+        if (isset($stay['gst_rate']) && (float) $stay['gst_rate'] > 0) {
+            $gstRate = (float) $stay['gst_rate'];
+        } else {
+            $slab = $this->gst->slabFor($hotelId, $rate);
+            $gstRate = $slab['rate'];
+        }
         $roomGstAmount = round($roomAmount * $gstRate, 2);
 
         $charges = $this->charges->forStay((int) $stay['id']);
@@ -95,10 +107,22 @@ class BillingService
         $extrasGstAmount = 0.0;
         foreach ($charges as $charge) {
             $extrasAmount += (float) $charge['amount'];
-            if ($slab['taxExtras'] && (bool) $charge['is_taxable']) {
-                $extrasGstAmount += round((float) $charge['amount'] * $gstRate, 2);
+            if (isset($charge['gst_amount']) && (float) $charge['gst_amount'] > 0) {
+                // If precalculated on insertion
+                $extrasGstAmount += (float) $charge['gst_amount'];
+            } elseif (!empty($charge['is_taxable'])) {
+                // Use individual charge category tax classification rate
+                $extraTax = $this->gst->taxForExtraCharge($hotelId, (string) ($charge['label'] ?? ''), (float) $charge['amount'], true);
+                $extrasGstAmount += (float) $extraTax['gst_amount'];
             }
         }
+        $extrasGstAmount = round($extrasGstAmount, 2);
+
+        // CGST / SGST / IGST tax breakup
+        $totalTax = round($roomGstAmount + $extrasGstAmount, 2);
+        $hotel = $this->hotels !== null ? $this->hotels->find($hotelId) : null;
+        $guestGstin = $stay['guest_gstin'] ?? null;
+        $taxBreakup = $this->gst->calculateTaxBreakup($totalTax, $hotel['gstin'] ?? null, $guestGstin, $hotel['place'] ?? null);
 
         // Discount
         if ($overrideDiscount !== null) {
@@ -137,6 +161,10 @@ class BillingService
             'roomGstAmount' => $roomGstAmount,
             'extrasAmount' => round($extrasAmount, 2),
             'extrasGstAmount' => round($extrasGstAmount, 2),
+            'cgstAmount' => $taxBreakup['cgst_amount'],
+            'sgstAmount' => $taxBreakup['sgst_amount'],
+            'igstAmount' => $taxBreakup['igst_amount'],
+            'isInterState' => $taxBreakup['is_inter_state'],
             'earlyCheckoutFee' => round($earlyCheckoutFee, 2),
             'discountAmount' => round($discountAmount, 2),
             'total' => round($total, 2),

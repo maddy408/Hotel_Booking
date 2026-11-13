@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use App\Repository\HotelRepository;
 use App\Repository\InvoiceRepository;
+use App\Repository\SettingsRepository;
 use PDO;
 
 /**
@@ -14,10 +16,17 @@ use PDO;
  */
 class InvoiceService
 {
+    private readonly HotelRepository $hotels;
+    private readonly GstService $gst;
+
     public function __construct(
         private readonly PDO $db,
         private readonly InvoiceRepository $invoices,
+        mixed $hotels = null,
+        mixed $gst = null,
     ) {
+        $this->hotels = ($hotels instanceof HotelRepository) ? $hotels : new HotelRepository($db);
+        $this->gst = ($gst instanceof GstService) ? $gst : new GstService(new SettingsRepository($db));
     }
 
     /** Serializes invoice numbering per hotel using the always-present settings row as a mutex. */
@@ -44,7 +53,9 @@ class InvoiceService
         $sequence = $this->invoices->nextSequence($hotelId, $fy);
         $number = sprintf('%s-%s-%04d', $settings['invoice_prefix'], $fy, $sequence);
 
-        $halfGst = round(($bill['roomGstAmount'] + $bill['extrasGstAmount']) / 2, 2);
+        $totalTax = round((float) ($bill['roomGstAmount'] ?? 0.0) + (float) ($bill['extrasGstAmount'] ?? 0.0), 2);
+        $hotel = $this->hotels->find($hotelId);
+        $breakup = $this->gst->calculateTaxBreakup($totalTax, $hotel['gstin'] ?? null, $guestGstin, $hotel['place'] ?? null);
 
         $id = $this->invoices->create([
             'hotel_id' => $hotelId,
@@ -58,8 +69,9 @@ class InvoiceService
             'room_gst_amount' => $bill['roomGstAmount'],
             'extras_amount' => $bill['extrasAmount'],
             'extras_gst_amount' => $bill['extrasGstAmount'],
-            'cgst_amount' => $halfGst,
-            'sgst_amount' => $halfGst,
+            'cgst_amount' => $breakup['cgst_amount'],
+            'sgst_amount' => $breakup['sgst_amount'],
+            'igst_amount' => $breakup['igst_amount'],
             'total_amount' => $bill['total'],
             'advance_paid' => $advancePaid !== null ? round($advancePaid, 2) : $bill['advancePaid'],
             'balance_amount' => max(0.0, round((float) ($bill['balance'] ?? 0.0), 2)),

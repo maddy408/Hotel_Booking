@@ -114,23 +114,42 @@ export default function InvoicePrint() {
             <td className="r">{Math.round(invoice.gst_rate * 100)}%</td>
             <td className="r">{inr(invoice.room_amount)}</td>
           </tr>
-          {(charges || []).map((c) => (
-            <tr key={c.id}>
-              <td>{c.label}</td>
-              <td className="r">{c.is_taxable ? `${Math.round(invoice.gst_rate * 100)}%` : '—'}</td>
-              <td className="r">{inr(c.amount)}</td>
+          {(charges || []).map((c) => {
+            const chargeGstPct = Number(c.gst_rate) > 0
+              ? `${Math.round(Number(c.gst_rate) * 100)}%`
+              : c.is_taxable
+                ? `${Math.round(Number(invoice.gst_rate || 0.05) * 100)}%`
+                : '—';
+            return (
+              <tr key={c.id}>
+                <td>
+                  {c.label} {c.sac_code ? <span className="muted" style={{ fontSize: 12 }}>(SAC {c.sac_code})</span> : null}
+                </td>
+                <td className="r">{chargeGstPct}</td>
+                <td className="r">{inr(c.amount)}</td>
+              </tr>
+            );
+          })}
+          {Number(invoice.igst_amount) > 0 ? (
+            <tr>
+              <td>IGST</td>
+              <td className="r"></td>
+              <td className="r">{inr(invoice.igst_amount)}</td>
             </tr>
-          ))}
-          <tr>
-            <td>CGST</td>
-            <td className="r"></td>
-            <td className="r">{inr(invoice.cgst_amount)}</td>
-          </tr>
-          <tr>
-            <td>SGST</td>
-            <td className="r"></td>
-            <td className="r">{inr(invoice.sgst_amount)}</td>
-          </tr>
+          ) : (
+            <>
+              <tr>
+                <td>CGST</td>
+                <td className="r"></td>
+                <td className="r">{inr(invoice.cgst_amount)}</td>
+              </tr>
+              <tr>
+                <td>SGST</td>
+                <td className="r"></td>
+                <td className="r">{inr(invoice.sgst_amount)}</td>
+              </tr>
+            </>
+          )}
           <tr className="inv-total">
             <td>Invoice total</td>
             <td></td>

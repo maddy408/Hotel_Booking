@@ -81,22 +81,16 @@ final class AvailabilityServiceTest extends TestCase
     public function testExcludingItsOwnReservationMakesItsOwnRangeFreeAgain(): void
     {
         $roomId = $this->roomId(103);
-        $stmt = $this->db->prepare("SELECT id, check_in_date, check_out_date FROM reservations WHERE room_id = :id AND status = 'pending'");
-        $stmt->execute(['id' => $roomId]);
-        $res = $stmt->fetch(PDO::FETCH_ASSOC);
+        $guestId = (int) $this->db->query('SELECT id FROM guests LIMIT 1')->fetchColumn();
+        $this->db->prepare("INSERT INTO reservations (hotel_id, booking_code, room_id, guest_id, check_in_date, check_out_date, status, rate) VALUES (1, 'TEST-BK-ISO', :room_id, :guest_id, '2027-01-10', '2027-01-12', 'pending', 2000)")
+            ->execute(['room_id' => $roomId, 'guest_id' => $guestId]);
+        $resId = (int) $this->db->lastInsertId();
 
-        if (!$res) {
-            $guestId = (int) $this->db->query('SELECT id FROM guests LIMIT 1')->fetchColumn();
-            $this->db->prepare("INSERT INTO reservations (hotel_id, booking_code, room_id, guest_id, check_in_date, check_out_date, status, rate) VALUES (1, 'TEST-BK', :room_id, :guest_id, '2026-12-10', '2026-12-12', 'pending', 2000)")
-                ->execute(['room_id' => $roomId, 'guest_id' => $guestId]);
-            $res = [
-                'id' => (int) $this->db->lastInsertId(),
-                'check_in_date' => '2026-12-10',
-                'check_out_date' => '2026-12-12',
-            ];
+        try {
+            $this->assertTrue($this->service->isFree($roomId, '2027-01-10', '2027-01-12', excludeReservationId: $resId));
+        } finally {
+            $this->db->exec("DELETE FROM reservations WHERE id = {$resId}");
         }
-
-        $this->assertTrue($this->service->isFree($roomId, $res['check_in_date'], $res['check_out_date'], excludeReservationId: (int) $res['id']));
     }
 
     private function roomId(int $roomNo): int

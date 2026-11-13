@@ -423,9 +423,11 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
 
     public function test23_ExtremelyLongBookingDuration(): void
     {
+        $today = date('Y-m-d');
+        $nextYear = date('Y-m-d', strtotime('+365 days'));
         $b = $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500001', 'Aarav Sharma',
-            '2026-11-10', '2027-11-10', 2, 2200.00, 0.00, 'cash', 1
+            $today, $nextYear, 2, 2200.00, 0.00, 'cash', 1
         );
         $this->assertSame(365, BillingService::nightsBetween($b['check_in_date'], $b['check_out_date']));
     }

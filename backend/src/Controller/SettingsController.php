@@ -49,23 +49,58 @@ final class SettingsController
     {
         $data = $request->all();
         Validator::assert($data, [
-            'gstSlab1MaxRate' => 'required|numeric|min:0',
-            'gstSlab1GstRate' => 'required|numeric|min:0',
-            'gstSlab2MaxRate' => 'required|numeric|min:0',
-            'gstSlab2GstRate' => 'required|numeric|min:0',
-            'gstSlab3GstRate' => 'required|numeric|min:0',
-            'taxExtras' => 'required',
+            'gstSlab1MaxRate' => 'required|numeric|min:1',
+            'gstSlab1GstRate' => 'required|numeric|min:0|max:1',
+        ]);
+        $hotelId = (int) $request->attribute('hotelId');
+        $s1Max = (float) $data['gstSlab1MaxRate'];
+        $s1Rate = (float) $data['gstSlab1GstRate'];
+        $s2Max = isset($data['gstSlab2MaxRate']) ? (float) $data['gstSlab2MaxRate'] : $s1Max;
+        $s2Rate = isset($data['gstSlab2GstRate']) ? (float) $data['gstSlab2GstRate'] : 0.1800;
+        $s3Rate = isset($data['gstSlab3GstRate']) ? (float) $data['gstSlab3GstRate'] : $s2Rate;
+
+        $fields = [
+            'gst_slab1_max_rate' => $s1Max,
+            'gst_slab1_gst_rate' => $s1Rate,
+            'gst_slab2_max_rate' => $s2Max,
+            'gst_slab2_gst_rate' => $s2Rate,
+            'gst_slab3_gst_rate' => $s3Rate,
+        ];
+        if (array_key_exists('taxExtras', $data)) {
+            $fields['tax_extras'] = filter_var($data['taxExtras'], FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
+        }
+        if (isset($data['checkoutHour'])) {
+            $fields['checkout_hour'] = max(0, min(23, (int) $data['checkoutHour']));
+        }
+        if (isset($data['extraFoodGstRate'])) {
+            $fields['extra_food_gst_rate'] = max(0.0, min(1.0, (float) $data['extraFoodGstRate']));
+        }
+        if (isset($data['extraLaundryGstRate'])) {
+            $fields['extra_laundry_gst_rate'] = max(0.0, min(1.0, (float) $data['extraLaundryGstRate']));
+        }
+        if (isset($data['extraBedGstRate'])) {
+            $fields['extra_bed_gst_rate'] = max(0.0, min(1.0, (float) $data['extraBedGstRate']));
+        }
+        if (isset($data['extraTaxiGstRate'])) {
+            $fields['extra_taxi_gst_rate'] = max(0.0, min(1.0, (float) $data['extraTaxiGstRate']));
+        }
+        if (isset($data['extraOtherGstRate'])) {
+            $fields['extra_other_gst_rate'] = max(0.0, min(1.0, (float) $data['extraOtherGstRate']));
+        }
+
+        $this->settings->update($hotelId, $fields);
+        return $this->settings->find($hotelId);
+    }
+
+    public function updateCheckoutHour(Request $request): array
+    {
+        $data = $request->all();
+        Validator::assert($data, [
             'checkoutHour' => 'required|integer|min:0|max:23',
         ]);
         $hotelId = (int) $request->attribute('hotelId');
         $this->settings->update($hotelId, [
-            'gst_slab1_max_rate' => $data['gstSlab1MaxRate'],
-            'gst_slab1_gst_rate' => $data['gstSlab1GstRate'],
-            'gst_slab2_max_rate' => $data['gstSlab2MaxRate'],
-            'gst_slab2_gst_rate' => $data['gstSlab2GstRate'],
-            'gst_slab3_gst_rate' => $data['gstSlab3GstRate'],
-            'tax_extras' => $data['taxExtras'] ? 1 : 0,
-            'checkout_hour' => $data['checkoutHour'],
+            'checkout_hour' => (int) $data['checkoutHour'],
         ]);
         return $this->settings->find($hotelId);
     }

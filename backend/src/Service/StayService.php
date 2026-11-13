@@ -17,6 +17,8 @@ use PDO;
 
 final class StayService
 {
+    private readonly GstService $gst;
+
     public function __construct(
         private readonly PDO $db,
         private readonly StayRepository $stays,
@@ -31,7 +33,9 @@ final class StayService
         private readonly BillingService $billing,
         private readonly InvoiceService $invoiceService,
         private readonly AuditLogger $audit,
+        mixed $gst = null,
     ) {
+        $this->gst = ($gst instanceof GstService) ? $gst : new GstService($settings);
     }
 
     public function getGuestService(): GuestService
@@ -107,9 +111,13 @@ final class StayService
 
             $guest = $this->guestService->findOrCreate($hotelId, $guestPhone, $guestName, $idProofType, $idProofNumber, $city);
 
+            $nights = max(1, $days);
+            $gstCalc = $this->gst->calculateAccommodation($hotelId, $rate, $nights);
+
             $stayId = $this->stays->create(
                 $hotelId, null, $roomId, (int) $guest['id'], $persons, $rate,
-                $today, $checkoutPlanned, $userId, $checkoutTime
+                $today, $checkoutPlanned, $userId, $checkoutTime,
+                $gstCalc['gst_rate'], $gstCalc['tax_amount']
             );
 
             // Record successful advance payment
@@ -206,10 +214,17 @@ final class StayService
 
             $this->availability->assertFree($roomId, $today, $checkoutPlanned, excludeReservationId: $reservationId);
 
+            $resGstRate = isset($reservation['gst_rate']) && (float) $reservation['gst_rate'] > 0
+                ? (float) $reservation['gst_rate']
+                : $this->gst->slabFor($hotelId, (float) $reservation['rate'])['rate'];
+            $resTaxAmount = isset($reservation['tax_amount']) && (float) $reservation['tax_amount'] > 0
+                ? (float) $reservation['tax_amount']
+                : round((float) $reservation['rate'] * $nights * $resGstRate, 2);
+
             $stayId = $this->stays->create(
                 $hotelId, $reservationId, $roomId, (int) $reservation['guest_id'],
                 (int) $reservation['persons'], (float) $reservation['rate'], $today, $checkoutPlanned, $userId,
-                $checkoutTime
+                $checkoutTime, $resGstRate, $resTaxAmount
             );
             $this->reservations->markCheckedIn($reservationId);
             $this->audit->log($hotelId, $userId, 'check_in', 'stay', $stayId, null, ['from_reservation' => $reservationId]);
@@ -231,7 +246,18 @@ final class StayService
         if ($stay['status'] !== 'in_house') {
             throw ApiException::conflict('Extras can only be added to a current stay.');
         }
-        $this->charges->add($stayId, $label, $amount, $isTaxable, $userId);
+        $tax = $this->gst->taxForExtraCharge($hotelId, $label, $amount, $isTaxable);
+        $this->charges->add(
+            $stayId,
+            $label,
+            $amount,
+            $tax['is_taxable'],
+            $userId,
+            $tax['category'],
+            $tax['sac_code'],
+            $tax['gst_rate'],
+            $tax['gst_amount']
+        );
         return $this->billing->computeBill($this->stays->find($stayId));
     }
 

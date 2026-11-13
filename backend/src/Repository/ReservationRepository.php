@@ -67,11 +67,14 @@ class ReservationRepository
         string $advanceMethod,
         ?int $createdBy,
         string $checkOutTime = '12:00:00',
-        ?string $notes = null
+        ?string $notes = null,
+        ?float $gstRate = null,
+        ?float $taxAmount = null,
+        ?float $totalAmount = null
     ): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO reservations (hotel_id, booking_code, room_id, guest_id, check_in_date, check_out_date, check_out_time, persons, rate, advance_amount, advance_method, notes, status, created_by)
-             VALUES (:hotel_id, :booking_code, :room_id, :guest_id, :check_in, :check_out, :check_out_time, :persons, :rate, :advance_amount, :advance_method, :notes, \'pending\', :created_by)'
+            'INSERT INTO reservations (hotel_id, booking_code, room_id, guest_id, check_in_date, check_out_date, check_out_time, persons, rate, advance_amount, advance_method, notes, status, created_by, gst_rate, tax_amount, total_amount)
+             VALUES (:hotel_id, :booking_code, :room_id, :guest_id, :check_in, :check_out, :check_out_time, :persons, :rate, :advance_amount, :advance_method, :notes, \'pending\', :created_by, :gst_rate, :tax_amount, :total_amount)'
         );
         $stmt->execute([
             'hotel_id' => $hotelId,
@@ -87,6 +90,9 @@ class ReservationRepository
             'advance_method' => $advanceMethod,
             'notes' => $notes,
             'created_by' => $createdBy,
+            'gst_rate' => $gstRate,
+            'tax_amount' => $taxAmount,
+            'total_amount' => $totalAmount,
         ]);
         return (int) $this->db->lastInsertId();
     }
@@ -108,7 +114,10 @@ class ReservationRepository
         string $advanceMethod,
         string $checkOutTime = '12:00:00',
         ?string $notes = null,
-        ?int $guestId = null
+        ?int $guestId = null,
+        ?float $gstRate = null,
+        ?float $taxAmount = null,
+        ?float $totalAmount = null
     ): void {
         $sql = 'UPDATE reservations SET room_id = :room_id, check_in_date = :check_in, check_out_date = :check_out,
                     check_out_time = :check_out_time, persons = :persons, rate = :rate,
@@ -128,6 +137,18 @@ class ReservationRepository
         if ($guestId !== null) {
             $sql .= ', guest_id = :guest_id';
             $params['guest_id'] = $guestId;
+        }
+        if ($gstRate !== null) {
+            $sql .= ', gst_rate = :gst_rate';
+            $params['gst_rate'] = $gstRate;
+        }
+        if ($taxAmount !== null) {
+            $sql .= ', tax_amount = :tax_amount';
+            $params['tax_amount'] = $taxAmount;
+        }
+        if ($totalAmount !== null) {
+            $sql .= ', total_amount = :total_amount';
+            $params['total_amount'] = $totalAmount;
         }
         $sql .= ' WHERE id = :id';
         $this->db->prepare($sql)->execute($params);

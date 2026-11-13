@@ -16,6 +16,7 @@ use PDO;
 final class ReservationService
 {
     private readonly StayRepository $stays;
+    private readonly GstService $gst;
 
     public function __construct(
         private readonly PDO $db,
@@ -27,8 +28,10 @@ final class ReservationService
         private readonly SettingsRepository $settings,
         private readonly AuditLogger $audit,
         ?StayRepository $stays = null,
+        mixed $gst = null,
     ) {
         $this->stays = $stays ?? new StayRepository($db);
+        $this->gst = ($gst instanceof GstService) ? $gst : new GstService($settings);
     }
 
     public function create(
@@ -88,9 +91,17 @@ final class ReservationService
             // A phone booking has no ID proof yet — that's collected at actual check-in.
             $guest = $this->guestService->findOrCreateMinimal($hotelId, $guestPhone, $guestName);
 
+            // Calculate authoritative GST using centralized service
+            $nights = BillingService::nightsBetween($checkIn, $checkOut);
+            $gstCalc = $this->gst->calculateAccommodation($hotelId, $rate, $nights);
+            $gstRate = $gstCalc['gst_rate'];
+            $taxAmount = $gstCalc['tax_amount'];
+            $totalAmount = $gstCalc['total_amount'];
+
             $id = $this->reservations->create(
                 $hotelId, 'PENDING', $roomId, (int) $guest['id'], $checkIn, $checkOut, $persons, $rate,
                 $advanceAmount, $advanceMethod, $userId, $checkOutTime, $notes,
+                $gstRate, $taxAmount, $totalAmount
             );
             $code = ($settings['booking_prefix'] ?? 'BK') . '-' . (1000 + $id);
             $this->reservations->setBookingCode($id, $code);
@@ -186,9 +197,16 @@ final class ReservationService
 
             $cleanNotes = $notes !== null ? trim($notes) : ($existing['notes'] ?? null);
 
+            $nights = BillingService::nightsBetween($checkIn, $checkOut);
+            $gstCalc = $this->gst->calculateAccommodation($hotelId, $rate, $nights);
+            $gstRate = $gstCalc['gst_rate'];
+            $taxAmount = $gstCalc['tax_amount'];
+            $totalAmount = $gstCalc['total_amount'];
+
             $this->reservations->update(
                 $reservationId, $roomId, $checkIn, $checkOut, $persons, $rate,
-                $advanceAmount, $advanceMethod, $checkOutTime, $cleanNotes, $assignedGuestId
+                $advanceAmount, $advanceMethod, $checkOutTime, $cleanNotes, $assignedGuestId,
+                $gstRate, $taxAmount, $totalAmount
             );
 
             $delta = round($advanceAmount - (float) $existing['advance_amount'], 2);

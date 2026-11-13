@@ -12,12 +12,32 @@ class StayChargeRepository
     {
     }
 
-    public function add(int $stayId, string $label, float $amount, bool $isTaxable, ?int $addedBy): int
-    {
+    public function add(
+        int $stayId,
+        string $label,
+        float $amount,
+        bool $isTaxable,
+        ?int $addedBy,
+        ?string $category = null,
+        ?string $sacCode = null,
+        float $gstRate = 0.0,
+        float $gstAmount = 0.0
+    ): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO stay_charges (stay_id, label, amount, is_taxable, added_by) VALUES (:stay_id, :label, :amount, :is_taxable, :added_by)'
+            'INSERT INTO stay_charges (stay_id, label, amount, is_taxable, added_by, tax_category, sac_code, gst_rate, gst_amount)
+             VALUES (:stay_id, :label, :amount, :is_taxable, :added_by, :tax_category, :sac_code, :gst_rate, :gst_amount)'
         );
-        $stmt->execute(['stay_id' => $stayId, 'label' => $label, 'amount' => $amount, 'is_taxable' => $isTaxable ? 1 : 0, 'added_by' => $addedBy]);
+        $stmt->execute([
+            'stay_id' => $stayId,
+            'label' => $label,
+            'amount' => $amount,
+            'is_taxable' => $isTaxable ? 1 : 0,
+            'added_by' => $addedBy,
+            'tax_category' => $category,
+            'sac_code' => $sacCode,
+            'gst_rate' => $gstRate,
+            'gst_amount' => $gstAmount,
+        ]);
         return (int) $this->db->lastInsertId();
     }
 

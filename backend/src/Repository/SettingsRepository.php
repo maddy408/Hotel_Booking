@@ -24,7 +24,9 @@ class SettingsRepository
     {
         $columns = [
             'gst_slab1_max_rate', 'gst_slab1_gst_rate', 'gst_slab2_max_rate', 'gst_slab2_gst_rate',
-            'gst_slab3_gst_rate', 'tax_extras', 'checkout_hour', 'currency',
+            'gst_slab3_gst_rate', 'tax_extras',
+            'extra_food_gst_rate', 'extra_laundry_gst_rate', 'extra_bed_gst_rate', 'extra_taxi_gst_rate', 'extra_other_gst_rate',
+            'checkout_hour', 'currency',
             'financial_year_start_month', 'invoice_prefix', 'booking_prefix',
             'whatsapp_checkout_template', 'whatsapp_checkin_template', 'whatsapp_checkin_enabled', 'timezone',
             'cancellation_deadline_hours', 'cancellation_free_allowed', 'cancellation_fee_type', 'cancellation_fee_value',

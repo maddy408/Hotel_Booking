@@ -39,7 +39,25 @@ final class InvoiceController
         }
         $data = $request->all();
         $gstin = isset($data['guestGstin']) ? trim((string) $data['guestGstin']) : null;
-        $this->invoices->updateGstin($id, $gstin !== '' ? $gstin : null);
+        $cleanGstin = $gstin !== '' ? $gstin : null;
+
+        $totalTax = (float) $invoice['room_gst_amount'] + (float) $invoice['extras_gst_amount'];
+        $hotel = $this->hotels->find($hotelId);
+        $hotelState = \App\Service\GstService::extractStateCode($hotel['gstin'] ?? '') ?? '33';
+        $guestState = \App\Service\GstService::extractStateCode($cleanGstin);
+        $isInterState = ($guestState !== null && $guestState !== '' && $guestState !== $hotelState);
+
+        if ($isInterState) {
+            $cgst = 0.00;
+            $sgst = 0.00;
+            $igst = $totalTax;
+        } else {
+            $cgst = round($totalTax / 2, 2);
+            $sgst = round($totalTax - $cgst, 2);
+            $igst = 0.00;
+        }
+
+        $this->invoices->updateGstin($id, $cleanGstin, $cgst, $sgst, $igst);
         return $this->payload($id, $hotelId);
     }
 

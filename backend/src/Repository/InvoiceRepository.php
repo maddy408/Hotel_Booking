@@ -27,13 +27,16 @@ final class InvoiceRepository
         $invoice['discount_amount'] = (float) ($invoice['discount_amount'] ?? 0.0);
         $invoice['early_checkout_fee'] = (float) ($invoice['early_checkout_fee'] ?? 0.0);
         $invoice['refund_amount'] = (float) ($invoice['refund_amount'] ?? 0.0);
+        $invoice['cgst_amount'] = (float) ($invoice['cgst_amount'] ?? 0.0);
+        $invoice['sgst_amount'] = (float) ($invoice['sgst_amount'] ?? 0.0);
+        $invoice['igst_amount'] = (float) ($invoice['igst_amount'] ?? 0.0);
 
         $stmt = $this->db->prepare(
             'INSERT INTO invoices (hotel_id, stay_id, invoice_number, financial_year, sequence_no, guest_gstin,
-                    room_amount, gst_rate, room_gst_amount, extras_amount, extras_gst_amount, cgst_amount, sgst_amount,
+                    room_amount, gst_rate, room_gst_amount, extras_amount, extras_gst_amount, cgst_amount, sgst_amount, igst_amount,
                     total_amount, advance_paid, balance_amount, discount_amount, early_checkout_fee, refund_amount)
              VALUES (:hotel_id, :stay_id, :invoice_number, :financial_year, :sequence_no, :guest_gstin,
-                    :room_amount, :gst_rate, :room_gst_amount, :extras_amount, :extras_gst_amount, :cgst_amount, :sgst_amount,
+                    :room_amount, :gst_rate, :room_gst_amount, :extras_amount, :extras_gst_amount, :cgst_amount, :sgst_amount, :igst_amount,
                     :total_amount, :advance_paid, :balance_amount, :discount_amount, :early_checkout_fee, :refund_amount)'
         );
         $stmt->execute($invoice);
@@ -56,10 +59,15 @@ final class InvoiceRepository
         return $row === false ? null : $row;
     }
 
-    public function updateGstin(int $id, ?string $guestGstin): void
+    public function updateGstin(int $id, ?string $guestGstin, ?float $cgst = null, ?float $sgst = null, ?float $igst = null): void
     {
-        $stmt = $this->db->prepare('UPDATE invoices SET guest_gstin = :gstin WHERE id = :id');
-        $stmt->execute(['gstin' => $guestGstin, 'id' => $id]);
+        if ($cgst !== null && $sgst !== null && $igst !== null) {
+            $stmt = $this->db->prepare('UPDATE invoices SET guest_gstin = :gstin, cgst_amount = :cgst, sgst_amount = :sgst, igst_amount = :igst WHERE id = :id');
+            $stmt->execute(['gstin' => $guestGstin, 'cgst' => $cgst, 'sgst' => $sgst, 'igst' => $igst, 'id' => $id]);
+        } else {
+            $stmt = $this->db->prepare('UPDATE invoices SET guest_gstin = :gstin WHERE id = :id');
+            $stmt->execute(['gstin' => $guestGstin, 'id' => $id]);
+        }
     }
 
     /** @return array<int,array<string,mixed>> */

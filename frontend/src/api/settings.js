@@ -15,6 +15,17 @@ export function useUpdateGst() {
   return useMutation({ mutationFn: (payload) => api.put('/settings/gst', payload), onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }) });
 }
 
+export function useUpdateCheckoutHour() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => api.put('/settings/checkout-hour', payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['settings'] });
+      qc.invalidateQueries({ queryKey: ['today-checkouts'] });
+    },
+  });
+}
+
 export function useUpdateWhatsapp() {
   const qc = useQueryClient();
   return useMutation({

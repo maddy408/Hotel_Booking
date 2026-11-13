@@ -63,6 +63,7 @@ function HotelPanel() {
 }
 
 function RoomTypesPanel() {
+  const { data: settingsData } = useSettings();
   const { data: types } = useRoomTypes();
   const { data: roomsData } = useRooms();
   const createType = useCreateRoomType();
@@ -178,7 +179,7 @@ function RoomTypesPanel() {
                     aria-label="Max persons"
                   />
                 </td>
-                <td className="mono muted">{Math.round(estimateGstRate(Number(valueFor(t, 'rate')) || 0) * 100)}%</td>
+                <td className="mono muted">{Math.round(estimateGstRate(Number(valueFor(t, 'rate')) || 0, settingsData?.settings) * 100)}%</td>
                 <td className="mono">{countFor(t.id)}</td>
                 <td style={{ whiteSpace: 'nowrap' }}>
                   <button className="btn sm" type="button" disabled={updateType.isPending} onClick={() => saveType(t)}>

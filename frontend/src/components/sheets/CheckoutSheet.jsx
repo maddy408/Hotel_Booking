@@ -86,7 +86,7 @@ export default function CheckoutSheet({ stayId, onClose }) {
       toast('Enter the amount.');
       return;
     }
-    await addExtra.mutateAsync({ stayId, label: xLabel, amount: amt, isTaxable: false });
+    await addExtra.mutateAsync({ stayId, label: xLabel, amount: amt, isTaxable: true });
     setXAmount('');
     setConfirming(false);
   };
@@ -213,14 +213,37 @@ export default function CheckoutSheet({ stayId, onClose }) {
                 <td className="mono">{inr(bill.roomAmount)}</td>
               </tr>
               <tr className="sub">
-                <td>Taxes (GST {Math.round(bill.gstRate * 100)}%)</td>
+                <td>Room GST ({Math.round((bill.gstRate || 0) * 100)}%)</td>
                 <td className="mono">{inr(bill.roomGstAmount)}</td>
               </tr>
+              {Number(bill.extrasGstAmount) > 0 && (
+                <tr className="sub">
+                  <td>Extras GST</td>
+                  <td className="mono">+{inr(bill.extrasGstAmount)}</td>
+                </tr>
+              )}
+              {((bill.cgstAmount > 0 || bill.sgstAmount > 0 || bill.igstAmount > 0)) && (
+                <tr className="sub" style={{ fontSize: 12, color: 'var(--muted, #64748b)' }}>
+                  <td style={{ paddingLeft: 12 }}>
+                    {bill.isInterState
+                      ? `Tax breakup: IGST (${inr(bill.igstAmount)})`
+                      : `Tax breakup: CGST (${inr(bill.cgstAmount)}) + SGST (${inr(bill.sgstAmount)})`}
+                  </td>
+                  <td className="mono" style={{ fontSize: 12 }}>
+                    Total Tax: {inr(Number(bill.roomGstAmount || 0) + Number(bill.extrasGstAmount || 0))}
+                  </td>
+                </tr>
+              )}
 
               {bill.charges && bill.charges.map((x) => (
                 <tr key={x.id}>
                   <td>
                     {x.label}{' '}
+                    {x.gst_rate > 0 && (
+                      <span className="muted" style={{ fontSize: 11, marginLeft: 4 }}>
+                        ({Math.round(x.gst_rate * 100)}% GST)
+                      </span>
+                    )}{' '}
                     {!isCheckedOut && !completedResult && (
                       <button
                         className="rm"

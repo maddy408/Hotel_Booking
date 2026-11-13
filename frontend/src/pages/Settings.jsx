@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useSettings, useUpdateHotel, useUpdateGst, useUpdateWhatsapp, useUpdatePolicies } from '../api/settings';
+import { useSettings, useUpdateHotel, useUpdateGst, useUpdateCheckoutHour, useUpdateWhatsapp, useUpdatePolicies } from '../api/settings';
 import { useToast } from '../context/ToastContext.jsx';
+import { formatCheckoutHour } from '../lib/format.js';
 import { DEFAULT_CHECKIN_WHATSAPP_TEMPLATE } from '../lib/whatsapp.js';
 
 const DEFAULT_WHATSAPP_TEMPLATE =
@@ -44,26 +45,35 @@ export default function Settings() {
   const { data, isLoading } = useSettings();
   const updateHotel = useUpdateHotel();
   const updateGst = useUpdateGst();
+  const updateCheckoutHour = useUpdateCheckoutHour();
   const updateWhatsapp = useUpdateWhatsapp();
   const updatePolicies = useUpdatePolicies();
   const toast = useToast();
 
   const [hotel, setHotel] = useState(null);
   const [gst, setGst] = useState(null);
+  const [checkoutHour, setCheckoutHour] = useState(null);
   const [whatsapp, setWhatsapp] = useState(null);
   const [policies, setPolicies] = useState(null);
 
   useEffect(() => {
     if (data && !hotel) setHotel(data.hotel);
+    if (data && checkoutHour === null) {
+      setCheckoutHour(data.settings?.checkout_hour ?? 12);
+    }
     if (data && !gst) {
       setGst({
-        gstSlab1MaxRate: data.settings.gst_slab1_max_rate,
-        gstSlab1GstRate: Number(data.settings.gst_slab1_gst_rate) * 100,
-        gstSlab2MaxRate: data.settings.gst_slab2_max_rate,
-        gstSlab2GstRate: Number(data.settings.gst_slab2_gst_rate) * 100,
-        gstSlab3GstRate: Number(data.settings.gst_slab3_gst_rate) * 100,
-        taxExtras: !!data.settings.tax_extras,
-        checkoutHour: data.settings.checkout_hour,
+        gstSlab1MaxRate: data.settings?.gst_slab1_max_rate ?? '7500.00',
+        gstSlab1GstRate: Number(data.settings?.gst_slab1_gst_rate ?? 0.05) * 100,
+        gstSlab2MaxRate: data.settings?.gst_slab2_max_rate ?? '7500.00',
+        gstSlab2GstRate: Number(data.settings?.gst_slab2_gst_rate ?? 0.18) * 100,
+        gstSlab3GstRate: Number(data.settings?.gst_slab3_gst_rate ?? 0.18) * 100,
+        taxExtras: !!data.settings?.tax_extras,
+        extraFoodGstRate: Number(data.settings?.extra_food_gst_rate ?? 0.05) * 100,
+        extraLaundryGstRate: Number(data.settings?.extra_laundry_gst_rate ?? 0.18) * 100,
+        extraBedGstRate: Number(data.settings?.extra_bed_gst_rate ?? 0.05) * 100,
+        extraTaxiGstRate: Number(data.settings?.extra_taxi_gst_rate ?? 0.05) * 100,
+        extraOtherGstRate: Number(data.settings?.extra_other_gst_rate ?? 0.18) * 100,
       });
     }
     if (data && !whatsapp) {
@@ -89,7 +99,7 @@ export default function Settings() {
     }
   }, [data, hotel, gst, whatsapp, policies]);
 
-  if (isLoading || !hotel || !gst || !whatsapp || !policies) {
+  if (isLoading || !hotel || !gst || checkoutHour === null || !whatsapp || !policies) {
     return (
       <div className="mgrid">
         <div className="skel" style={{ height: 220 }} />
@@ -111,17 +121,53 @@ export default function Settings() {
 
   const saveGst = async (e) => {
     e.preventDefault();
+    const threshold = Number(gst.gstSlab1MaxRate);
+    const s1Rate = Number(gst.gstSlab1GstRate);
+    const s2Rate = Number(gst.gstSlab2GstRate);
+
+    if (isNaN(threshold) || threshold <= 0) {
+      toast('Please enter a valid positive Slab 1 threshold (₹).');
+      return;
+    }
+    if (isNaN(s1Rate) || s1Rate < 0 || s1Rate > 100) {
+      toast('Slab 1 GST % must be between 0 and 100.');
+      return;
+    }
+    if (isNaN(s2Rate) || s2Rate < 0 || s2Rate > 100) {
+      toast('Slab 2 GST % must be between 0 and 100.');
+      return;
+    }
+
     try {
       await updateGst.mutateAsync({
-        gstSlab1MaxRate: Number(gst.gstSlab1MaxRate),
-        gstSlab1GstRate: Number(gst.gstSlab1GstRate) / 100,
-        gstSlab2MaxRate: Number(gst.gstSlab2MaxRate),
-        gstSlab2GstRate: Number(gst.gstSlab2GstRate) / 100,
-        gstSlab3GstRate: Number(gst.gstSlab3GstRate) / 100,
-        taxExtras: gst.taxExtras,
-        checkoutHour: Number(gst.checkoutHour),
+        gstSlab1MaxRate: threshold,
+        gstSlab1GstRate: s1Rate / 100,
+        gstSlab2MaxRate: threshold,
+        gstSlab2GstRate: s2Rate / 100,
+        gstSlab3GstRate: s2Rate / 100,
+        taxExtras: gst.taxExtras ?? true,
+        extraFoodGstRate: Number(gst.extraFoodGstRate ?? 5) / 100,
+        extraLaundryGstRate: Number(gst.extraLaundryGstRate ?? 18) / 100,
+        extraBedGstRate: Number(gst.extraBedGstRate ?? 5) / 100,
+        extraTaxiGstRate: Number(gst.extraTaxiGstRate ?? 5) / 100,
+        extraOtherGstRate: Number(gst.extraOtherGstRate ?? 18) / 100,
       });
-      toast('GST settings saved.');
+      toast('GST settings saved successfully.');
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+
+  const saveCheckoutHour = async (e) => {
+    e.preventDefault();
+    const h = Number(checkoutHour);
+    if (isNaN(h) || h < 0 || h > 23) {
+      toast('Checkout hour must be an integer between 0 and 23.');
+      return;
+    }
+    try {
+      await updateCheckoutHour.mutateAsync({ checkoutHour: h });
+      toast('Checkout hour saved successfully.');
     } catch (err) {
       toast(err.message);
     }
@@ -179,7 +225,7 @@ export default function Settings() {
   const previewText = (whatsapp.template || DEFAULT_WHATSAPP_TEMPLATE)
     .replace(/{guest_name}/g, 'Arjun Mehta')
     .replace(/{room_no}/g, '106')
-    .replace(/{checkout_time}/g, `${gst.checkoutHour || 12}:00 PM`)
+    .replace(/{checkout_time}/g, formatCheckoutHour(checkoutHour))
     .replace(/{checkout_date}/g, '05 Nov 2026')
     .replace(/{hotel_name}/g, hotel.name || 'Tamarind Court')
     .replace(/{hotel_phone}/g, hotel.phone || '9800000000')
@@ -191,7 +237,7 @@ export default function Settings() {
     .replace(/\{\{checkin_date\}\}|\{checkin_date\}/g, '06 Nov 2026')
     .replace(/\{\{checkin_time\}\}|\{checkin_time\}/g, '10:30 AM')
     .replace(/\{\{checkout_date\}\}|\{checkout_date\}/g, '07 Nov 2026')
-    .replace(/\{\{checkout_time\}\}|\{checkout_time\}/g, `${gst.checkoutHour || 12}:00 PM`)
+    .replace(/\{\{checkout_time\}\}|\{checkout_time\}/g, formatCheckoutHour(checkoutHour))
     .replace(/\{\{hotel_name\}\}|\{hotel_name\}/g, hotel.name || 'Tamarind Court')
     .replace(/\{\{hotel_phone\}\}|\{hotel_phone\}/g, hotel.phone || '9800000000');
 
@@ -236,51 +282,208 @@ export default function Settings() {
 
       <div className="panel">
         <div className="ph">
-          <h2>GST &amp; checkout</h2>
+          <h2>GST Configuration</h2>
         </div>
         <form className="sb" onSubmit={saveGst}>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            Hotel room tariff GST slabs, by nightly rate. These apply to every new booking and check-in bill.
+            Hotel accommodation GST slabs by nightly tariff. Slabs evaluate per room per night regardless of room type.
           </p>
-          <div className="fg">
-            <div className="f">
-              <label htmlFor="g-s1max">0% up to rate (₹)</label>
-              <input id="g-s1max" type="number" min="0" value={gst.gstSlab1MaxRate} onChange={(e) => setGst({ ...gst, gstSlab1MaxRate: e.target.value })} />
+
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: 12,
+              background: 'var(--color-bg, #f7f6f9)',
+              border: '1px solid var(--color-border)',
+              borderRadius: 8,
+              padding: '12px 14px',
+              fontSize: 13,
+            }}
+          >
+            <div>
+              <div style={{ fontWeight: 600, color: 'var(--color-text)' }}>
+                Slab 1: Up to ₹{Number(gst.gstSlab1MaxRate || 7500).toLocaleString('en-IN')} / night
+              </div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                GST: <strong>{gst.gstSlab1GstRate}%</strong> (CGST {(gst.gstSlab1GstRate / 2).toFixed(1).replace(/\.0$/, '')}% + SGST {(gst.gstSlab1GstRate / 2).toFixed(1).replace(/\.0$/, '')}% or IGST {gst.gstSlab1GstRate}%)
+              </div>
             </div>
-            <div className="f">
-              <label htmlFor="g-s2max">5% up to rate (₹)</label>
-              <input id="g-s2max" type="number" min="0" value={gst.gstSlab2MaxRate} onChange={(e) => setGst({ ...gst, gstSlab2MaxRate: e.target.value })} />
-            </div>
-            <div className="f">
-              <label htmlFor="g-s1rate">Slab 1 GST %</label>
-              <input id="g-s1rate" type="number" min="0" max="100" value={gst.gstSlab1GstRate} onChange={(e) => setGst({ ...gst, gstSlab1GstRate: e.target.value })} />
-            </div>
-            <div className="f">
-              <label htmlFor="g-s2rate">Slab 2 GST %</label>
-              <input id="g-s2rate" type="number" min="0" max="100" value={gst.gstSlab2GstRate} onChange={(e) => setGst({ ...gst, gstSlab2GstRate: e.target.value })} />
-            </div>
-            <div className="f">
-              <label htmlFor="g-s3rate">Above slab-2 GST %</label>
-              <input id="g-s3rate" type="number" min="0" max="100" value={gst.gstSlab3GstRate} onChange={(e) => setGst({ ...gst, gstSlab3GstRate: e.target.value })} />
-            </div>
-            <div className="f">
-              <label htmlFor="g-hour">Checkout hour (24h)</label>
-              <input id="g-hour" type="number" min="0" max="23" value={gst.checkoutHour} onChange={(e) => setGst({ ...gst, checkoutHour: e.target.value })} />
-            </div>
-            <div className="f full">
-              <label>Apply GST to extra charges too</label>
-              <div className="seg">
-                <button type="button" aria-pressed={gst.taxExtras} onClick={() => setGst({ ...gst, taxExtras: true })}>
-                  Yes
-                </button>
-                <button type="button" aria-pressed={!gst.taxExtras} onClick={() => setGst({ ...gst, taxExtras: false })}>
-                  No
-                </button>
+            <div>
+              <div style={{ fontWeight: 600, color: 'var(--color-text)' }}>
+                Slab 2: Above ₹{Number(gst.gstSlab1MaxRate || 7500).toLocaleString('en-IN')} / night
+              </div>
+              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                GST: <strong>{gst.gstSlab2GstRate}%</strong> (CGST {(gst.gstSlab2GstRate / 2).toFixed(1).replace(/\.0$/, '')}% + SGST {(gst.gstSlab2GstRate / 2).toFixed(1).replace(/\.0$/, '')}% or IGST {gst.gstSlab2GstRate}%)
               </div>
             </div>
           </div>
+
+          <div className="fg">
+            <div className="f full">
+              <label htmlFor="g-s1max">Slab 1 tariff threshold (₹ per night) *</label>
+              <input
+                id="g-s1max"
+                type="number"
+                min="1"
+                step="1"
+                required
+                value={gst.gstSlab1MaxRate}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setGst({ ...gst, gstSlab1MaxRate: val, gstSlab2MaxRate: val });
+                }}
+              />
+              <span className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                Room tariffs up to ₹{Number(gst.gstSlab1MaxRate || 0).toLocaleString('en-IN')} will be taxed at Slab 1 GST.
+              </span>
+            </div>
+
+            <div className="f">
+              <label htmlFor="g-s1rate">Slab 1 GST % (Up to ₹{Number(gst.gstSlab1MaxRate || 0).toLocaleString('en-IN')}) *</label>
+              <input
+                id="g-s1rate"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                required
+                value={gst.gstSlab1GstRate}
+                onChange={(e) => setGst({ ...gst, gstSlab1GstRate: e.target.value })}
+              />
+            </div>
+
+            <div className="f">
+              <label htmlFor="g-s2rate">Slab 2 GST % (Above ₹{Number(gst.gstSlab1MaxRate || 0).toLocaleString('en-IN')}) *</label>
+              <input
+                id="g-s2rate"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                required
+                value={gst.gstSlab2GstRate}
+                onChange={(e) => setGst({ ...gst, gstSlab2GstRate: e.target.value, gstSlab3GstRate: e.target.value })}
+              />
+            </div>
+
+            <div className="f full" style={{ borderTop: '1px solid var(--color-border)', paddingTop: 14, marginTop: 8 }}>
+              <h3 style={{ margin: 0, fontSize: 15 }}>Extra Charges GST Rates</h3>
+              <p className="muted" style={{ margin: '4px 0 0 0', fontSize: 12 }}>
+                Individual service tax classifications. Room accommodation GST rate is never automatically applied to extra charges.
+              </p>
+            </div>
+
+            <div className="f">
+              <label htmlFor="g-ex-food">Food &amp; Beverage GST % (SAC 996331)</label>
+              <input
+                id="g-ex-food"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={gst.extraFoodGstRate}
+                onChange={(e) => setGst({ ...gst, extraFoodGstRate: e.target.value })}
+              />
+            </div>
+
+            <div className="f">
+              <label htmlFor="g-ex-laundry">Laundry GST % (SAC 999719)</label>
+              <input
+                id="g-ex-laundry"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={gst.extraLaundryGstRate}
+                onChange={(e) => setGst({ ...gst, extraLaundryGstRate: e.target.value })}
+              />
+            </div>
+
+            <div className="f">
+              <label htmlFor="g-ex-bed">Extra Bed GST % (SAC 996311)</label>
+              <input
+                id="g-ex-bed"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={gst.extraBedGstRate}
+                onChange={(e) => setGst({ ...gst, extraBedGstRate: e.target.value })}
+              />
+            </div>
+
+            <div className="f">
+              <label htmlFor="g-ex-taxi">Taxi &amp; Travel GST % (SAC 996412)</label>
+              <input
+                id="g-ex-taxi"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={gst.extraTaxiGstRate}
+                onChange={(e) => setGst({ ...gst, extraTaxiGstRate: e.target.value })}
+              />
+            </div>
+
+            <div className="f">
+              <label htmlFor="g-ex-other">Other Services GST % (SAC 9997)</label>
+              <input
+                id="g-ex-other"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={gst.extraOtherGstRate}
+                onChange={(e) => setGst({ ...gst, extraOtherGstRate: e.target.value })}
+              />
+            </div>
+          </div>
           <button className="btn dark" type="submit" disabled={updateGst.isPending} style={{ alignSelf: 'flex-start' }}>
-            Save GST settings
+            {updateGst.isPending ? 'Saving...' : 'Save GST settings'}
+          </button>
+        </form>
+      </div>
+
+      <div className="panel">
+        <div className="ph">
+          <h2>Checkout Timing</h2>
+        </div>
+        <form className="sb" onSubmit={saveCheckoutHour}>
+          <p className="muted" style={{ margin: 0, fontSize: 13 }}>
+            Configure the daily checkout hour (24-hour format). Used for computing stay duration and checkout alerts.
+          </p>
+          <div className="fg">
+            <div className="f">
+              <label htmlFor="c-hour">Checkout hour (0–23) *</label>
+              <input
+                id="c-hour"
+                type="number"
+                min="0"
+                max="23"
+                required
+                value={checkoutHour}
+                onChange={(e) => setCheckoutHour(e.target.value)}
+              />
+            </div>
+            <div className="f">
+              <label>Current configured time</label>
+              <div
+                style={{
+                  height: 38,
+                  display: 'flex',
+                  alignItems: 'center',
+                  fontWeight: 600,
+                  color: 'var(--color-text)',
+                  fontSize: 14,
+                }}
+              >
+                {formatCheckoutHour(checkoutHour)}
+              </div>
+            </div>
+          </div>
+          <button className="btn dark" type="submit" disabled={updateCheckoutHour.isPending} style={{ alignSelf: 'flex-start' }}>
+            {updateCheckoutHour.isPending ? 'Saving...' : 'Save checkout hour'}
           </button>
         </form>
       </div>

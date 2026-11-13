@@ -39,9 +39,11 @@ return static function (Router $router, PDO $db, callable $auth): void {
     $stayRepo = new StayRepository($db);
     $paymentRepo = new PaymentRepository($db);
     $settingsRepo = new SettingsRepository($db);
+    $gstService = new GstService($settingsRepo);
+    $hotelRepo = new HotelRepository($db);
     $availability = new AvailabilityService($reservationRepo, $stayRepo);
-    $billing = new BillingService(new GstService($settingsRepo), new StayChargeRepository($db), $paymentRepo, $settingsRepo);
-    $invoiceService = new InvoiceService($db, new InvoiceRepository($db));
+    $billing = new BillingService($gstService, new StayChargeRepository($db), $paymentRepo, $settingsRepo, $hotelRepo);
+    $invoiceService = new InvoiceService($db, new InvoiceRepository($db), $hotelRepo, $gstService);
 
     // ---- guests ----
     $guestController = new GuestController($guestRepo, $guestService, $stayRepo, $reservationRepo);
@@ -53,10 +55,11 @@ return static function (Router $router, PDO $db, callable $auth): void {
     $router->get('/guests/{id}/id-image', [$guestController, 'downloadIdImage'], [$auth]);
 
     // ---- reservations (bookings) ----
-    $reservationService = new ReservationService($db, $reservationRepo, $roomRepo, $guestService, $availability, $paymentRepo, $settingsRepo, $audit, $stayRepo);
+    $reservationService = new ReservationService($db, $reservationRepo, $roomRepo, $guestService, $availability, $paymentRepo, $settingsRepo, $audit, $stayRepo, $gstService);
     $stayService = new StayService(
         $db, $stayRepo, $reservationRepo, $roomRepo, new StayChargeRepository($db), $paymentRepo,
         new HousekeepingLogRepository($db), $settingsRepo, $guestService, $availability, $billing, $invoiceService, $audit,
+        $gstService
     );
 
     $reservationController = new ReservationController($reservationService, $stayService);
