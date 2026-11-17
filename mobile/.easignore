@@ -1,0 +1,14 @@
+# EAS Build ignore file
+# Ignore build outputs, temporary files and unnecessary native artifacts to keep upload fast and prevent ECONNRESET
+dist/
+.expo/
+.claude/
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# Android build cache / generated folders
+android/.gradle/
+android/app/build/
+android/build/
