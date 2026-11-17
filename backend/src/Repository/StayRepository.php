@@ -95,11 +95,14 @@ class StayRepository
         ?int $createdBy,
         string $checkoutTime = '12:00:00',
         ?float $gstRate = null,
-        ?float $roomGstAmount = null
+        ?float $roomGstAmount = null,
+        string $bookingSource = 'Social Media',
+        ?int $referredByGuestId = null,
+        ?string $otherSource = null
     ): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO stays (hotel_id, reservation_id, room_id, guest_id, persons, rate, check_in_date, checkout_planned, checkout_time, status, created_by, gst_rate, room_gst_amount)
-             VALUES (:hotel_id, :reservation_id, :room_id, :guest_id, :persons, :rate, :check_in, :checkout_planned, :checkout_time, \'in_house\', :created_by, :gst_rate, :room_gst_amount)'
+            'INSERT INTO stays (hotel_id, reservation_id, room_id, guest_id, persons, rate, check_in_date, checkout_planned, checkout_time, booking_source, referred_by_guest_id, other_source, status, created_by, gst_rate, room_gst_amount)
+             VALUES (:hotel_id, :reservation_id, :room_id, :guest_id, :persons, :rate, :check_in, :checkout_planned, :checkout_time, :booking_source, :referred_by_guest_id, :other_source, \'in_house\', :created_by, :gst_rate, :room_gst_amount)'
         );
         $stmt->execute([
             'hotel_id' => $hotelId,
@@ -111,6 +114,9 @@ class StayRepository
             'check_in' => $checkIn,
             'checkout_planned' => $checkoutPlanned,
             'checkout_time' => $checkoutTime,
+            'booking_source' => $bookingSource,
+            'referred_by_guest_id' => $referredByGuestId,
+            'other_source' => $otherSource,
             'created_by' => $createdBy,
             'gst_rate' => $gstRate,
             'room_gst_amount' => $roomGstAmount,
@@ -188,15 +194,30 @@ class StayRepository
         return $stmt->fetchAll();
     }
 
+    public function findByReservation(int $reservationId, int $hotelId): ?array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT * FROM stays WHERE reservation_id = :reservation_id AND hotel_id = :hotel_id ORDER BY id DESC LIMIT 1'
+        );
+        $stmt->execute(['reservation_id' => $reservationId, 'hotel_id' => $hotelId]);
+        $row = $stmt->fetch();
+        return $row === false ? null : $row;
+    }
+
     public function findWithDetails(int $id): ?array
     {
         $stmt = $this->db->prepare(
             'SELECT s.*, g.name AS guest_name, g.phone AS guest_phone, g.id_proof_type, g.id_proof_last4,
-                    r.room_no, rt.name AS room_type_name
+                    r.room_no, rt.name AS room_type_name,
+                    ref_g.name AS referred_by_guest_name, ref_g.phone AS referred_by_guest_phone,
+                    res.check_in_date AS original_check_in_date,
+                    res.check_out_date AS original_checkout_date
              FROM stays s
              JOIN guests g ON g.id = s.guest_id
              JOIN rooms r ON r.id = s.room_id
              JOIN room_types rt ON rt.id = r.room_type_id
+             LEFT JOIN guests ref_g ON ref_g.id = s.referred_by_guest_id
+             LEFT JOIN reservations res ON res.id = s.reservation_id
              WHERE s.id = :id'
         );
         $stmt->execute(['id' => $id]);

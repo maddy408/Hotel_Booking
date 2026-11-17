@@ -59,13 +59,14 @@ export function onUnauthorized(handler) {
 
 async function rawRequest(path, { method = 'GET', body, auth = true } = {}) {
   const headers = { };
-  if (body !== undefined) headers['Content-Type'] = 'application/json';
+  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
+  if (body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
   if (auth && tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
 
   const res = await fetch(`${BASE_URL}${path}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? (isFormData ? body : JSON.stringify(body)) : undefined,
   });
 
   let payload;

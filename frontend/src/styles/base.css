@@ -2836,6 +2836,576 @@ input:focus, select:focus, textarea:focus {
 }
 
 
+
+/* ==========================================================================
+   Room Details Popup Redesign GÇô Wider, Compact & User-Friendly
+   ========================================================================== */
+.sheet-room-details {
+  width: min(800px, 94vw);
+  max-width: 800px;
+  max-height: 85vh;
+  height: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-xl, 18px);
+  background: var(--color-surface, #ffffff);
+  border: 1.5px solid var(--color-card-border, #EAE4EF);
+  box-shadow: var(--shadow-pop);
+}
+
+@media (max-width: 768px) {
+  .sheet-room-details {
+    width: min(720px, 96vw);
+    max-height: 88vh;
+  }
+}
+
+@media (max-width: 560px) {
+  .sheet-room-details {
+    width: 100% !important;
+    max-height: 94vh !important;
+    height: 94vh;
+    border-radius: 20px 20px 0 0 !important;
+  }
+}
+
+/* Compact Sticky Header */
+.rd-header {
+  flex: 0 0 auto;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--color-surface, #ffffff);
+  border-bottom: 1.5px solid var(--color-card-border, #EAE4EF);
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.rd-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.rd-room-badge {
+  font-family: var(--mono);
+  font-weight: 800;
+  font-size: 18px;
+  padding: 5px 12px;
+  border-radius: var(--radius-md, 10px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.1;
+  flex: none;
+}
+
+.rd-room-badge.s-occupied {
+  background: var(--color-info-bg, #EAF1FC);
+  color: var(--color-info, #3868A8);
+  border: 1px solid var(--color-info-border, #C8DBF6);
+}
+
+.rd-room-badge.s-booked {
+  background: var(--color-warning-bg, #FFF3E4);
+  color: var(--color-warning, #B77920);
+  border: 1px solid var(--color-warning-border, #F7DDB8);
+}
+
+.rd-room-badge.s-free {
+  background: var(--color-success-bg, #E9F6EF);
+  color: var(--color-success, #218653);
+  border: 1px solid var(--color-success-border, #C2E5D2);
+}
+
+.rd-room-badge.s-cleaning {
+  background: var(--color-cleaning-bg, #F1EBFA);
+  color: var(--color-cleaning, #7853A2);
+  border: 1px solid var(--color-cleaning-border, #DFCFF4);
+}
+
+.rd-room-badge.s-repair {
+  background: var(--color-danger-bg, #FCEBED);
+  color: var(--color-danger, #B43D50);
+  border: 1px solid var(--color-danger-border, #F5C7CE);
+}
+
+.rd-header-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.rd-header-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-heading, #30223D);
+  line-height: 1.25;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rd-header-sep {
+  color: var(--color-border-strong, #D6CBDD);
+}
+
+.rd-header-type {
+  color: var(--color-text-secondary, #81748C);
+  font-weight: 500;
+  font-size: 13.5px;
+}
+
+.rd-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.rd-status-pill {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 4px 10px;
+  border-radius: var(--radius-full, 9999px);
+  white-space: nowrap;
+}
+
+.rd-status-pill.s-occupied {
+  background: var(--color-info-bg, #EAF1FC);
+  color: var(--color-info, #3868A8);
+  border: 1px solid var(--color-info-border, #C8DBF6);
+}
+
+.rd-status-pill.s-booked {
+  background: var(--color-warning-bg, #FFF3E4);
+  color: var(--color-warning, #B77920);
+  border: 1px solid var(--color-warning-border, #F7DDB8);
+}
+
+.rd-status-pill.s-free {
+  background: var(--color-success-bg, #E9F6EF);
+  color: var(--color-success, #218653);
+  border: 1px solid var(--color-success-border, #C2E5D2);
+}
+
+.rd-status-pill.s-cleaning {
+  background: var(--color-cleaning-bg, #F1EBFA);
+  color: var(--color-cleaning, #7853A2);
+  border: 1px solid var(--color-cleaning-border, #DFCFF4);
+}
+
+.rd-status-pill.s-repair {
+  background: var(--color-danger-bg, #FCEBED);
+  color: var(--color-danger, #B43D50);
+  border: 1px solid var(--color-danger-border, #F5C7CE);
+}
+
+.rd-persons-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: var(--radius-full, 9999px);
+  background: var(--color-lavender-light, #F1EAF8);
+  color: var(--color-primary, #70265F);
+  border: 1px solid var(--color-lavender-border, #EAE4EF);
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) {
+  .rd-header {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  .rd-room-badge {
+    font-size: 16px;
+    padding: 4px 9px;
+  }
+  .rd-header-title {
+    font-size: 14.5px;
+  }
+  .rd-header-type {
+    font-size: 12.5px;
+  }
+  .rd-status-pill, .rd-persons-pill {
+    font-size: 11px;
+    padding: 3px 7px;
+  }
+}
+
+/* Single Scrollable Content Area */
+.rd-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (max-width: 560px) {
+  .rd-body {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+}
+
+/* Compact Section Cards */
+.rd-card {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-card-border, #EAE4EF);
+  border-radius: var(--radius-lg, 14px);
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(48, 34, 61, 0.03);
+}
+
+.rd-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border-subtle, #F3EEF7);
+}
+
+.rd-card-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-primary, #70265F);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rd-pill-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full, 9999px);
+  background: var(--color-lavender-light, #F1EAF8);
+  color: var(--color-primary, #70265F);
+  border: 1px solid var(--color-lavender-border, #EAE4EF);
+}
+
+/* Two-Column Layout Grids */
+.rd-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 18px;
+}
+
+@media (max-width: 540px) {
+  .rd-grid-2 {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+.rd-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rd-field-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #81748C);
+  text-transform: capitalize;
+}
+
+.rd-field-value {
+  font-size: 13.5px;
+  color: var(--color-heading, #30223D);
+  word-break: break-word;
+}
+
+.rd-field-value.bold {
+  font-weight: 700;
+}
+
+/* Compact Financial Section */
+.rd-payment-card {
+  border-color: var(--color-card-border, #EAE4EF);
+}
+
+.rd-payment-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rd-financial-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.rd-fin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  color: var(--color-text, #30223D);
+  padding: 1px 0;
+}
+
+.rd-fin-row.sub {
+  color: var(--color-text-secondary, #81748C);
+  font-size: 12.5px;
+}
+
+.rd-fin-row.total-row {
+  font-weight: 800;
+  font-size: 13.5px;
+  padding-top: 6px;
+  margin-top: 4px;
+  border-top: 1px dashed var(--color-border, #EAE4EF);
+  color: var(--color-heading, #30223D);
+}
+
+.rd-fin-row.paid-row {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--color-heading, #30223D);
+}
+
+/* Prominent Outstanding Balance Card */
+.rd-balance-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 14px;
+  border-radius: var(--radius-md, 10px);
+  margin-top: 4px;
+}
+
+.rd-balance-box.is-due {
+  background: var(--color-danger-bg, #FCEBED);
+  border: 1.5px solid var(--color-danger-border, #F5C7CE);
+}
+
+.rd-balance-box.is-refund {
+  background: var(--color-success-bg, #E9F6EF);
+  border: 1.5px solid var(--color-success-border, #C2E5D2);
+}
+
+.rd-balance-box.is-settled {
+  background: var(--color-lavender-light, #F1EAF8);
+  border: 1.5px solid var(--color-lavender-border, #EAE4EF);
+}
+
+.rd-balance-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rd-balance-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rd-balance-box.is-due .rd-balance-title {
+  color: var(--color-danger, #B43D50);
+}
+
+.rd-balance-box.is-refund .rd-balance-title {
+  color: var(--color-success, #218653);
+}
+
+.rd-balance-box.is-settled .rd-balance-title {
+  color: var(--color-primary, #70265F);
+}
+
+.rd-balance-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #81748C);
+}
+
+.rd-balance-figure {
+  font-size: 17px;
+  font-weight: 800;
+}
+
+.rd-balance-box.is-due .rd-balance-figure {
+  color: var(--color-danger, #B43D50);
+}
+
+.rd-balance-box.is-refund .rd-balance-figure {
+  color: var(--color-success, #218653);
+}
+
+.rd-balance-box.is-settled .rd-balance-figure {
+  color: var(--color-primary, #70265F);
+}
+
+/* Expandable Accordion Sections */
+.rd-accordion {
+  border: 1px solid var(--color-card-border, #EAE4EF);
+  border-radius: var(--radius-lg, 14px);
+  overflow: hidden;
+  background: var(--color-surface, #ffffff);
+}
+
+.rd-accordion-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--color-surface, #ffffff);
+  cursor: pointer;
+  text-align: left;
+  border: none;
+  transition: background 0.15s ease;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-heading, #30223D);
+}
+
+.rd-accordion-btn:hover {
+  background: var(--color-lavender-light, #F1EAF8);
+}
+
+.rd-accordion-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rd-accordion-indicator {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-primary, #70265F);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.rd-accordion-content {
+  padding: 12px 14px;
+  border-top: 1px solid var(--color-border-subtle, #F3EEF7);
+  background: var(--color-card-secondary, #FAF6FD);
+}
+
+/* Compact Occupant Items */
+.rd-occupant-item {
+  padding: 8px 10px;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #EAE4EF);
+  border-radius: var(--radius-md, 10px);
+  font-size: 12.5px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.rd-occupant-item:last-child {
+  margin-bottom: 0;
+}
+
+.rd-occupant-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.rd-occ-num {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-primary, #70265F);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+.rd-doc-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  background: var(--color-card-secondary, #FAF6FD);
+  border-radius: 6px;
+  border: 1px solid var(--color-border, #EAE4EF);
+  font-size: 12px;
+  gap: 8px;
+}
+
+.rd-doc-badge {
+  font-weight: 700;
+  font-size: 9.5px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  flex: none;
+}
+
+.rd-doc-badge.pdf {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.rd-doc-badge.img {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+/* Sticky Action Footer */
+.rd-footer {
+  flex: 0 0 auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+  background: var(--color-surface, #ffffff);
+  border-top: 1.5px solid var(--color-card-border, #EAE4EF);
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  box-shadow: 0 -2px 10px rgba(48, 34, 61, 0.04);
+  flex-wrap: wrap;
+}
+
+@media (max-width: 560px) {
+  .rd-footer {
+    padding: 10px 14px;
+    gap: 6px;
+  }
+  .rd-footer .btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
 /* --------------------------------------------------------------------------
    Report Range & Export Button Mobile Responsiveness
    -------------------------------------------------------------------------- */

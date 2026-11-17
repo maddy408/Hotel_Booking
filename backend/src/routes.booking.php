@@ -3,12 +3,15 @@
 declare(strict_types=1);
 
 use App\Controller\GuestController;
+use App\Controller\OccupantDocumentController;
 use App\Controller\ReservationController;
 use App\Controller\StayController;
 use App\Repository\AuditLogRepository;
 use App\Repository\GuestRepository;
 use App\Repository\HousekeepingLogRepository;
 use App\Repository\InvoiceRepository;
+use App\Repository\OccupantDocumentRepository;
+use App\Repository\OccupantRepository;
 use App\Repository\PaymentRepository;
 use App\Repository\ReservationRepository;
 use App\Repository\RoomRepository;
@@ -21,6 +24,7 @@ use App\Service\BillingService;
 use App\Service\GstService;
 use App\Service\GuestService;
 use App\Service\InvoiceService;
+use App\Service\OccupantDocumentService;
 use App\Service\ReservationService;
 use App\Service\StayService;
 use App\Support\AuditLogger;
@@ -29,6 +33,7 @@ use App\Middleware\RoleMiddleware;
 use App\Repository\HotelRepository;
 use App\Service\TodayCheckoutsService;
 use App\Support\IdImageUploader;
+use App\Support\OccupantDocumentUploader;
 
 return static function (Router $router, PDO $db, callable $auth): void {
     $audit = new AuditLogger(new AuditLogRepository($db));
@@ -45,21 +50,29 @@ return static function (Router $router, PDO $db, callable $auth): void {
     $billing = new BillingService($gstService, new StayChargeRepository($db), $paymentRepo, $settingsRepo, $hotelRepo);
     $invoiceService = new InvoiceService($db, new InvoiceRepository($db), $hotelRepo, $gstService);
 
+    $occupantRepo = new OccupantRepository($db);
+    $occupantDocRepo = new OccupantDocumentRepository($db);
+    $occupantDocUploader = new OccupantDocumentUploader(dirname(__DIR__) . '/storage/uploads');
+    $occupantDocService = new OccupantDocumentService($occupantRepo, $occupantDocRepo, $stayRepo, $occupantDocUploader, $reservationRepo);
+    $occupantDocController = new OccupantDocumentController($occupantDocService);
+
     // ---- guests ----
-    $guestController = new GuestController($guestRepo, $guestService, $stayRepo, $reservationRepo);
+    $guestController = new GuestController($guestRepo, $guestService, $stayRepo, $reservationRepo, $occupantDocService, $paymentRepo, $billing);
     $router->get('/guests', [$guestController, 'index'], [$auth]);
     $router->get('/guests/lookup', [$guestController, 'lookup'], [$auth]);
+    $router->get('/guests/referrals', [$guestController, 'allReferrals'], [$auth]);
     $router->get('/guests/{id}', [$guestController, 'show'], [$auth]);
+    $router->get('/guests/{id}/referrals', [$guestController, 'referrals'], [$auth]);
     $router->put('/guests/{id}', [$guestController, 'update'], [$auth]);
     $router->post('/guests/{id}/id-image', [$guestController, 'uploadIdImage'], [$auth]);
     $router->get('/guests/{id}/id-image', [$guestController, 'downloadIdImage'], [$auth]);
 
     // ---- reservations (bookings) ----
-    $reservationService = new ReservationService($db, $reservationRepo, $roomRepo, $guestService, $availability, $paymentRepo, $settingsRepo, $audit, $stayRepo, $gstService);
+    $reservationService = new ReservationService($db, $reservationRepo, $roomRepo, $guestService, $availability, $paymentRepo, $settingsRepo, $audit, $stayRepo, $gstService, $occupantDocService);
     $stayService = new StayService(
         $db, $stayRepo, $reservationRepo, $roomRepo, new StayChargeRepository($db), $paymentRepo,
         new HousekeepingLogRepository($db), $settingsRepo, $guestService, $availability, $billing, $invoiceService, $audit,
-        $gstService
+        $gstService, $occupantDocService
     );
 
     $reservationController = new ReservationController($reservationService, $stayService);
@@ -91,6 +104,16 @@ return static function (Router $router, PDO $db, callable $auth): void {
     $router->post('/stays/{id}/extend', [$stayController, 'extend'], [$auth]);
     $router->put('/stays/{id}/checkout-time', [$stayController, 'updateCheckout'], [$auth]);
     $router->post('/stays/{id}/checkout', [$stayController, 'checkout'], [$auth]);
+
+    // ---- occupant & reservation documents ----
+    $router->get('/reservations/{id}/documents', [$occupantDocController, 'listByReservation'], [$auth]);
+    $router->post('/reservations/{id}/documents', [$occupantDocController, 'uploadToReservation'], [$auth]);
+    $router->get('/stays/{id}/documents', [$occupantDocController, 'listByStay'], [$auth]);
+    $router->get('/stays/{id}/occupants', [$occupantDocController, 'listOccupantsByStay'], [$auth]);
+    $router->post('/stays/{id}/documents', [$occupantDocController, 'uploadToStay'], [$auth]);
+    $router->post('/occupants/{id}/documents', [$occupantDocController, 'uploadToOccupant'], [$auth]);
+    $router->get('/occupant-documents/{id}/file', [$occupantDocController, 'download'], [$auth]);
+    $router->delete('/occupant-documents/{id}', [$occupantDocController, 'delete'], [$auth]);
 
     // ---- daily operations / today checkouts (restricted to front-desk staff: admin, manager, receptionist) ----
     $authorizedStaff = new RoleMiddleware(['admin', 'manager', 'receptionist']);

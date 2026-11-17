@@ -9,6 +9,22 @@ export function useGuest(id) {
   return useQuery({ queryKey: ['guest', id], queryFn: () => api.get(`/guests/${id}`), enabled: !!id });
 }
 
+export function useGuestReferrals(id) {
+  return useQuery({ queryKey: ['guest-referrals', id], queryFn: () => api.get(`/guests/${id}/referrals`), enabled: !!id });
+}
+
+export function useAllReferrals(filters) {
+  const queryStr = filters ? new URLSearchParams(
+    Object.entries(filters).filter(([_, v]) => v !== undefined && v !== null && v !== '')
+  ).toString() : '';
+  const url = queryStr ? `/guests/referrals?${queryStr}` : '/guests/referrals';
+  return useQuery({
+    queryKey: ['all-referrals', filters],
+    queryFn: () => api.get(url),
+    refetchInterval: 30000,
+  });
+}
+
 export function useGuestLookup(phone) {
   return useQuery({
     queryKey: ['guest-lookup', phone],
@@ -27,6 +43,7 @@ export function useUpdateGuest() {
       qc.invalidateQueries({ queryKey: ['guest', vars.id] });
       qc.invalidateQueries({ queryKey: ['reservations'] });
       qc.invalidateQueries({ queryKey: ['rooms'] });
+      qc.invalidateQueries({ queryKey: ['all-referrals'] });
     },
   });
 }

@@ -34,19 +34,21 @@ class ReservationRepository
      */
     public function overlapping(int $roomId, string $checkIn, string $checkOut, ?int $excludeId = null): array
     {
-        $sql = "SELECT * FROM reservations
-                WHERE room_id = :room_id
+        $sql = "SELECT reservations.*, g.name AS guest_name
+                FROM reservations
+                LEFT JOIN guests g ON g.id = reservations.guest_id
+                WHERE reservations.room_id = :room_id
                   AND (
-                    status = 'pending'
-                    OR (status = 'checked_in' AND EXISTS (
+                    reservations.status = 'pending'
+                    OR (reservations.status = 'checked_in' AND EXISTS (
                       SELECT 1 FROM stays s
                       WHERE s.reservation_id = reservations.id AND s.status = 'in_house'
                     ))
                   )
-                  AND check_in_date < :check_out AND :check_in < check_out_date";
+                  AND reservations.check_in_date < :check_out AND :check_in < reservations.check_out_date";
         $params = ['room_id' => $roomId, 'check_in' => $checkIn, 'check_out' => $checkOut];
         if ($excludeId !== null) {
-            $sql .= ' AND id != :exclude_id';
+            $sql .= ' AND reservations.id != :exclude_id';
             $params['exclude_id'] = $excludeId;
         }
         $stmt = $this->db->prepare($sql);
@@ -70,11 +72,14 @@ class ReservationRepository
         ?string $notes = null,
         ?float $gstRate = null,
         ?float $taxAmount = null,
-        ?float $totalAmount = null
+        ?float $totalAmount = null,
+        string $bookingSource = 'Social Media',
+        ?int $referredByGuestId = null,
+        ?string $otherSource = null
     ): int {
         $stmt = $this->db->prepare(
-            'INSERT INTO reservations (hotel_id, booking_code, room_id, guest_id, check_in_date, check_out_date, check_out_time, persons, rate, advance_amount, advance_method, notes, status, created_by, gst_rate, tax_amount, total_amount)
-             VALUES (:hotel_id, :booking_code, :room_id, :guest_id, :check_in, :check_out, :check_out_time, :persons, :rate, :advance_amount, :advance_method, :notes, \'pending\', :created_by, :gst_rate, :tax_amount, :total_amount)'
+            'INSERT INTO reservations (hotel_id, booking_code, room_id, guest_id, check_in_date, check_out_date, check_out_time, persons, rate, advance_amount, advance_method, notes, booking_source, referred_by_guest_id, other_source, status, created_by, gst_rate, tax_amount, total_amount)
+             VALUES (:hotel_id, :booking_code, :room_id, :guest_id, :check_in, :check_out, :check_out_time, :persons, :rate, :advance_amount, :advance_method, :notes, :booking_source, :referred_by_guest_id, :other_source, \'pending\', :created_by, :gst_rate, :tax_amount, :total_amount)'
         );
         $stmt->execute([
             'hotel_id' => $hotelId,
@@ -89,6 +94,9 @@ class ReservationRepository
             'advance_amount' => $advanceAmount,
             'advance_method' => $advanceMethod,
             'notes' => $notes,
+            'booking_source' => $bookingSource,
+            'referred_by_guest_id' => $referredByGuestId,
+            'other_source' => $otherSource,
             'created_by' => $createdBy,
             'gst_rate' => $gstRate,
             'tax_amount' => $taxAmount,
@@ -117,7 +125,11 @@ class ReservationRepository
         ?int $guestId = null,
         ?float $gstRate = null,
         ?float $taxAmount = null,
-        ?float $totalAmount = null
+        ?float $totalAmount = null,
+        ?string $bookingSource = null,
+        ?int $referredByGuestId = null,
+        ?string $otherSource = null,
+        bool $updateSource = false
     ): void {
         $sql = 'UPDATE reservations SET room_id = :room_id, check_in_date = :check_in, check_out_date = :check_out,
                     check_out_time = :check_out_time, persons = :persons, rate = :rate,
@@ -149,6 +161,12 @@ class ReservationRepository
         if ($totalAmount !== null) {
             $sql .= ', total_amount = :total_amount';
             $params['total_amount'] = $totalAmount;
+        }
+        if ($updateSource) {
+            $sql .= ', booking_source = :booking_source, referred_by_guest_id = :referred_by_guest_id, other_source = :other_source';
+            $params['booking_source'] = $bookingSource;
+            $params['referred_by_guest_id'] = $referredByGuestId;
+            $params['other_source'] = $otherSource;
         }
         $sql .= ' WHERE id = :id';
         $this->db->prepare($sql)->execute($params);
@@ -186,6 +204,7 @@ class ReservationRepository
         $stmt = $this->db->prepare(
             "SELECT b.*, g.name AS guest_name, g.phone AS guest_phone, r.room_no, r.housekeeping_status,
                     rt.max_persons, rt.name AS room_type_name,
+                    ref_g.name AS referred_by_guest_name, ref_g.phone AS referred_by_guest_phone,
                     COALESCE((
                         SELECT SUM(CASE WHEN p.type = 'refund' THEN -p.amount ELSE p.amount END)
                         FROM payments p
@@ -195,6 +214,7 @@ class ReservationRepository
              JOIN guests g ON g.id = b.guest_id
              JOIN rooms r ON r.id = b.room_id
              JOIN room_types rt ON rt.id = r.room_type_id
+             LEFT JOIN guests ref_g ON ref_g.id = b.referred_by_guest_id
              WHERE b.hotel_id = :hotel_id AND b.status = 'pending'
              ORDER BY b.check_in_date, r.room_no"
         );
@@ -226,6 +246,7 @@ class ReservationRepository
         $stmt = $this->db->prepare(
             "SELECT b.*, g.name AS guest_name, g.phone AS guest_phone, r.room_no, r.housekeeping_status,
                     rt.max_persons, rt.name AS room_type_name, u_cb.name AS cancelled_by_name,
+                    ref_g.name AS referred_by_guest_name, ref_g.phone AS referred_by_guest_phone,
                     COALESCE((
                         SELECT SUM(CASE WHEN p.type = 'refund' THEN -p.amount ELSE p.amount END)
                         FROM payments p
@@ -236,6 +257,7 @@ class ReservationRepository
              JOIN rooms r ON r.id = b.room_id
              JOIN room_types rt ON rt.id = r.room_type_id
              LEFT JOIN users u_cb ON u_cb.id = b.cancelled_by
+             LEFT JOIN guests ref_g ON ref_g.id = b.referred_by_guest_id
              WHERE b.id = :id"
         );
         $stmt->execute(['id' => $id]);

@@ -31,3 +31,6 @@ Thumbs.db
 /backend/php_server.log
 /backend/server_stderr.log
 /backend/server_stdout.log
+
+# Temporary debugging files
+/scratch/

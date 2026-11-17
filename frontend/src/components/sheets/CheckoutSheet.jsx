@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import RefundSheet from './RefundSheet.jsx';
 import {
@@ -11,12 +11,13 @@ import {
   useEarlyCheckoutPreview,
   useApplyDiscount,
 } from '../../api/stays';
+import { fetchOccupantDocumentBlob, useUploadStayDocuments } from '../../api/occupantDocuments';
 import { useToast } from '../../context/ToastContext.jsx';
 import { fd, inr, todayIso } from '../../lib/format';
 
 const EXTRAS = ['Food', 'Laundry', 'Extra bed', 'Taxi', 'Other'];
 
-export default function CheckoutSheet({ stayId, onClose }) {
+export default function CheckoutSheet({ stayId, onClose, initialMode }) {
   const { data: stay, isError: isStayError, error: stayError } = useStay(stayId);
   const { data: rawBill, isError: isBillError, error: billError } = useStayBill(stayId);
 
@@ -44,6 +45,44 @@ export default function CheckoutSheet({ stayId, onClose }) {
   const [confirming, setConfirming] = useState(false);
   const [completedResult, setCompletedResult] = useState(null);
   const [showRefundModal, setShowRefundModal] = useState(false);
+
+  const uploadDocs = useUploadStayDocuments();
+  const postUploadInputRef = useRef(null);
+  const [loadingDocId, setLoadingDocId] = useState(null);
+
+  const handleViewDocument = async (doc) => {
+    try {
+      setLoadingDocId(doc.id);
+      const { blobUrl, mime, filename } = await fetchOccupantDocumentBlob(doc.id);
+      if (mime.startsWith('image/') || mime === 'application/pdf') {
+        window.open(blobUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename || doc.original_filename || 'document';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } catch (e) {
+      toast(e.message || 'Could not load document.');
+    } finally {
+      setLoadingDocId(null);
+    }
+  };
+
+  const handlePostCheckInUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    try {
+      await uploadDocs.mutateAsync({ stayId, files });
+      toast('ID proof document uploaded successfully.');
+    } catch (err) {
+      toast(err.message || 'Failed to upload document.');
+    } finally {
+      e.target.value = '';
+    }
+  };
 
   const bill = previewData?.bill || rawBill;
 
@@ -78,7 +117,7 @@ export default function CheckoutSheet({ stayId, onClose }) {
 
   const isCheckedOut = stay.status === 'checked_out';
   const today = todayIso();
-  const isEarly = !isCheckedOut && stay.checkout_planned > actualCheckoutDate;
+  const isEarly = !isCheckedOut && (initialMode === 'early' || stay.checkout_planned > actualCheckoutDate);
 
   const addExtraCharge = async () => {
     const amt = Number(xAmount);
@@ -151,6 +190,8 @@ export default function CheckoutSheet({ stayId, onClose }) {
             <dd>
               {stay.id_proof_type} <span className="mono">{stay.id_proof_last4 ? `••••${stay.id_proof_last4}` : ''}</span>
             </dd>
+            <dt>Persons</dt>
+            <dd>{stay.persons} {stay.persons === 1 ? 'person' : 'persons'}</dd>
             <dt>Original Check-in</dt>
             <dd>{fd(stay.check_in_date)}</dd>
             <dt>Original Planned Checkout</dt>
@@ -181,6 +222,137 @@ export default function CheckoutSheet({ stayId, onClose }) {
               </>
             )}
           </dl>
+
+          {/* Individual Occupants Details Section */}
+          {stay.occupants?.length > 0 && (
+            <div style={{ marginTop: 10, marginBottom: 12, padding: '10px 12px', background: 'var(--color-card-secondary, #FAF6FD)', borderRadius: 8, border: '1px solid var(--color-lavender-border, #EAE4EF)' }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--color-primary, #70265F)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>Occupants</span>
+                <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 6px', borderRadius: 10, background: 'var(--color-lavender-light, #F1EAF8)' }}>
+                  {stay.occupants.length} {stay.occupants.length === 1 ? 'Person' : 'Persons'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {stay.occupants.map((occ) => (
+                  <div key={occ.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12.5, padding: '5px 8px', background: 'var(--color-surface, #ffffff)', borderRadius: 5, border: '1px solid var(--border, #e2e8f0)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ width: 18, height: 18, borderRadius: '50%', background: 'var(--color-primary, #70265F)', color: '#ffffff', fontSize: 10.5, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                        {occ.occupant_number}
+                      </span>
+                      <strong style={{ color: 'var(--color-heading)' }}>{occ.name || '—'}</strong>
+                      {occ.gender && <span className="muted" style={{ fontSize: 11.5 }}>({occ.gender})</span>}
+                      {occ.is_primary === 1 && (
+                        <span style={{ fontSize: 10, background: 'var(--color-lavender-light, #F1EAF8)', color: 'var(--color-primary, #70265F)', padding: '1px 5px', borderRadius: 3, fontWeight: 600 }}>
+                          Lead
+                        </span>
+                      )}
+                    </div>
+                    <span className="mono" style={{ fontSize: 12, color: 'var(--color-text-secondary, #64748b)' }}>{occ.phone || '—'}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Guest ID Proof Documents Section */}
+          <div style={{ marginTop: 10, marginBottom: 14, padding: '10px 12px', background: 'var(--color-bg-secondary, #f8fafc)', borderRadius: 8, border: '1px solid var(--color-border, #e2e8f0)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: (stay.documents?.length ? 8 : 4) }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <strong style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-heading)' }}>
+                  Guest ID Proof Documents
+                </strong>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  ({stay.documents?.length || 0})
+                </span>
+              </div>
+              <div>
+                <input
+                  ref={postUploadInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                  style={{ display: 'none' }}
+                  onChange={handlePostCheckInUpload}
+                />
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={uploadDocs.isPending}
+                  onClick={() => postUploadInputRef.current?.click()}
+                  style={{ fontSize: 12, padding: '3px 8px' }}
+                >
+                  {uploadDocs.isPending ? 'Uploading…' : '+ Add Document'}
+                </button>
+              </div>
+            </div>
+
+            {(!stay.documents || stay.documents.length === 0) ? (
+              <div className="muted" style={{ fontSize: 12, fontStyle: 'italic' }}>
+                No ID proof documents uploaded yet for this stay.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {stay.documents.map((doc) => (
+                  <div
+                    key={doc.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '6px 10px',
+                      background: 'var(--color-surface, #ffffff)',
+                      border: '1px solid var(--border, #e2e8f0)',
+                      borderRadius: 6,
+                      fontSize: 12.5,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                      <span
+                        style={{
+                          background: doc.original_filename?.toLowerCase().endsWith('.pdf') || doc.mime_type === 'application/pdf' ? '#fee2e2' : '#e0e7ff',
+                          color: doc.original_filename?.toLowerCase().endsWith('.pdf') || doc.mime_type === 'application/pdf' ? '#991b1b' : '#3730a3',
+                          fontWeight: 700,
+                          fontSize: 10,
+                          padding: '2px 5px',
+                          borderRadius: 4,
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {doc.original_filename?.split('.').pop() || 'DOC'}
+                      </span>
+                      <span
+                        style={{
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: 180,
+                          fontWeight: 500,
+                        }}
+                        title={doc.original_filename}
+                      >
+                        {doc.original_filename}
+                      </span>
+                      <span className="muted" style={{ fontSize: 11 }}>
+                        {doc.occupant_number ? `(Person ${doc.occupant_number})` : ''} · {doc.file_size ? `${(doc.file_size / 1024).toFixed(0)} KB` : ''}
+                      </span>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        className="btn sm"
+                        disabled={loadingDocId === doc.id}
+                        onClick={() => handleViewDocument(doc)}
+                        style={{ fontSize: 11.5, padding: '2px 8px' }}
+                      >
+                        {loadingDocId === doc.id ? 'Loading…' : 'View'}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Early Checkout Notice & Date Selector */}
           {!isCheckedOut && (

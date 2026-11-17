@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import RefundSheet from './RefundSheet.jsx';
-import { useReservation, useCancelReservation, useNoShowReservation, useCancellationPreview } from '../../api/reservations';
+import { useReservation, useCancelReservation, useNoShowReservation, useCancellationPreview, useReservations } from '../../api/reservations';
 import { useRooms, useHousekeepingAction } from '../../api/rooms';
 import { useToast } from '../../context/ToastContext.jsx';
-import { fd, inr, todayIso } from '../../lib/format';
+import { addDaysIso, fd, inr, todayIso } from '../../lib/format';
 
 export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, onEdit }) {
   const { data: reservation } = useReservation(reservationId);
@@ -13,6 +13,7 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
   const cancel = useCancelReservation();
   const noShow = useNoShowReservation();
   const hkAction = useHousekeepingAction();
+  const { data: allReservations = [] } = useReservations();
   const toast = useToast();
 
   const [cancelling, setCancelling] = useState(false);
@@ -41,7 +42,21 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
   const isNotReady = !isReady && !isMaintenance;
   const isPending = reservation.status === 'pending';
   const isCancelled = reservation.status === 'cancelled';
-  const canIn = isPending && reservation.check_in_date <= today && !isOccupied && !isMaintenance && isReady;
+
+  const days = Math.max(1, Math.round((new Date(reservation.check_out_date) - new Date(reservation.check_in_date)) / 86400000));
+  const out = addDaysIso(today, days);
+  const isLateArrival = isPending && (reservation.check_in_date < today || reservation.check_out_date <= today);
+  const lateArrivalConflict = isLateArrival
+    ? allReservations.find((r) =>
+        r.id !== reservation.id &&
+        Number(r.room_id) === Number(reservation.room_id) &&
+        r.status === 'pending' &&
+        r.check_in_date < out &&
+        today < r.check_out_date
+      )
+    : null;
+
+  const canIn = isPending && reservation.check_in_date <= today && !isOccupied && !isMaintenance && isReady && !lateArrivalConflict;
 
   const handleMarkReady = async () => {
     try {
@@ -120,6 +135,30 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
                 <dd>{reservation.notes}</dd>
               </>
             )}
+            {(!reservation.booking_source || reservation.booking_source === 'Social Media') && (
+              <>
+                <dt>Booking Source</dt>
+                <dd>Social Media</dd>
+              </>
+            )}
+            {(reservation.booking_source === 'Reference – Existing Member' || reservation.booking_source === 'Reference' || (reservation.booking_source && reservation.booking_source.startsWith('Reference'))) && (
+              <>
+                <dt>Booking Source</dt>
+                <dd>Reference</dd>
+                <dt>Referred By</dt>
+                <dd>{reservation.referred_by_guest_name || '—'}</dd>
+                <dt>Referrer's Mobile Number</dt>
+                <dd className="mono">{reservation.referred_by_guest_phone || '—'}</dd>
+              </>
+            )}
+            {reservation.booking_source === 'Other' && (
+              <>
+                <dt>Booking Source</dt>
+                <dd>Other</dd>
+                <dt>Person Name</dt>
+                <dd>{reservation.other_source || '—'}</dd>
+              </>
+            )}
             <dt>Advance Paid</dt>
             <dd className="mono">
               {Number(reservation.advance_paid) > 0 ? (
@@ -186,13 +225,27 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
             </div>
           )}
 
+          {lateArrivalConflict && (
+            <div className="warn" style={{ color: '#991b1b', borderColor: '#ef4444', background: '#fef2f2', marginBottom: 12 }}>
+              <strong style={{ display: 'block', marginBottom: 4 }}>
+                ⚠️ Late Arrival Booking Conflict
+              </strong>
+              <div>
+                Guest arrived late. Checking in today until <b>{fd(out)}</b> conflicts with upcoming reservation <b>{lateArrivalConflict.booking_code}</b> ({lateArrivalConflict.guest_name || 'Next Guest'} · {fd(lateArrivalConflict.check_in_date)} to {fd(lateArrivalConflict.check_out_date)}).
+              </div>
+              <div style={{ marginTop: 6, fontSize: 12 }}>
+                Check-in is blocked. Please edit the booking dates or assign a different room before checking in.
+              </div>
+            </div>
+          )}
+
           {canIn && (
             <button className="btn go big" type="button" onClick={() => onCheckIn(reservation)}>
               Guest came · Check in
             </button>
           )}
 
-          {isPending && !canIn && reservation.check_in_date <= today && (
+          {isPending && !canIn && !lateArrivalConflict && reservation.check_in_date <= today && (
             <div className="warn" style={{ color: isMaintenance ? 'var(--mnt)' : undefined, borderColor: isMaintenance ? 'var(--mnt-border)' : undefined, background: isMaintenance ? 'var(--mnt-bg)' : undefined }}>
               {isOccupied
                 ? `Room ${reservation.room_no} is still occupied. Wait for checkout or change the room.`

@@ -16,6 +16,7 @@ final class Request
      * @param array<string,mixed> $query
      * @param array<string,mixed> $body
      * @param array<string,string> $headers
+     * @param array<string,mixed> $files
      */
     public function __construct(
         public readonly string $method,
@@ -24,6 +25,7 @@ final class Request
         public readonly array $body,
         public readonly array $headers,
         public readonly string $ip,
+        public readonly array $files = [],
     ) {
     }
 
@@ -79,7 +81,23 @@ final class Request
             body: $body,
             headers: $headers,
             ip: $_SERVER['REMOTE_ADDR'] ?? '0.0.0.0',
+            files: $_FILES,
         );
+    }
+
+    public function file(string $key): mixed
+    {
+        if (array_key_exists($key, $this->files)) {
+            return $this->files[$key];
+        }
+        $stripped = rtrim($key, '[]');
+        if (array_key_exists($stripped, $this->files)) {
+            return $this->files[$stripped];
+        }
+        if (array_key_exists($stripped . '[]', $this->files)) {
+            return $this->files[$stripped . '[]'];
+        }
+        return null;
     }
 
     public function header(string $name): ?string
@@ -95,7 +113,26 @@ final class Request
 
     public function input(string $key, mixed $default = null): mixed
     {
-        return $this->body[$key] ?? $this->query[$key] ?? $default;
+        if (array_key_exists($key, $this->body)) {
+            return $this->body[$key];
+        }
+        if (array_key_exists($key, $this->query)) {
+            return $this->query[$key];
+        }
+        $stripped = rtrim($key, '[]');
+        if (array_key_exists($stripped, $this->body)) {
+            return $this->body[$stripped];
+        }
+        if (array_key_exists($stripped, $this->query)) {
+            return $this->query[$stripped];
+        }
+        if (array_key_exists($stripped . '[]', $this->body)) {
+            return $this->body[$stripped . '[]'];
+        }
+        if (array_key_exists($stripped . '[]', $this->query)) {
+            return $this->query[$stripped . '[]'];
+        }
+        return $default;
     }
 
     public function all(): array

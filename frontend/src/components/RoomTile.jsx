@@ -4,7 +4,7 @@ const LABEL = { free: 'FREE', booked: 'BOOKED', occupied: 'OCCUPIED', cleaning: 
 
 export default function RoomTile({ room, onClick, onOpenBooking }) {
   const today = todayIso();
-  let guestName = room.guestName ? room.guestName.split(' ')[0] : '';
+  const guestName = room.guestName ? room.guestName.trim() : '';
   const pendingGuest = room.pendingBooking?.guestName ? room.pendingBooking.guestName.split(' ')[0] : 'Guest';
   let meta = '';
   let due = false;
@@ -28,13 +28,64 @@ export default function RoomTile({ room, onClick, onOpenBooking }) {
     meta = 'Mark ready when done';
   }
 
+  // Determine persons count display strictly per requirement:
+  // - Occupied room: Show actual persons count from current stay (stays.persons)
+  // - Booked room: Show persons count from active reservation
+  // - Ready / Cleaning / Maintenance: Show 0 Persons without misleading guest counts
+  let personsDisplay = '0 Persons';
+  if (room.status === 'occupied') {
+    const p = Math.max(1, Number(room.persons || 1));
+    personsDisplay = `${p} ${p === 1 ? 'Person' : 'Persons'}`;
+  } else if (room.status === 'booked') {
+    const p = Math.max(1, Number(room.persons || room.pendingBooking?.persons || 1));
+    personsDisplay = `${p} ${p === 1 ? 'Person' : 'Persons'}`;
+  } else {
+    personsDisplay = '0 Persons';
+  }
+
   return (
     <button className={`room s-${room.status}`} type="button" onClick={onClick}>
       <span className="t">
         <span className="no">{room.roomNo}</span>
         <span className="ty">{room.roomType.name}</span>
       </span>
-      {guestName ? <span className="g">{guestName}</span> : null}
+
+      <span
+        className="room-persons-badge"
+        style={{
+          fontSize: '11.5px',
+          fontWeight: 600,
+          color: 'var(--color-text-secondary)',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '3px',
+          lineHeight: 1.2,
+        }}
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+          style={{ opacity: 0.75 }}
+        >
+          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+          <circle cx="12" cy="7" r="4" />
+        </svg>
+        <span>{personsDisplay}</span>
+      </span>
+
+      {(room.status === 'occupied' || room.status === 'booked') && guestName ? (
+        <span className="g" title={guestName}>
+          Guest: {guestName}
+        </span>
+      ) : null}
+
       <span className={`m${due ? ' due' : ''}`}>{meta}</span>
 
       {room.hasPendingBooking && room.pendingBooking && room.status === 'occupied' && (

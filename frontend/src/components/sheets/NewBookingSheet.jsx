@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
+import ReferredBySelect from '../ReferredBySelect.jsx';
 import { useFreeRooms, useCreateReservation, useUpdateReservation } from '../../api/reservations';
 import { useGuestLookup } from '../../api/guests';
 import { useRoomTypes, useRooms } from '../../api/rooms';
@@ -18,6 +19,7 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
   const update = useUpdateReservation();
   const toast = useToast();
 
+  
   const { register, watch, setValue, handleSubmit, formState: { errors } } = useForm({
     defaultValues: isEdit
       ? {
@@ -25,7 +27,7 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
           name: editReservation.guest_name || '',
           checkIn: editReservation.check_in_date < todayIso() ? todayIso() : editReservation.check_in_date,
           days: nightsBetween(editReservation.check_in_date, editReservation.check_out_date),
-          persons: editReservation.persons,
+          persons: Number(editReservation.persons) || 1,
           typeFilter: 'all',
           roomId: editReservation.room_id,
           rate: editReservation.rate,
@@ -60,6 +62,28 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
   const [rateTouched, setRateTouched] = useState(isEdit);
   const [matchedGuestId, setMatchedGuestId] = useState(null);
   const [inspectedRoomId, setInspectedRoomId] = useState(null);
+
+  const [bookingSource, setBookingSource] = useState(
+    editReservation?.booking_source
+      ? (editReservation.booking_source.includes('Reference') ? 'Reference – Existing Member' : editReservation.booking_source)
+      : 'Social Media'
+  );
+  const [referredByGuestId, setReferredByGuestId] = useState(
+    editReservation?.referred_by_guest_id ? Number(editReservation.referred_by_guest_id) : null
+  );
+  const [otherSource, setOtherSource] = useState(editReservation?.other_source || '');
+  const [sourceError, setSourceError] = useState('');
+
+  const handleSourceChange = (newSource) => {
+    setBookingSource(newSource);
+    setSourceError('');
+    if (newSource !== 'Reference – Existing Member') {
+      setReferredByGuestId(null);
+    }
+    if (newSource !== 'Other') {
+      setOtherSource('');
+    }
+  };
 
   const checkOut = addDaysIso(checkIn || todayIso(), Number(days) || 1);
   const { data: freeRooms } = useFreeRooms({
@@ -110,13 +134,10 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
     || (roomsData?.rooms && roomsData.rooms.find((r) => r.id === roomId))
     || (isEdit && editReservation?.room_id === roomId ? editReservation : null);
 
-  const displayRoom = (inspectedRoomId && freeRooms?.find((r) => r.id === inspectedRoomId))
-    || selectedRoom;
-  const displayRoomCardData = displayRoom ? getCardDisplay(displayRoom, checkIn, checkOut) : null;
-
   const roomMaxPersons = selectedRoom?.max_persons
     ?? selectedRoom?.roomType?.maxPersons
-    ?? (isEdit && editReservation?.room_id === roomId ? editReservation?.max_persons : null);
+    ?? (isEdit && editReservation?.room_id === roomId ? editReservation?.max_persons : null)
+    ?? 2;
 
   const [serverPersonsError, setServerPersonsError] = useState('');
   const personCount = Number(persons) || 1;
@@ -130,9 +151,22 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
     }
   }, [personCount, roomMaxPersons, serverPersonsError]);
 
+  useEffect(() => {
+    if (roomId && roomMaxPersons != null && personCount > Number(roomMaxPersons)) {
+      setValue('persons', Number(roomMaxPersons));
+    }
+  }, [roomId, roomMaxPersons, personCount, setValue]);
+
+  const displayRoom = (inspectedRoomId && freeRooms?.find((r) => r.id === inspectedRoomId))
+    || selectedRoom;
+  const displayRoomCardData = displayRoom ? getCardDisplay(displayRoom, checkIn, checkOut) : null;
+
   const onSubmit = async (values) => {
     if (!values.roomId) {
       toast('Pick a room.');
+      return;
+    }
+    if (isPersonsExceeded) {
       return;
     }
     const chosenRoom = freeRooms?.find((r) => r.id === values.roomId);
@@ -148,24 +182,35 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
       }
       return;
     }
-    if (isPersonsExceeded) {
+    if (bookingSource === 'Reference – Existing Member' && (!referredByGuestId || referredByGuestId <= 0)) {
+      setSourceError('Please select an existing member as reference.');
+      return;
+    }
+    if (bookingSource === 'Other' && !otherSource.trim()) {
+      setSourceError('Please enter person name for reference.');
       return;
     }
     try {
       const checkOutDate = addDaysIso(values.checkIn, Number(values.days));
+      const sourcePayload = {
+        bookingSource,
+        referredByGuestId: bookingSource === 'Reference – Existing Member' ? referredByGuestId : null,
+        otherSource: bookingSource === 'Other' ? otherSource.trim() : null,
+      };
       if (isEdit) {
         await update.mutateAsync({
           id: editReservation.id,
           roomId: values.roomId,
           checkIn: values.checkIn,
           checkOut: checkOutDate,
-          persons: Number(values.persons),
+          persons: Number(values.persons) || Number(editReservation?.persons) || 1,
           rate: Number(values.rate),
           advanceAmount: Number(values.advance) || 0,
           advanceMethod: values.pay,
           name: values.name.trim(),
           phone: values.phone.replace(/\D/g, ''),
           notes: values.notes ? values.notes.trim() : null,
+          ...sourcePayload,
         });
         toast(`Booking ${editReservation.booking_code} updated.`);
       } else {
@@ -175,11 +220,12 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
           name: values.name.trim(),
           checkIn: values.checkIn,
           checkOut: checkOutDate,
-          persons: Number(values.persons),
+          persons: Number(values.persons) || 1,
           rate: Number(values.rate),
           advanceAmount: Number(values.advance) || 0,
           advanceMethod: values.pay,
           notes: values.notes ? values.notes.trim() : null,
+          ...sourcePayload,
         });
         toast(`Booking ${result.booking_code} saved. Room ${result.room_no} on ${fd(result.check_in_date)}. Tell the guest this number.`);
       }
@@ -216,6 +262,63 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
             {errors.name && <span className="err">Guest name is required.</span>}
           </div>
           <div className="f full">
+            <label htmlFor="bk-source">Booking source</label>
+            <select
+              id="bk-source"
+              value={bookingSource}
+              onChange={(e) => handleSourceChange(e.target.value)}
+            >
+              <option value="Social Media">Social Media</option>
+              <option value="Reference – Existing Member">Reference – Existing Member</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          {bookingSource === 'Reference – Existing Member' && (
+            <div className={`f full ${sourceError ? 'bad' : ''}`}>
+              <label htmlFor="bk-referred-by">
+                Referred By <i>*</i>
+              </label>
+              <ReferredBySelect
+                id="bk-referred-by"
+                value={referredByGuestId}
+                onChange={(id) => {
+                  setReferredByGuestId(id);
+                  if (sourceError) setSourceError('');
+                }}
+                initialGuest={
+                  editReservation?.referred_by_guest_id
+                    ? {
+                        id: editReservation.referred_by_guest_id,
+                        name: editReservation.referred_by_guest_name,
+                        phone: editReservation.referred_by_guest_phone,
+                      }
+                    : null
+                }
+                excludeGuestId={matchedGuestId || editReservation?.guest_id}
+                hasError={!!sourceError}
+              />
+              {sourceError && <span className="err">{sourceError}</span>}
+            </div>
+          )}
+          {bookingSource === 'Other' && (
+            <div className={`f full ${sourceError ? 'bad' : ''}`}>
+              <label htmlFor="bk-other-source">
+                Person Name <i>*</i>
+              </label>
+              <input
+                id="bk-other-source"
+                type="text"
+                placeholder="Enter person name"
+                value={otherSource}
+                onChange={(e) => {
+                  setOtherSource(e.target.value);
+                  if (sourceError) setSourceError('');
+                }}
+              />
+              {sourceError && <span className="err">{sourceError}</span>}
+            </div>
+          )}
+          <div className="f full">
             <label htmlFor="bk-notes">Booking notes (special requests / reference)</label>
             <input id="bk-notes" type="text" placeholder="e.g. Late check-in, ground floor preferred" {...register('notes')} />
           </div>
@@ -244,6 +347,8 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
                   setServerPersonsError('');
                   setValue('persons', Math.max(1, (Number(persons) || 1) - 1));
                 }}
+                disabled={(Number(persons) || 1) <= 1}
+                aria-label="Decrease persons count"
               >
                 −
               </button>
@@ -252,8 +357,14 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
                 type="button"
                 onClick={() => {
                   setServerPersonsError('');
-                  setValue('persons', (Number(persons) || 1) + 1);
+                  if (roomMaxPersons == null || (Number(persons) || 1) < Number(roomMaxPersons)) {
+                    setValue('persons', (Number(persons) || 1) + 1);
+                  } else {
+                    setServerPersonsError(`This room allows a maximum of ${roomMaxPersons} persons.`);
+                  }
                 }}
+                disabled={roomMaxPersons != null && (Number(persons) || 1) >= Number(roomMaxPersons)}
+                aria-label="Increase persons count"
               >
                 +
               </button>

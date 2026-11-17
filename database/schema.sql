@@ -201,6 +201,9 @@ CREATE TABLE reservations (
   advance_amount    DECIMAL(10,2)     NOT NULL DEFAULT 0.00,
   advance_method    ENUM('cash','upi','card') NOT NULL DEFAULT 'cash',
   notes             VARCHAR(255)      NULL,
+  booking_source    VARCHAR(50)       NULL DEFAULT 'Social Media',
+  referred_by_guest_id INT UNSIGNED   NULL,
+  other_source      VARCHAR(150)      NULL,
   status            ENUM('pending','checked_in','cancelled','no_show') NOT NULL DEFAULT 'pending',
   created_by        INT UNSIGNED      NULL,
   cancelled_at      DATETIME          NULL,
@@ -214,9 +217,11 @@ CREATE TABLE reservations (
   UNIQUE KEY uq_reservations_code (booking_code),
   KEY ix_reservations_room_dates (room_id, status, check_in_date, check_out_date),
   KEY ix_reservations_guest (guest_id),
+  KEY ix_reservations_referred_by (referred_by_guest_id),
   CONSTRAINT fk_reservations_hotel  FOREIGN KEY (hotel_id)   REFERENCES hotels(id)  ON DELETE CASCADE,
   CONSTRAINT fk_reservations_room   FOREIGN KEY (room_id)    REFERENCES rooms(id)   ON DELETE RESTRICT,
   CONSTRAINT fk_reservations_guest  FOREIGN KEY (guest_id)   REFERENCES guests(id)  ON DELETE RESTRICT,
+  CONSTRAINT fk_reservations_referred_by FOREIGN KEY (referred_by_guest_id) REFERENCES guests(id) ON DELETE SET NULL,
   CONSTRAINT fk_reservations_user   FOREIGN KEY (created_by) REFERENCES users(id)   ON DELETE SET NULL,
   CONSTRAINT fk_reservations_cancelled_by FOREIGN KEY (cancelled_by) REFERENCES users(id) ON DELETE SET NULL,
   CONSTRAINT chk_reservations_dates CHECK (check_out_date > check_in_date)
@@ -288,6 +293,9 @@ CREATE TABLE stays (
   check_in_date        DATE              NOT NULL,     -- actual arrival date
   checkout_planned     DATE              NOT NULL,
   checkout_time        TIME              NOT NULL DEFAULT '12:00:00',
+  booking_source       VARCHAR(50)       NULL DEFAULT 'Social Media',
+  referred_by_guest_id INT UNSIGNED      NULL,
+  other_source         VARCHAR(150)      NULL,
   checkout_actual      DATE              NULL,
   status               ENUM('in_house','checked_out','cancelled') NOT NULL DEFAULT 'in_house',
   payment_method       ENUM('cash','upi','card') NOT NULL DEFAULT 'cash', -- method of checkout settlement
@@ -302,14 +310,68 @@ CREATE TABLE stays (
   UNIQUE KEY uq_stays_active_room (active_room_id),
   KEY ix_stays_room_status (room_id, status),
   KEY ix_stays_guest (guest_id),
+  KEY ix_stays_referred_by (referred_by_guest_id),
   KEY ix_stays_reservation (reservation_id),
   CONSTRAINT fk_stays_hotel       FOREIGN KEY (hotel_id)       REFERENCES hotels(id)       ON DELETE CASCADE,
   CONSTRAINT fk_stays_reservation FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE SET NULL,
   CONSTRAINT fk_stays_room        FOREIGN KEY (room_id)        REFERENCES rooms(id)        ON DELETE RESTRICT,
   CONSTRAINT fk_stays_guest       FOREIGN KEY (guest_id)       REFERENCES guests(id)       ON DELETE RESTRICT,
+  CONSTRAINT fk_stays_referred_by FOREIGN KEY (referred_by_guest_id) REFERENCES guests(id) ON DELETE SET NULL,
   CONSTRAINT fk_stays_user        FOREIGN KEY (created_by)     REFERENCES users(id)        ON DELETE SET NULL,
   CONSTRAINT chk_stays_dates      CHECK (checkout_planned > check_in_date)
 ) ENGINE=InnoDB;
+
+-- ---------------------------------------------------------------------------
+-- occupants (persons staying in the room for a stay)
+-- ---------------------------------------------------------------------------
+DROP TABLE IF EXISTS occupant_documents;
+DROP TABLE IF EXISTS occupants;
+CREATE TABLE occupants (
+  id               INT UNSIGNED      NOT NULL AUTO_INCREMENT,
+  hotel_id         INT UNSIGNED      NOT NULL,
+  stay_id          INT UNSIGNED      NOT NULL,
+  occupant_number  INT UNSIGNED      NOT NULL DEFAULT 1,
+  name             VARCHAR(150)      NULL,
+  gender           VARCHAR(20)       NULL,
+  phone            VARCHAR(30)       NULL,
+  is_primary       TINYINT(1)        NOT NULL DEFAULT 0,
+  guest_id         INT UNSIGNED      NULL,
+  created_at       DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at       DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY ix_occupants_stay (hotel_id, stay_id),
+  KEY ix_occupants_guest (guest_id),
+  CONSTRAINT fk_occupants_hotel FOREIGN KEY (hotel_id) REFERENCES hotels(id) ON DELETE CASCADE,
+  CONSTRAINT fk_occupants_stay  FOREIGN KEY (stay_id)  REFERENCES stays(id)  ON DELETE CASCADE,
+  CONSTRAINT fk_occupants_guest FOREIGN KEY (guest_id) REFERENCES guests(id) ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+-- ---------------------------------------------------------------------------
+-- occupant_documents (guest ID proof documents linked to reservations, stays, or occupants)
+-- ---------------------------------------------------------------------------
+CREATE TABLE occupant_documents (
+  id                INT UNSIGNED      NOT NULL AUTO_INCREMENT,
+  hotel_id          INT UNSIGNED      NOT NULL,
+  reservation_id    INT UNSIGNED      NULL,
+  stay_id           INT UNSIGNED      NULL,
+  occupant_id       INT UNSIGNED      NULL,
+  file_path         VARCHAR(255)      NOT NULL,
+  original_filename VARCHAR(255)      NOT NULL,
+  mime_type         VARCHAR(100)      NOT NULL,
+  file_size         INT UNSIGNED      NOT NULL,
+  uploaded_at       DATETIME          NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (id),
+  KEY ix_occupant_documents_reservation (reservation_id),
+  KEY ix_occupant_documents_stay (stay_id),
+  KEY ix_occupant_documents_occupant (occupant_id),
+  KEY ix_occupant_documents_hotel (hotel_id),
+  CONSTRAINT fk_occupant_documents_hotel       FOREIGN KEY (hotel_id)       REFERENCES hotels(id)       ON DELETE CASCADE,
+  CONSTRAINT fk_occupant_documents_reservation FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_occupant_documents_stay        FOREIGN KEY (stay_id)        REFERENCES stays(id)        ON DELETE CASCADE,
+  CONSTRAINT fk_occupant_documents_occupant    FOREIGN KEY (occupant_id)    REFERENCES occupants(id)    ON DELETE SET NULL
+) ENGINE=InnoDB;
+
+CREATE OR REPLACE VIEW occupants_documents AS SELECT * FROM occupant_documents;
 
 -- ---------------------------------------------------------------------------
 -- stay_charges (extras added during a stay)

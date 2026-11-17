@@ -59,6 +59,15 @@ class GuestService
         return $this->guests->findByPhone($hotelId, $this->normalizePhone($phone));
     }
 
+    public function findForHotel(int $hotelId, int $guestId): ?array
+    {
+        $guest = $this->guests->find($guestId);
+        if ($guest === null || (int) $guest['hotel_id'] !== $hotelId) {
+            return null;
+        }
+        return $guest;
+    }
+
     /**
      * @param string|null $idProofNumber Full number; required when creating a new guest, optional when updating one.
      */

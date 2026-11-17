@@ -438,9 +438,12 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
 
     public function test25_SameRoomSameDatesRejected(): void
     {
+        $d1 = date('Y-m-d', strtotime('+10 days'));
+        $d2 = date('Y-m-d', strtotime('+13 days'));
+
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500001', 'Booking A',
-            '2026-11-15', '2026-11-18', 2, 2200.00, 0.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 0.00, 'cash', 1
         );
 
         $this->expectException(ApiException::class);
@@ -448,15 +451,20 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
 
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500002', 'Booking B',
-            '2026-11-15', '2026-11-18', 2, 2200.00, 0.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 0.00, 'cash', 1
         );
     }
 
     public function test26_SameRoomOverlappingDatesRejected(): void
     {
+        $d1 = date('Y-m-d', strtotime('+10 days'));
+        $d2 = date('Y-m-d', strtotime('+13 days'));
+        $dOverlap = date('Y-m-d', strtotime('+11 days'));
+        $dEnd = date('Y-m-d', strtotime('+14 days'));
+
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500001', 'Booking A',
-            '2026-11-15', '2026-11-18', 2, 2200.00, 0.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 0.00, 'cash', 1
         );
 
         $this->expectException(ApiException::class);
@@ -464,15 +472,20 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
 
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500002', 'Booking B',
-            '2026-11-16', '2026-11-19', 2, 2200.00, 0.00, 'cash', 1
+            $dOverlap, $dEnd, 2, 2200.00, 0.00, 'cash', 1
         );
     }
 
     public function test27_PartialOverlapRejected(): void
     {
+        $d1 = date('Y-m-d', strtotime('+10 days'));
+        $d2 = date('Y-m-d', strtotime('+15 days'));
+        $dOverlap = date('Y-m-d', strtotime('+13 days'));
+        $dEnd = date('Y-m-d', strtotime('+17 days'));
+
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500001', 'Booking A',
-            '2026-11-15', '2026-11-20', 2, 2200.00, 0.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 0.00, 'cash', 1
         );
 
         $this->expectException(ApiException::class);
@@ -480,15 +493,20 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
 
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500002', 'Booking B',
-            '2026-11-18', '2026-11-22', 2, 2200.00, 0.00, 'cash', 1
+            $dOverlap, $dEnd, 2, 2200.00, 0.00, 'cash', 1
         );
     }
 
     public function test28_ContainedInsideAnotherBookingRejected(): void
     {
+        $d1 = date('Y-m-d', strtotime('+10 days'));
+        $d2 = date('Y-m-d', strtotime('+20 days'));
+        $dInnerStart = date('Y-m-d', strtotime('+13 days'));
+        $dInnerEnd = date('Y-m-d', strtotime('+15 days'));
+
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500001', 'Booking A',
-            '2026-11-15', '2026-11-25', 2, 2200.00, 0.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 0.00, 'cash', 1
         );
 
         $this->expectException(ApiException::class);
@@ -496,36 +514,43 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
 
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500002', 'Booking B',
-            '2026-11-18', '2026-11-20', 2, 2200.00, 0.00, 'cash', 1
+            $dInnerStart, $dInnerEnd, 2, 2200.00, 0.00, 'cash', 1
         );
     }
 
     public function test29_ConsecutiveBookingsAllowedHalfOpenInterval(): void
     {
-        // Booking A: Nov 15–18. Booking B: Nov 18–21 (12 noon turnover on Nov 18).
+        $d1 = date('Y-m-d', strtotime('+10 days'));
+        $d2 = date('Y-m-d', strtotime('+13 days'));
+        $d3 = date('Y-m-d', strtotime('+16 days'));
+        $d4 = date('Y-m-d', strtotime('+18 days'));
+
         $b1 = $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500001', 'Booking A',
-            '2026-11-15', '2026-11-18', 2, 2200.00, 0.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 0.00, 'cash', 1
         );
         $b2 = $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500002', 'Booking B',
-            '2026-11-18', '2026-11-21', 2, 2200.00, 0.00, 'cash', 1
+            $d2, $d3, 2, 2200.00, 0.00, 'cash', 1
         );
 
         $this->assertSame('pending', $b1['status']);
         $this->assertSame('pending', $b2['status']);
-        $this->assertTrue($this->availability->isFree(self::ROOM_STD_1, '2026-11-21', '2026-11-23'));
+        $this->assertTrue($this->availability->isFree(self::ROOM_STD_1, $d3, $d4));
     }
 
     public function test30_DifferentRoomsSameDatesAllowed(): void
     {
+        $d1 = date('Y-m-d', strtotime('+10 days'));
+        $d2 = date('Y-m-d', strtotime('+13 days'));
+
         $b1 = $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500001', 'Booking A',
-            '2026-11-15', '2026-11-18', 2, 2200.00, 0.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 0.00, 'cash', 1
         );
         $b2 = $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_2, '9876500002', 'Booking B',
-            '2026-11-15', '2026-11-18', 2, 2200.00, 0.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 0.00, 'cash', 1
         );
 
         $this->assertSame('pending', $b1['status']);
@@ -534,15 +559,18 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
 
     public function test31_CancelledReservationFreesAvailability(): void
     {
+        $d1 = date('Y-m-d', strtotime('+10 days'));
+        $d2 = date('Y-m-d', strtotime('+13 days'));
+
         $b1 = $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500001', 'Booking A',
-            '2026-11-15', '2026-11-18', 2, 2200.00, 0.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 0.00, 'cash', 1
         );
         $this->reservations->cancel((int) $b1['id'], self::HOTEL_ID, 'Guest plans changed', 0.0, 'cash', 1);
 
         $b2 = $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500002', 'Booking B',
-            '2026-11-15', '2026-11-18', 2, 2200.00, 0.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 0.00, 'cash', 1
         );
         $this->assertSame('pending', $b2['status']);
     }

@@ -42,6 +42,7 @@ function invalidateStayStuff(qc, stayId) {
   qc.invalidateQueries({ queryKey: ['stays-done'] });
   qc.invalidateQueries({ queryKey: ['reservations'] });
   qc.invalidateQueries({ queryKey: ['today-checkouts'] });
+  qc.invalidateQueries({ queryKey: ['all-referrals'] });
 }
 
 export function useDirectCheckIn() {
@@ -51,6 +52,7 @@ export function useDirectCheckIn() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['rooms'] });
       qc.invalidateQueries({ queryKey: ['today-checkouts'] });
+      qc.invalidateQueries({ queryKey: ['all-referrals'] });
     },
   });
 }

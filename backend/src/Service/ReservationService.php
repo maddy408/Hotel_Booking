@@ -18,6 +18,8 @@ final class ReservationService
     private readonly StayRepository $stays;
     private readonly GstService $gst;
 
+    private readonly ?OccupantDocumentService $occupantDocService;
+
     public function __construct(
         private readonly PDO $db,
         private readonly ReservationRepository $reservations,
@@ -29,9 +31,11 @@ final class ReservationService
         private readonly AuditLogger $audit,
         ?StayRepository $stays = null,
         mixed $gst = null,
+        ?OccupantDocumentService $occupantDocService = null,
     ) {
         $this->stays = $stays ?? new StayRepository($db);
         $this->gst = ($gst instanceof GstService) ? $gst : new GstService($settings);
+        $this->occupantDocService = $occupantDocService;
     }
 
     public function create(
@@ -48,6 +52,10 @@ final class ReservationService
         ?int $userId,
         ?string $checkOutTime = null,
         ?string $notes = null,
+        ?string $bookingSource = 'Social Media',
+        ?int $referredByGuestId = null,
+        ?string $otherSource = null,
+        array $documentFiles = [],
     ): array {
         $this->db->beginTransaction();
         try {
@@ -91,6 +99,10 @@ final class ReservationService
             // A phone booking has no ID proof yet — that's collected at actual check-in.
             $guest = $this->guestService->findOrCreateMinimal($hotelId, $guestPhone, $guestName);
 
+            [$cleanSource, $cleanRefId, $cleanOther] = $this->validateAndSanitizeBookingSource(
+                $hotelId, $bookingSource, $referredByGuestId, $otherSource
+            );
+
             // Calculate authoritative GST using centralized service
             $nights = BillingService::nightsBetween($checkIn, $checkOut);
             $gstCalc = $this->gst->calculateAccommodation($hotelId, $rate, $nights);
@@ -101,7 +113,8 @@ final class ReservationService
             $id = $this->reservations->create(
                 $hotelId, 'PENDING', $roomId, (int) $guest['id'], $checkIn, $checkOut, $persons, $rate,
                 $advanceAmount, $advanceMethod, $userId, $checkOutTime, $notes,
-                $gstRate, $taxAmount, $totalAmount
+                $gstRate, $taxAmount, $totalAmount,
+                $cleanSource, $cleanRefId, $cleanOther
             );
             $code = ($settings['booking_prefix'] ?? 'BK') . '-' . (1000 + $id);
             $this->reservations->setBookingCode($id, $code);
@@ -110,9 +123,17 @@ final class ReservationService
                 $this->payments->record($hotelId, $id, null, 'advance', $advanceAmount, $advanceMethod, $userId);
             }
 
+            if ($this->occupantDocService !== null && !empty($documentFiles)) {
+                $this->occupantDocService->uploadDocumentsForReservation($hotelId, $id, $documentFiles);
+            }
+
             $this->audit->log($hotelId, $userId, 'booking_create', 'reservation', $id, null, ['booking_code' => $code, 'notes' => $notes]);
             $this->db->commit();
-            return $this->reservations->findWithDetails($id);
+            $res = $this->reservations->findWithDetails($id);
+            if ($res !== null && $this->occupantDocService !== null) {
+                $res['documents'] = $this->occupantDocService->getDocumentsForReservation($hotelId, $id);
+            }
+            return $res;
         } catch (\Throwable $e) {
             $this->db->rollBack();
             throw $e;
@@ -135,6 +156,9 @@ final class ReservationService
         ?string $guestPhone = null,
         ?string $notes = null,
         ?int $guestId = null,
+        ?string $bookingSource = null,
+        ?int $referredByGuestId = null,
+        ?string $otherSource = null,
     ): array {
         $this->db->beginTransaction();
         try {
@@ -197,6 +221,24 @@ final class ReservationService
 
             $cleanNotes = $notes !== null ? trim($notes) : ($existing['notes'] ?? null);
 
+            $updateSource = ($bookingSource !== null || $referredByGuestId !== null || $otherSource !== null);
+            $cleanSource = null;
+            $cleanRefId = null;
+            $cleanOther = null;
+            if ($updateSource) {
+                $targetSource = $bookingSource ?? $existing['booking_source'] ?? 'Social Media';
+                $targetRefId = $referredByGuestId;
+                if ($targetRefId === null && $this->normalizeBookingSource($targetSource) === 'Reference – Existing Member' && !empty($existing['referred_by_guest_id'])) {
+                    $targetRefId = (int) $existing['referred_by_guest_id'];
+                }
+                [$cleanSource, $cleanRefId, $cleanOther] = $this->validateAndSanitizeBookingSource(
+                    $hotelId,
+                    $targetSource,
+                    $targetRefId,
+                    $otherSource ?? ($existing['other_source'] ?? null)
+                );
+            }
+
             $nights = BillingService::nightsBetween($checkIn, $checkOut);
             $gstCalc = $this->gst->calculateAccommodation($hotelId, $rate, $nights);
             $gstRate = $gstCalc['gst_rate'];
@@ -206,7 +248,8 @@ final class ReservationService
             $this->reservations->update(
                 $reservationId, $roomId, $checkIn, $checkOut, $persons, $rate,
                 $advanceAmount, $advanceMethod, $checkOutTime, $cleanNotes, $assignedGuestId,
-                $gstRate, $taxAmount, $totalAmount
+                $gstRate, $taxAmount, $totalAmount,
+                $cleanSource, $cleanRefId, $cleanOther, $updateSource
             );
 
             $delta = round($advanceAmount - (float) $existing['advance_amount'], 2);
@@ -680,6 +723,9 @@ final class ReservationService
         if ($reservation === null || (int) $reservation['hotel_id'] !== $hotelId) {
             throw ApiException::notFound('Booking not found.');
         }
+        if ($this->occupantDocService !== null) {
+            $reservation['documents'] = $this->occupantDocService->getDocumentsForReservation($hotelId, $id);
+        }
         return $reservation;
     }
 
@@ -727,5 +773,59 @@ final class ReservationService
         if ($checkOut <= $checkIn) {
             throw ApiException::validation(['checkOut' => 'Checkout date must be after check-in date.'], 'Checkout date must be after check-in date.');
         }
+    }
+
+    public function normalizeBookingSource(?string $source): string
+    {
+        if ($source === null) {
+            return 'Social Media';
+        }
+        $trimmed = trim($source);
+        $normalized = str_replace(['–', '-'], '–', $trimmed);
+        if ($normalized === 'Reference – Existing Member') {
+            return 'Reference – Existing Member';
+        }
+        if ($trimmed === 'Other') {
+            return 'Other';
+        }
+        return 'Social Media';
+    }
+
+    public function validateAndSanitizeBookingSource(
+        int $hotelId,
+        ?string $source,
+        ?int $referredByGuestId,
+        ?string $otherSource
+    ): array {
+        $bookingSource = $this->normalizeBookingSource($source);
+        if ($bookingSource === 'Reference – Existing Member') {
+            if ($referredByGuestId === null || $referredByGuestId <= 0) {
+                throw ApiException::validation(
+                    ['referredByGuestId' => 'Please select an existing member as reference.'],
+                    'Please select an existing member as reference.'
+                );
+            }
+            $refGuest = $this->guestService->findForHotel($hotelId, $referredByGuestId);
+            if ($refGuest === null) {
+                throw ApiException::validation(
+                    ['referredByGuestId' => 'Selected referring guest does not belong to this hotel.'],
+                    'Selected referring guest does not belong to this hotel.'
+                );
+            }
+            return ['Reference – Existing Member', $referredByGuestId, null];
+        }
+
+        if ($bookingSource === 'Other') {
+            $cleanOther = $otherSource !== null ? trim($otherSource) : '';
+            if ($cleanOther === '') {
+                throw ApiException::validation(
+                    ['otherSource' => 'Please enter person name for reference.'],
+                    'Please enter person name for reference.'
+                );
+            }
+            return ['Other', null, $cleanOther];
+        }
+
+        return ['Social Media', null, null];
     }
 }

@@ -90,6 +90,7 @@ final class RoomService
                 'guestName' => $activeBooking['guest_name'] ?? null,
                 'checkInDate' => $activeBooking['check_in_date'] ?? null,
                 'checkOutDate' => $activeBooking['check_out_date'] ?? null,
+                'persons' => (int) ($activeBooking['persons'] ?? 1),
             ] : null;
 
             $dto = [
@@ -108,6 +109,7 @@ final class RoomService
                 ],
                 'note' => $room['note'],
                 'guestName' => null,
+                'persons' => 0,
                 'stayId' => null,
                 'checkoutPlanned' => null,
                 'checkoutTime' => null,
@@ -126,11 +128,13 @@ final class RoomService
                 $dto['checkoutPlanned'] = $stay['checkout_planned'];
                 $dto['checkoutTime'] = $stay['checkout_time'] ?? null;
                 $dto['dueToday'] = $stay['checkout_planned'] <= $today;
+                $dto['persons'] = max(1, (int) ($stay['persons'] ?? 1));
             } elseif ($status === 'booked' && $activeBooking !== null) {
                 $dto['guestName'] = $activeBooking['guest_name'];
                 $dto['bookingId'] = (int) $activeBooking['id'];
                 $dto['bookingCode'] = $activeBooking['booking_code'];
                 $dto['bookingCheckIn'] = $activeBooking['check_in_date'];
+                $dto['persons'] = max(1, (int) ($activeBooking['persons'] ?? 1));
             }
 
             $result[] = $dto;

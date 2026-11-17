@@ -34,6 +34,7 @@ final class StayService
         private readonly InvoiceService $invoiceService,
         private readonly AuditLogger $audit,
         mixed $gst = null,
+        private readonly ?OccupantDocumentService $occupantService = null,
     ) {
         $this->gst = ($gst instanceof GstService) ? $gst : new GstService($settings);
     }
@@ -58,6 +59,13 @@ final class StayService
         string $advanceMethod,
         ?int $userId,
         ?string $checkoutTime = null,
+        ?string $bookingSource = 'Social Media',
+        ?int $referredByGuestId = null,
+        ?string $otherSource = null,
+        array $documentFiles = [],
+        array $occupantTargetIndexes = [],
+        array $occupants = [],
+        bool $verifyDocuments = false,
     ): array {
         // Enforce advance payment before check-in
         if ($advanceAmount <= 0) {
@@ -77,9 +85,23 @@ final class StayService
                 throw ApiException::notFound('Room not found.');
             }
 
+            $today = date('Y-m-d');
+
             // Authoritative check: room must not have another active stay
             $activeStay = $this->stays->findInHouseByRoom($roomId, true);
             if ($activeStay !== null) {
+                if ($activeStay['check_in_date'] === $today && (int) $activeStay['hotel_id'] === $hotelId) {
+                    $activeGuest = $this->guestService->findForHotel($hotelId, (int) $activeStay['guest_id']);
+                    if ($activeGuest !== null && $activeGuest['phone'] === $guestPhone) {
+                        $this->db->commit();
+                        $res = $this->stays->findWithDetails((int) $activeStay['id']);
+                        if ($this->occupantService !== null && $res !== null) {
+                            $res['occupants'] = $this->occupantService->getOccupantsWithDocumentsForStay($hotelId, (int) $activeStay['id']);
+                            $res['documents'] = $this->occupantService->getDocumentsForStay($hotelId, (int) $activeStay['id']);
+                        }
+                        return $res;
+                    }
+                }
                 throw ApiException::conflict("Room {$room['room_no']} is already occupied by another active stay. Complete the previous checkout before assigning this room.");
             }
 
@@ -100,7 +122,8 @@ final class StayService
                 throw ApiException::validation(['persons' => $msg], $msg);
             }
 
-            $today = date('Y-m-d');
+            $this->validateOccupants($persons, $occupants, $guestName, $guestPhone);
+
             $checkoutPlanned = $this->addDays($today, max(1, $days));
             $this->availability->assertFree($roomId, $today, $checkoutPlanned);
 
@@ -111,13 +134,18 @@ final class StayService
 
             $guest = $this->guestService->findOrCreate($hotelId, $guestPhone, $guestName, $idProofType, $idProofNumber, $city);
 
+            [$cleanSource, $cleanRefId, $cleanOther] = $this->validateAndSanitizeBookingSource(
+                $hotelId, $bookingSource, $referredByGuestId, $otherSource
+            );
+
             $nights = max(1, $days);
             $gstCalc = $this->gst->calculateAccommodation($hotelId, $rate, $nights);
 
             $stayId = $this->stays->create(
                 $hotelId, null, $roomId, (int) $guest['id'], $persons, $rate,
                 $today, $checkoutPlanned, $userId, $checkoutTime,
-                $gstCalc['gst_rate'], $gstCalc['tax_amount']
+                $gstCalc['gst_rate'], $gstCalc['tax_amount'],
+                $cleanSource, $cleanRefId, $cleanOther
             );
 
             // Record successful advance payment
@@ -136,12 +164,46 @@ final class StayService
                 );
             }
 
+            $uploadedDocs = [];
+            if ($this->occupantService !== null) {
+                $this->occupantService->syncOccupantsForStay($hotelId, $stayId, $persons, (int) $guest['id'], $guestName, $occupants);
+                if (!empty($documentFiles)) {
+                    $uploadedDocs = $this->occupantService->uploadDocumentsForStay($hotelId, $stayId, $documentFiles, $occupantTargetIndexes);
+                }
+
+                if ($verifyDocuments) {
+                    $stayOccupants = $this->occupantService->getOccupantsWithDocumentsForStay($hotelId, $stayId);
+                    foreach ($stayOccupants as $occ) {
+                        $num = $occ['occupant_number'] ?? 1;
+                        $occName = !empty($occ['name']) ? $occ['name'] : "Person {$num}";
+                        if (empty($occ['documents'])) {
+                            throw ApiException::validation(
+                                ['documents' => "Every occupant must have at least one valid ID proof document. Missing ID proof for {$occName} (Person {$num})."],
+                                "Every occupant must have at least one valid ID proof document. Missing ID proof for {$occName} (Person {$num})."
+                            );
+                        }
+                    }
+                }
+            }
+
             $this->audit->log($hotelId, $userId, 'check_in', 'stay', $stayId, null, ['room_id' => $roomId, 'guest_id' => $guest['id']]);
 
             $this->db->commit();
-            return $this->stays->findWithDetails($stayId);
+            $res = $this->stays->findWithDetails($stayId);
+            if ($this->occupantService !== null && $res !== null) {
+                $res['occupants'] = $this->occupantService->getOccupantsWithDocumentsForStay($hotelId, $stayId);
+                $res['documents'] = $this->occupantService->getDocumentsForStay($hotelId, $stayId);
+            }
+            return $res;
         } catch (\Throwable $e) {
             $this->db->rollBack();
+            if (!empty($uploadedDocs)) {
+                foreach ($uploadedDocs as $doc) {
+                    if (!empty($doc['file_path'])) {
+                        $this->occupantService->deletePhysicalFile($doc['file_path']);
+                    }
+                }
+            }
             throw $e;
         }
     }
@@ -154,7 +216,13 @@ final class StayService
     public function checkInFromReservation(
         int $reservationId,
         int $hotelId,
-        ?int $userId
+        ?int $userId,
+        ?int $persons = null,
+        array $documentFiles = [],
+        array $occupantTargetIndexes = [],
+        array $occupants = [],
+        bool $verifyDocuments = false,
+        array $preBookingDocAssignments = [],
     ): array {
         $this->db->beginTransaction();
         try {
@@ -163,6 +231,19 @@ final class StayService
                 throw ApiException::notFound('Booking not found.');
             }
             if ($reservation['status'] !== 'pending') {
+                // If this reservation was already checked in (e.g. duplicate retry request), return existing stay safely
+                if ($reservation['status'] === 'checked_in') {
+                    $existingStay = $this->stays->findByReservation($reservationId, $hotelId);
+                    if ($existingStay !== null) {
+                        $res = $this->stays->findWithDetails((int) $existingStay['id']);
+                        if ($this->occupantService !== null && $res !== null) {
+                            $res['occupants'] = $this->occupantService->getOccupantsWithDocumentsForStay($hotelId, (int) $existingStay['id']);
+                            $res['documents'] = $this->occupantService->getDocumentsForStay($hotelId, (int) $existingStay['id']);
+                        }
+                        $this->db->commit();
+                        return $res;
+                    }
+                }
                 throw ApiException::conflict('This booking can no longer be checked in.');
             }
 
@@ -200,17 +281,36 @@ final class StayService
                 throw ApiException::validation(['room' => $msg, 'housekeepingStatus' => $msg], $msg);
             }
 
-            // Enforce max_persons
+            // Enforce max_persons based on actual persons count
+            $actualPersons = ($persons !== null && $persons > 0) ? $persons : (int) $reservation['persons'];
             $maxPersons = (int) ($room['max_persons'] ?? 2);
-            if ((int) $reservation['persons'] > $maxPersons) {
+            if ($actualPersons > $maxPersons) {
                 $msg = "This room allows a maximum of {$maxPersons} persons.";
                 throw ApiException::validation(['persons' => $msg], $msg);
             }
+
+            $this->validateOccupants($actualPersons, $occupants, $reservation['guest_name'] ?? '', $reservation['guest_phone'] ?? '');
 
             $today = date('Y-m-d');
             $nights = BillingService::nightsBetween($reservation['check_in_date'], $reservation['check_out_date']);
             $checkoutPlanned = $this->addDays($today, $nights);
             $checkoutTime = $reservation['check_out_time'] ?? '12:00:00';
+
+            // Check for late arrival conflict: if guest arrived on/after original checkout date or late, and another reservation exists
+            $conflictingReservations = $this->reservations->overlapping($roomId, $today, $checkoutPlanned, $reservationId);
+            if ($conflictingReservations !== []) {
+                $conf = $conflictingReservations[0];
+                $code = $conf['booking_code'] ?? ('Booking #' . $conf['id']);
+                $guest = $conf['guest_name'] ?? 'another guest';
+                $in = $conf['check_in_date'] ?? '';
+                $out = $conf['check_out_date'] ?? '';
+                if ($today >= $reservation['check_out_date'] || $today > $reservation['check_in_date']) {
+                    throw ApiException::conflict(
+                        "Late arrival conflict: Guest arrived on {$today} (original booking was {$reservation['check_in_date']} to {$reservation['check_out_date']}). Room {$room['room_no']} is already reserved by {$code} ({$guest}) from {$in} to {$out}. Reception must resolve the booking dates or room assignment before check-in."
+                    );
+                }
+                throw ApiException::conflict("Room {$room['room_no']} is already booked for part of those dates ({$code}).");
+            }
 
             $this->availability->assertFree($roomId, $today, $checkoutPlanned, excludeReservationId: $reservationId);
 
@@ -221,18 +321,74 @@ final class StayService
                 ? (float) $reservation['tax_amount']
                 : round((float) $reservation['rate'] * $nights * $resGstRate, 2);
 
+            $resBookingSource = $reservation['booking_source'] ?? 'Social Media';
+            $resReferredByGuestId = isset($reservation['referred_by_guest_id']) && $reservation['referred_by_guest_id'] !== null
+                ? (int) $reservation['referred_by_guest_id']
+                : null;
+            $resOtherSource = $reservation['other_source'] ?? null;
+
             $stayId = $this->stays->create(
                 $hotelId, $reservationId, $roomId, (int) $reservation['guest_id'],
-                (int) $reservation['persons'], (float) $reservation['rate'], $today, $checkoutPlanned, $userId,
-                $checkoutTime, $resGstRate, $resTaxAmount
+                $actualPersons, (float) $reservation['rate'], $today, $checkoutPlanned, $userId,
+                $checkoutTime, $resGstRate, $resTaxAmount,
+                $resBookingSource, $resReferredByGuestId, $resOtherSource
             );
             $this->reservations->markCheckedIn($reservationId);
+
+            $uploadedDocs = [];
+            if ($this->occupantService !== null) {
+                $createdOccupants = $this->occupantService->syncOccupantsForStay(
+                    $hotelId,
+                    $stayId,
+                    $actualPersons,
+                    (int) $reservation['guest_id'],
+                    $reservation['guest_name'] ?? null,
+                    $occupants
+                );
+
+                if (!empty($preBookingDocAssignments)) {
+                    $this->occupantService->assignPreBookingDocuments($hotelId, $stayId, $preBookingDocAssignments, $createdOccupants);
+                }
+
+                $this->occupantService->linkReservationDocumentsToStay($hotelId, $reservationId, $stayId);
+
+                if (!empty($documentFiles)) {
+                    $uploadedDocs = $this->occupantService->uploadDocumentsForStay($hotelId, $stayId, $documentFiles, $occupantTargetIndexes, $reservationId);
+                }
+
+                if ($verifyDocuments) {
+                    $stayOccupants = $this->occupantService->getOccupantsWithDocumentsForStay($hotelId, $stayId);
+                    foreach ($stayOccupants as $occ) {
+                        $num = $occ['occupant_number'] ?? 1;
+                        $occName = !empty($occ['name']) ? $occ['name'] : "Person {$num}";
+                        if (empty($occ['documents'])) {
+                            throw ApiException::validation(
+                                ['documents' => "Every occupant must have at least one valid ID proof document. Missing ID proof for {$occName} (Person {$num})."],
+                                "Every occupant must have at least one valid ID proof document. Missing ID proof for {$occName} (Person {$num})."
+                            );
+                        }
+                    }
+                }
+            }
+
             $this->audit->log($hotelId, $userId, 'check_in', 'stay', $stayId, null, ['from_reservation' => $reservationId]);
 
             $this->db->commit();
-            return $this->stays->findWithDetails($stayId);
+            $res = $this->stays->findWithDetails($stayId);
+            if ($this->occupantService !== null && $res !== null) {
+                $res['occupants'] = $this->occupantService->getOccupantsWithDocumentsForStay($hotelId, $stayId);
+                $res['documents'] = $this->occupantService->getDocumentsForStay($hotelId, $stayId);
+            }
+            return $res;
         } catch (\Throwable $e) {
             $this->db->rollBack();
+            if (!empty($uploadedDocs)) {
+                foreach ($uploadedDocs as $doc) {
+                    if (!empty($doc['file_path'])) {
+                        $this->occupantService->deletePhysicalFile($doc['file_path']);
+                    }
+                }
+            }
             throw $e;
         }
     }
@@ -824,12 +980,81 @@ final class StayService
         if ($stay === null || (int) $stay['hotel_id'] !== $hotelId) {
             throw ApiException::notFound('Stay not found.');
         }
+        if ($this->occupantService !== null) {
+            $stay['occupants'] = $this->occupantService->getOccupantsWithDocumentsForStay($hotelId, $stayId);
+            $stay['documents'] = $this->occupantService->getDocumentsForStay($hotelId, $stayId);
+        }
+        try {
+            $stay['bill'] = $this->billing->computeBill($stay);
+        } catch (\Throwable) {
+            // Bill computation fallback
+        }
         return $stay;
     }
 
     public function listDone(int $hotelId, ?string $from, ?string $to): array
     {
         return $this->stays->listDoneForHotel($hotelId, $from, $to);
+    }
+
+    private function validateOccupants(int $actualPersons, array &$occupants, string $defaultPrimaryName = '', string $defaultPrimaryPhone = ''): void
+    {
+        if ($actualPersons < 1) {
+            throw ApiException::validation(['persons' => 'Actual persons count must be a positive whole number.']);
+        }
+
+        if (empty($occupants)) {
+            // Default occupants if none provided (e.g. legacy callers or unit tests)
+            $occupants = [
+                [
+                    'name' => trim($defaultPrimaryName) !== '' ? trim($defaultPrimaryName) : 'Primary Guest',
+                    'gender' => 'Other',
+                    'phone' => trim($defaultPrimaryPhone) !== '' ? trim($defaultPrimaryPhone) : '0000000000',
+                ]
+            ];
+            for ($i = 2; $i <= $actualPersons; $i++) {
+                $occupants[] = [
+                    'name' => null,
+                    'gender' => null,
+                    'phone' => null,
+                ];
+            }
+            return;
+        }
+
+        if (count($occupants) !== $actualPersons) {
+            throw ApiException::validation(
+                ['occupants' => "Number of occupant details (" . count($occupants) . ") must match actual persons count ({$actualPersons})."],
+                "Number of occupant details (" . count($occupants) . ") must match actual persons count ({$actualPersons})."
+            );
+        }
+
+        foreach ($occupants as $idx => $occ) {
+            $num = $idx + 1;
+            $name = trim((string) ($occ['name'] ?? ''));
+            $gender = trim((string) ($occ['gender'] ?? ''));
+            $phone = trim((string) ($occ['phone'] ?? ''));
+
+            if ($name === '') {
+                throw ApiException::validation(
+                    ['occupants' => "Occupant #{$num} name is required."],
+                    "Occupant #{$num} name is required."
+                );
+            }
+            if ($gender === '' || !in_array(strtolower($gender), ['male', 'female', 'other'], true)) {
+                throw ApiException::validation(
+                    ['occupants' => "Occupant #{$num} gender is required and must be Male, Female, or Other."],
+                    "Occupant #{$num} gender is required and must be Male, Female, or Other."
+                );
+            }
+            $cleanPhone = preg_replace('/[^\d]/', '', $phone);
+            if ($cleanPhone === '' || strlen($cleanPhone) !== 10) {
+                throw ApiException::validation(
+                    ['occupants' => "Occupant #{$num} phone number is required and must be 10 digits."],
+                    "Occupant #{$num} phone number is required and must be 10 digits."
+                );
+            }
+        }
     }
 
     private function addDays(string $date, int $days): string
@@ -856,5 +1081,59 @@ final class StayService
             return date('H:i:s', $ts);
         }
         return sprintf('%02d:00:00', $defaultHour);
+    }
+
+    public function normalizeBookingSource(?string $source): string
+    {
+        if ($source === null) {
+            return 'Social Media';
+        }
+        $trimmed = trim($source);
+        $normalized = str_replace(['–', '-'], '–', $trimmed);
+        if ($normalized === 'Reference – Existing Member') {
+            return 'Reference – Existing Member';
+        }
+        if ($trimmed === 'Other') {
+            return 'Other';
+        }
+        return 'Social Media';
+    }
+
+    public function validateAndSanitizeBookingSource(
+        int $hotelId,
+        ?string $source,
+        ?int $referredByGuestId,
+        ?string $otherSource
+    ): array {
+        $bookingSource = $this->normalizeBookingSource($source);
+        if ($bookingSource === 'Reference – Existing Member') {
+            if ($referredByGuestId === null || $referredByGuestId <= 0) {
+                throw ApiException::validation(
+                    ['referredByGuestId' => 'Please select an existing member as reference.'],
+                    'Please select an existing member as reference.'
+                );
+            }
+            $refGuest = $this->guestService->findForHotel($hotelId, $referredByGuestId);
+            if ($refGuest === null) {
+                throw ApiException::validation(
+                    ['referredByGuestId' => 'Selected referring guest does not belong to this hotel.'],
+                    'Selected referring guest does not belong to this hotel.'
+                );
+            }
+            return ['Reference – Existing Member', $referredByGuestId, null];
+        }
+
+        if ($bookingSource === 'Other') {
+            $cleanOther = $otherSource !== null ? trim($otherSource) : '';
+            if ($cleanOther === '') {
+                throw ApiException::validation(
+                    ['otherSource' => 'Please enter person name for reference.'],
+                    'Please enter person name for reference.'
+                );
+            }
+            return ['Other', null, $cleanOther];
+        }
+
+        return ['Social Media', null, null];
     }
 }

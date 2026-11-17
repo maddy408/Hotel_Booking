@@ -275,14 +275,14 @@ final class BookingAvailabilityAndWorkflowTest extends TestCase
             1
         );
 
-        // Create booking on Room 108 for 2026-11-15 -> 2026-11-17
+        // Create booking on Room 108 for today -> dayAfter
         $booking = $this->reservationService->create(
             self::HOTEL_ID,
             $this->room108Id,
             '9876543210',
             'Transfer Guest',
-            '2026-11-15',
-            '2026-11-17',
+            $today,
+            $dayAfter,
             2,
             2200.00,
             0.00,

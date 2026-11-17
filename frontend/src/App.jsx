@@ -7,6 +7,8 @@ import Rooms from './pages/Rooms.jsx';
 import Bookings from './pages/Bookings.jsx';
 import TodayCheckouts from './pages/TodayCheckouts.jsx';
 import Guests from './pages/Guests.jsx';
+import AllReferrals from './pages/AllReferrals.jsx';
+import GuestDetails from './pages/GuestDetails.jsx';
 import Bills from './pages/Bills.jsx';
 import Reports from './pages/Reports.jsx';
 import RoomMaster from './pages/RoomMaster.jsx';
@@ -54,6 +56,8 @@ export default function App() {
           }
         />
         <Route path="guests" element={<Guests />} />
+        <Route path="guests/referrals" element={<AllReferrals />} />
+        <Route path="guests/:id" element={<GuestDetails />} />
         <Route path="bills" element={<Bills />} />
         <Route
           path="reports"

@@ -9,6 +9,14 @@ export function useReservation(id) {
   return useQuery({ queryKey: ['reservation', id], queryFn: () => api.get(`/reservations/${id}`), enabled: !!id });
 }
 
+export function useReservationDocuments(id) {
+  return useQuery({
+    queryKey: ['reservation-documents', id],
+    queryFn: () => api.get(`/reservations/${id}/documents`),
+    enabled: !!id,
+  });
+}
+
 export function useCancellationPreview(id) {
   return useQuery({
     queryKey: ['cancellation-preview', id],
@@ -56,6 +64,10 @@ function invalidate(qc) {
   qc.invalidateQueries({ queryKey: ['reservations'] });
   qc.invalidateQueries({ queryKey: ['rooms'] });
   qc.invalidateQueries({ queryKey: ['today-checkouts'] });
+  qc.invalidateQueries({ queryKey: ['guests'] });
+  qc.invalidateQueries({ queryKey: ['guest'] });
+  qc.invalidateQueries({ queryKey: ['guest-referrals'] });
+  qc.invalidateQueries({ queryKey: ['all-referrals'] });
 }
 
 export function useCreateReservation() {
@@ -100,8 +112,15 @@ export function useCheckInReservation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload) => {
-      const id = typeof payload === 'object' && payload !== null ? payload.id : payload;
-      return api.post(`/reservations/${id}/check-in`);
+      if (typeof FormData !== 'undefined' && payload instanceof FormData) {
+        const id = payload.get('reservationId') || payload.get('id');
+        return api.post(`/reservations/${id}/check-in`, payload);
+      }
+      if (typeof payload === 'object' && payload !== null) {
+        const { id, ...body } = payload;
+        return api.post(`/reservations/${id}/check-in`, body);
+      }
+      return api.post(`/reservations/${payload}/check-in`);
     },
     onSuccess: () => invalidate(qc),
   });

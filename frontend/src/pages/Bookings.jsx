@@ -50,37 +50,12 @@ export default function Bookings() {
 
   const getRoom = (roomId) => roomsData?.rooms.find((r) => r.id === roomId);
 
-  const quickCheckIn = async (res) => {
-    const r = getRoom(res.room_id);
-    const hkStatus = r?.housekeepingStatus || r?.housekeeping_status || res.housekeeping_status || 'ok';
-    if (hkStatus !== 'ok' || r?.status === 'occupied') {
-      setSheet({ type: 'open', id: res.id });
-      return;
-    }
-    const advancePaid = Number(res.advance_paid ?? 0);
-    if (advancePaid <= 0) {
-      setSheet({ type: 'checkinFrom', reservation: res, triggerAdvanceError: true });
-      return;
-    }
-    try {
-      await checkIn.mutateAsync(res.id);
-      toast(`${res.guest_name.split(' ')[0]} checked in to Room ${res.room_no}.`);
-    } catch (err) {
-      if (err.fields?.room || err.fields?.housekeepingStatus || err.message?.includes('not ready') || err.message?.includes('maintenance')) {
-        setSheet({ type: 'open', id: res.id });
-        toast(err.message);
-        return;
-      }
-      if (err.fields?.advanceAmount || err.message?.includes('advance amount before check-in') || err.message?.includes('Advance payment is required') || err.message?.includes('advance')) {
-        setSheet({ type: 'checkinFrom', reservation: res, triggerAdvanceError: true });
-        return;
-      }
-      if (err.fields?.persons || err.message?.includes('allows a maximum of')) {
-        setSheet({ type: 'checkinFrom', reservation: res });
-        return;
-      }
-      toast(err.message);
-    }
+  const openPreCheckInVerification = (res) => {
+    setSheet({
+      type: 'checkinFrom',
+      reservation: res,
+      triggerAdvanceError: Number(res.advance_paid ?? 0) <= 0,
+    });
   };
 
   return (
@@ -90,7 +65,7 @@ export default function Bookings() {
           Bookings <span className="muted mono" style={{ fontSize: 15 }}>{all.length}</span>
         </h2>
         <button className="btn dark" type="button" onClick={() => setSheet({ type: 'new' })}>
-          + New booking
+          + New Booking
         </button>
       </div>
 
@@ -103,13 +78,24 @@ export default function Bookings() {
             <ul className="blist">
               {list.map((s) => {
                 const nights = nightsBetween(s.check_in_date, s.check_out_date);
+                const out = addDaysIso(today, nights);
                 const r = getRoom(s.room_id);
                 const hkStatus = r?.housekeepingStatus || r?.housekeeping_status || s.housekeeping_status || 'ok';
                 const isOccupied = r?.status === 'occupied';
                 const isMaintenance = hkStatus === 'repair';
                 const isReady = hkStatus === 'ok';
                 const isNotReady = !isReady && !isMaintenance;
-                const canIn = s.check_in_date <= today && !isOccupied && !isMaintenance && isReady;
+                const isLateArrival = s.status === 'pending' && (s.check_in_date < today || s.check_out_date <= today);
+                const lateArrivalConflict = isLateArrival
+                  ? all.find((other) =>
+                      other.id !== s.id &&
+                      Number(other.room_id) === Number(s.room_id) &&
+                      other.status === 'pending' &&
+                      other.check_in_date < out &&
+                      today < other.check_out_date
+                    )
+                  : null;
+                const canIn = s.check_in_date <= today && !isOccupied && !isMaintenance && isReady && !lateArrivalConflict;
                 return (
                   <li key={s.id}>
                     <span className="bno">{s.booking_code}</span>
@@ -122,7 +108,9 @@ export default function Bookings() {
                         · {fd(s.check_in_date)} → {fd(s.check_out_date)} · {nights} day{nights > 1 ? 's' : ''} · {s.persons} person
                         {s.persons > 1 ? 's' : ''}{Number(s.advance_paid) > 0 ? ` · advance ${inr(s.advance_paid)}` : ' · advance not paid'}
                       </span>
-                      {isOccupied ? (
+                      {lateArrivalConflict ? (
+                        <span style={{ color: 'var(--bad, #ef4444)', fontWeight: 600 }}> · Date conflict ({lateArrivalConflict.booking_code})</span>
+                      ) : isOccupied ? (
                         <span style={{ color: 'var(--occ)' }}> · Room still occupied</span>
                       ) : isMaintenance ? (
                         <span style={{ color: 'var(--mnt)' }}> · Room under maintenance</span>
@@ -133,7 +121,7 @@ export default function Bookings() {
                       )}
                     </div>
                     {canIn && (
-                      <button className="btn go sm" type="button" disabled={checkIn.isPending} onClick={() => quickCheckIn(s)}>
+                      <button className="btn go sm" type="button" onClick={() => openPreCheckInVerification(s)}>
                         Guest came · Check in
                       </button>
                     )}

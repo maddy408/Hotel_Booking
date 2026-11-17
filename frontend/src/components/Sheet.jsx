@@ -4,7 +4,7 @@ import { useEffect } from 'react';
  * The single popup pattern the whole app uses for room actions: a centered modal on
  * desktop, a bottom sheet on mobile (handled purely by CSS). Esc and scrim-click close it.
  */
-export default function Sheet({ onClose, children }) {
+export default function Sheet({ onClose, children, className = '', style }) {
   useEffect(() => {
     const onKey = (e) => {
       if (e.key === 'Escape') onClose();
@@ -13,6 +13,8 @@ export default function Sheet({ onClose, children }) {
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  const cls = `sheet ${className}`.trim();
+
   return (
     <div
       className="scrim"
@@ -20,7 +22,7 @@ export default function Sheet({ onClose, children }) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="sheet" role="dialog" aria-modal="true">
+      <div className={cls} style={style} role="dialog" aria-modal="true">
         {children}
       </div>
     </div>

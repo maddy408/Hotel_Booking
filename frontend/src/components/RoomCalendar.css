@@ -1,0 +1,397 @@
+/* ==========================================================================
+   RoomCalendar Component Styles - Tamarind Court
+   Theme: Lavender / Plum / Purple Hotel Theme (#802C62 Primary Purple)
+   Compact, Elegant Monthly Calendar Widget
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. Rooms Dashboard Main Layout (72–75% Grid / 25–28% Calendar, ~390–410px)
+   -------------------------------------------------------------------------- */
+.rooms-content-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.rooms-grid-column {
+  flex: 1 1 calc(74% - 12px);
+  width: calc(74% - 12px);
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.rooms-calendar-column {
+  flex: 0 0 clamp(390px, 26%, 410px);
+  width: clamp(390px, 26%, 410px);
+  max-width: 410px;
+  min-width: 380px;
+  box-sizing: border-box;
+  position: sticky;
+  top: 16px;
+  align-self: flex-start;
+}
+
+/* --------------------------------------------------------------------------
+   2. Calendar Card Container (Compact Widget Dimensions: ~390–410px wide, ~350–390px tall)
+   -------------------------------------------------------------------------- */
+.room-cal-card {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #eae4ef);
+  border-radius: 12px;
+  box-shadow: var(--shadow-card, 0 2px 8px rgba(48, 34, 61, 0.06));
+  overflow: hidden;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 410px;
+  transition: box-shadow 0.2s ease;
+}
+
+.room-cal-card:hover {
+  box-shadow: var(--shadow-hover, 0 4px 12px rgba(48, 34, 61, 0.09));
+}
+
+/* --------------------------------------------------------------------------
+   3. Purple Card Header with Compact Today Button
+   -------------------------------------------------------------------------- */
+.room-cal-header {
+  background: var(--color-primary, #802C62);
+  color: #ffffff;
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
+}
+
+.room-cal-header-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 13.5px;
+  letter-spacing: 0.2px;
+}
+
+.room-cal-header-icon {
+  display: block;
+  opacity: 0.95;
+}
+
+.room-cal-heading {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffffff;
+  line-height: 1;
+}
+
+.room-cal-today-btn {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 9999px;
+  padding: 2.5px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  line-height: 1.2;
+  transition: all 0.15s ease;
+  font-family: inherit;
+}
+
+.room-cal-today-btn:hover {
+  background: #ffffff;
+  color: #802C62;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+  transform: translateY(-1px);
+}
+
+/* --------------------------------------------------------------------------
+   4. Calendar Body & Month Navigation (Month + Year on single horizontal line)
+   -------------------------------------------------------------------------- */
+.room-cal-body {
+  padding: 8px 10px 10px;
+  box-sizing: border-box;
+}
+
+.room-cal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  gap: 8px;
+}
+
+.room-cal-nav-btn {
+  background: var(--color-surface-secondary, #f1eaf8);
+  color: #802C62;
+  border: 1px solid var(--color-border, #eae4ef);
+  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.room-cal-nav-btn:hover {
+  background: #802C62;
+  border-color: #802C62;
+  color: #ffffff;
+  box-shadow: 0 1px 3px rgba(48, 34, 61, 0.12);
+}
+
+.room-cal-month-year-group {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.room-cal-month-title {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--color-heading, #30223d);
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
+   5. Weekdays Row (7 Columns)
+   -------------------------------------------------------------------------- */
+.room-cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  padding: 2px 0 4px;
+  text-align: center;
+}
+
+.room-cal-weekday {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-secondary, #81748c);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  user-select: none;
+}
+
+/* --------------------------------------------------------------------------
+   6. Date Grid with Subtle Borders & Small Elegant Date Numbers
+   Date cell height: 38–42px
+   Selected date highlight: Primary purple #802C62
+   -------------------------------------------------------------------------- */
+.room-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background-color: var(--color-border, #eae4ef);
+  border: 1px solid var(--color-border, #eae4ef);
+  border-radius: 8px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.room-cal-day {
+  background-color: #ffffff;
+  color: var(--color-text-primary, #30223d);
+  border: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  height: 38px;
+  min-height: 38px;
+  max-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  padding: 0;
+  user-select: none;
+  box-sizing: border-box;
+}
+
+.room-cal-day-num {
+  display: inline-block;
+  line-height: 1;
+}
+
+/* Hover for normal in-month days */
+.room-cal-day:hover:not(.is-selected) {
+  background-color: var(--color-surface-secondary, #f1eaf8);
+  color: #802C62;
+}
+
+/* Dates from adjacent (previous / next) months */
+.room-cal-day.out-month {
+  color: #a89cb2;
+  background-color: #faf8fc;
+}
+
+.room-cal-day.out-month:hover:not(.is-selected) {
+  background-color: #f6f0fb;
+  color: var(--color-secondary, #87377d);
+}
+
+/* Today's date (subtle purple highlight when NOT selected) */
+.room-cal-day.is-today:not(.is-selected) {
+  background-color: #ede2f5;
+  color: #802C62;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1.5px #802C62;
+}
+
+/* Selected date (primary purple #802C62 background + white text) */
+.room-cal-day.is-selected {
+  background-color: #802C62 !important;
+  color: #ffffff !important;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(128, 44, 98, 0.35);
+  z-index: 1;
+}
+
+.room-cal-day.is-selected:hover {
+  background-color: #692350 !important;
+}
+
+/* --------------------------------------------------------------------------
+   7. Selected Date Small Footer Section
+   -------------------------------------------------------------------------- */
+.room-cal-selected-info {
+  margin-top: 6px;
+  padding: 5px 8px;
+  background-color: var(--color-surface-secondary, #f1eaf8);
+  border: 1px solid var(--color-border, #eae4ef);
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.room-cal-info-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.room-cal-info-icon {
+  color: #802C62;
+  flex-shrink: 0;
+}
+
+.room-cal-info-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary, #81748c);
+}
+
+.room-cal-info-value {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--color-heading, #30223d);
+}
+
+/* --------------------------------------------------------------------------
+   8. Tablet Responsiveness (<= 1024px)
+   Display calendar above room grid
+   -------------------------------------------------------------------------- */
+@media (max-width: 1024px) {
+  .rooms-content-layout {
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .rooms-calendar-column {
+    order: -1;
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: 410px;
+    position: static;
+    margin: 0 auto 4px;
+    align-self: center;
+  }
+
+  .rooms-grid-column {
+    order: 1;
+    flex: 1 1 100%;
+    width: 100%;
+  }
+
+  .room-cal-card {
+    max-width: 410px;
+    width: 100%;
+    margin: 0 auto;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   9. Mobile Responsiveness (<= 640px)
+   Full-width compact calendar with seven properly aligned weekday columns
+   -------------------------------------------------------------------------- */
+@media (max-width: 640px) {
+  .rooms-content-layout {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .rooms-calendar-column {
+    order: -1;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin: 0 0 4px;
+  }
+
+  .rooms-grid-column {
+    order: 1;
+    width: 100%;
+  }
+
+  .room-cal-card {
+    max-width: 100%;
+    width: 100%;
+    border-radius: 10px;
+  }
+
+  .room-cal-body {
+    padding: 6px 6px 8px;
+  }
+
+  .room-cal-day {
+    height: 38px;
+    min-height: 38px;
+    font-size: 11.5px;
+  }
+
+  .room-cal-weekday {
+    font-size: 10px;
+  }
+
+  .room-cal-month-title {
+    font-size: 12.5px;
+  }
+
+  .room-cal-selected-info {
+    margin-top: 5px;
+    padding: 4px 6px;
+  }
+
+  .room-cal-info-label {
+    font-size: 10.5px;
+  }
+
+  .room-cal-info-value {
+    font-size: 11px;
+  }
+}

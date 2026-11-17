@@ -69,7 +69,7 @@ class RoomRepository
     public function inHouseStaysByRoom(int $hotelId): array
     {
         $stmt = $this->db->prepare(
-            "SELECT s.room_id, s.id AS stay_id, s.check_in_date, s.checkout_planned, s.checkout_time, s.guest_id, g.name AS guest_name
+            "SELECT s.room_id, s.id AS stay_id, s.check_in_date, s.checkout_planned, s.checkout_time, s.guest_id, s.persons, g.name AS guest_name
              FROM stays s JOIN guests g ON g.id = s.guest_id
              WHERE s.hotel_id = :hotel_id AND s.status = 'in_house'"
         );
@@ -85,7 +85,7 @@ class RoomRepository
     public function pendingReservationsByRoom(int $hotelId): array
     {
         $stmt = $this->db->prepare(
-            "SELECT b.room_id, b.id, b.booking_code, b.check_in_date, b.check_out_date, b.check_out_time, b.guest_id, g.name AS guest_name
+            "SELECT b.room_id, b.id, b.booking_code, b.check_in_date, b.check_out_date, b.check_out_time, b.guest_id, b.persons, g.name AS guest_name
              FROM reservations b JOIN guests g ON g.id = b.guest_id
              WHERE b.hotel_id = :hotel_id AND b.status = 'pending'
              ORDER BY b.check_in_date"

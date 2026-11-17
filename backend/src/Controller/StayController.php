@@ -59,6 +59,24 @@ final class StayController
             'advanceAmount' => 'required|numeric|min:0.01',
             'advanceMethod' => 'required|in:cash,upi,card',
         ]);
+
+        $filesInput = $request->file('documents') ?? $request->file('documents[]') ?? $request->file('files') ?? $request->file('files[]') ?? $_FILES['documents'] ?? $_FILES['documents[]'] ?? $_FILES['files'] ?? $_FILES['files[]'] ?? null;
+        $documentFiles = \App\Support\OccupantDocumentUploader::normalizeFiles($filesInput);
+
+        $occupantTargets = $request->input('occupantTargets') ?? $request->input('occupantTargets[]') ?? $_POST['occupantTargets'] ?? $_POST['occupantTargets[]'] ?? [];
+        if (is_string($occupantTargets)) {
+            $decoded = json_decode($occupantTargets, true);
+            $occupantTargets = is_array($decoded) ? $decoded : [];
+        }
+
+        $occupants = $request->input('occupants') ?? $request->input('occupants[]') ?? $_POST['occupants'] ?? $_POST['occupants[]'] ?? [];
+        if (is_string($occupants)) {
+            $decoded = json_decode($occupants, true);
+            $occupants = is_array($decoded) ? $decoded : [];
+        }
+
+        $verifyDocuments = filter_var($request->input('verifyDocuments') ?? false, FILTER_VALIDATE_BOOLEAN);
+
         return $this->stays->directCheckIn(
             $hotelId,
             (int) $data['roomId'],
@@ -74,6 +92,13 @@ final class StayController
             (string) ($data['advanceMethod'] ?? 'cash'),
             (int) $request->attribute('userId'),
             isset($data['checkoutTime']) ? (string) $data['checkoutTime'] : null,
+            isset($data['bookingSource']) || isset($data['booking_source']) ? (string) ($data['bookingSource'] ?? $data['booking_source']) : 'Social Media',
+            isset($data['referredByGuestId']) && $data['referredByGuestId'] !== '' ? (int) $data['referredByGuestId'] : (isset($data['referred_by_guest_id']) && $data['referred_by_guest_id'] !== '' ? (int) $data['referred_by_guest_id'] : null),
+            isset($data['otherSource']) ? (string) $data['otherSource'] : (isset($data['other_source']) ? (string) $data['other_source'] : null),
+            $documentFiles,
+            (array) $occupantTargets,
+            (array) $occupants,
+            $verifyDocuments,
         );
     }
 

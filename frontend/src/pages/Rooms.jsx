@@ -7,6 +7,9 @@ import BookingDetailSheet from '../components/sheets/BookingDetailSheet.jsx';
 import HousekeepingSheet from '../components/sheets/HousekeepingSheet.jsx';
 import NewBookingSheet from '../components/sheets/NewBookingSheet.jsx';
 import DirectCheckInPicker from '../components/sheets/DirectCheckInPicker.jsx';
+import RoomDetailsSheet from '../components/sheets/RoomDetailsSheet.jsx';
+import StayDetailSheet from '../components/sheets/StayDetailSheet.jsx';
+import RoomCalendar from '../components/RoomCalendar.jsx';
 
 const LABEL = { free: 'Free', booked: 'Booked', occupied: 'Occupied', cleaning: 'Cleaning', repair: 'Repair' };
 const FLOOR_NAME = (f) => (Number(f) === 0 ? 'Ground floor' : `Floor ${f}`);
@@ -111,10 +114,7 @@ export default function Rooms() {
   };
 
   const openRoom = (room) => {
-    if (room.status === 'free') setSheet({ type: 'checkin', room });
-    else if (room.status === 'occupied') setSheet({ type: 'checkout', stayId: room.stayId });
-    else if (room.status === 'booked') setSheet({ type: 'booking', reservationId: room.bookingId });
-    else setSheet({ type: 'housekeeping', room });
+    setSheet({ type: 'roomDetails', room });
   };
 
   const matchingRoomsCount = rooms.filter((r) => roomMatchesFilter(r, filter)).length;
@@ -146,7 +146,7 @@ export default function Rooms() {
               <line x1="10" y1="16" x2="14" y2="16" />
             </svg>
           </span>
-          <span>+ New Booking <span style={{ fontWeight: 500, opacity: 0.88 }}>(for later date)</span></span>
+          <span>+ Pre Booking <span style={{ fontWeight: 500, opacity: 0.88 }}>(for later date)</span></span>
         </button>
       </div>
 
@@ -174,74 +174,112 @@ export default function Rooms() {
         ))}
       </div>
 
-      {/* 3. Room Interaction Instructions */}
-      <div className="hint">
-        <span>
-          <span className="hint-dot free-dot" aria-hidden="true" />
-          Tap a <b style={{ color: 'var(--ok)' }}>green</b> room to check in.
-        </span>
-        <span>
-          <span className="hint-dot occ-dot" aria-hidden="true" />
-          Tap a <b style={{ color: 'var(--occ)' }}>blue</b> room to check out.
-        </span>
-        <span>
-          <span className="hint-dot bk-dot" aria-hidden="true" />
-          Tap a <b style={{ color: 'var(--bk)' }}>yellow</b> room when the booked guest comes.
-        </span>
-        {filter !== 'all' && (
-          <button className="btn sm clear" type="button" onClick={() => setFilter('all')}>
-            Show all {rooms.length} rooms
-          </button>
-        )}
-      </div>
-
-      {!rooms.length && <div className="panel empty">No rooms yet. Add your rooms in the Room Master tab.</div>}
-      {rooms.length > 0 && filter !== 'all' && matchingRoomsCount === 0 && (
-        <div className="panel empty">No {LABEL[filter]?.toLowerCase() || filter} rooms.</div>
-      )}
-
-      {/* 4. Floor-wise Room Cards */}
-      {floors.map((f) => {
-        const rs = rooms.filter((r) => r.floor === f && roomMatchesFilter(r, filter)).sort((a, b) => a.roomNo - b.roomNo);
-        if (!rs.length) return null;
-        return (
-          <div className="floor" key={f}>
-            <div className="floor-header">
-              <span className="floor-badge">
-                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
-                  <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
-                  <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" />
-                  <path d="M10 6h4" />
-                  <path d="M10 10h4" />
-                  <path d="M10 14h4" />
-                  <path d="M10 18h4" />
-                </svg>
-                {FLOOR_NAME(f)}
-              </span>
-              <span className="floor-count-pill">{rs.length} Rooms</span>
-            </div>
-
-            <div className="rooms">
-              {rs.map((r) => (
-                <RoomTile
-                  key={r.id}
-                  room={r}
-                  onClick={() => openRoom(r)}
-                  onOpenBooking={(bookingId) => setSheet({ type: 'booking', reservationId: bookingId })}
-                />
-              ))}
-            </div>
+      {/* 3. Rooms Content Layout: Left Section (Room Cards ~72-75%) + Right Section (Compact Calendar ~25-28%) */}
+      <div className="rooms-content-layout">
+        <div className="rooms-grid-column">
+          {/* Room Interaction Instructions */}
+          <div className="hint">
+            <span>
+              <span className="hint-dot free-dot" aria-hidden="true" />
+              Tap any room tile to view Room Details, guest & stay information, or room actions.
+            </span>
+            {filter !== 'all' && (
+              <button className="btn sm clear" type="button" onClick={() => setFilter('all')}>
+                Show all {rooms.length} rooms
+              </button>
+            )}
           </div>
-        );
-      })}
+
+          {!rooms.length && <div className="panel empty">No rooms yet. Add your rooms in the Room Master tab.</div>}
+          {rooms.length > 0 && filter !== 'all' && matchingRoomsCount === 0 && (
+            <div className="panel empty">No {LABEL[filter]?.toLowerCase() || filter} rooms.</div>
+          )}
+
+          {/* Floor-wise Room Cards */}
+          {floors.map((f) => {
+            const rs = rooms.filter((r) => r.floor === f && roomMatchesFilter(r, filter)).sort((a, b) => a.roomNo - b.roomNo);
+            if (!rs.length) return null;
+            return (
+              <div className="floor" key={f}>
+                <div className="floor-header">
+                  <span className="floor-badge">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" />
+                      <path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" />
+                      <path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" />
+                      <path d="M10 6h4" />
+                      <path d="M10 10h4" />
+                      <path d="M10 14h4" />
+                      <path d="M10 18h4" />
+                    </svg>
+                    {FLOOR_NAME(f)}
+                  </span>
+                  <span className="floor-count-pill">{rs.length} Rooms</span>
+                </div>
+
+                <div className="rooms">
+                  {rs.map((r) => (
+                    <RoomTile
+                      key={r.id}
+                      room={r}
+                      onClick={() => openRoom(r)}
+                      onOpenBooking={(bookingId) => setSheet({ type: 'booking', reservationId: bookingId })}
+                    />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Calendar on the Right side of the Rooms Dashboard */}
+        <aside className="rooms-calendar-column" aria-label="Monthly Calendar View">
+          <RoomCalendar />
+        </aside>
+      </div>
 
       {sheet?.type === 'direct' && (
         <DirectCheckInPicker rooms={rooms} onClose={() => setSheet(null)} onPick={(room) => setSheet({ type: 'checkin', room })} />
       )}
+      {sheet?.type === 'roomDetails' && (
+        <RoomDetailsSheet
+          room={sheet.room}
+          onClose={() => setSheet(null)}
+          onViewStay={(stayId) => setSheet({ type: 'stay', stayId })}
+          onEarlyCheckout={(stayId) => setSheet({ type: 'checkout', stayId, initialMode: 'early' })}
+          onCheckout={(stayId) => setSheet({ type: 'checkout', stayId, initialMode: 'checkout' })}
+          onViewBooking={(bookingId) => setSheet({ type: 'booking', reservationId: bookingId })}
+          onCheckIn={(roomOrRes) => {
+            if (roomOrRes?.booking_code) {
+              setSheet({
+                type: 'checkin-from-reservation',
+                reservation: roomOrRes,
+                triggerAdvanceError: Number(roomOrRes.advance_paid ?? 0) <= 0,
+              });
+            } else {
+              setSheet({ type: 'checkin', room: roomOrRes });
+            }
+          }}
+          onPreBook={(room) => setSheet({ type: 'newBooking', preSelectedRoom: room })}
+        />
+      )}
+      {sheet?.type === 'stay' && (
+        <StayDetailSheet
+          stayId={sheet.stayId}
+          onClose={() => setSheet(null)}
+          onCheckout={(stayId) => setSheet({ type: 'checkout', stayId, initialMode: 'checkout' })}
+          onEarlyCheckout={(stayId) => setSheet({ type: 'checkout', stayId, initialMode: 'early' })}
+        />
+      )}
       {sheet?.type === 'checkin' && <CheckInSheet room={sheet.room} onClose={() => setSheet(null)} />}
       {sheet?.type === 'checkin-from-reservation' && <CheckInSheet reservation={sheet.reservation} triggerAdvanceError={sheet.triggerAdvanceError} onClose={() => setSheet(null)} />}
-      {sheet?.type === 'checkout' && <CheckoutSheet stayId={sheet.stayId} onClose={() => setSheet(null)} />}
+      {sheet?.type === 'checkout' && (
+        <CheckoutSheet
+          stayId={sheet.stayId}
+          initialMode={sheet.initialMode}
+          onClose={() => setSheet(null)}
+        />
+      )}
       {sheet?.type === 'booking' && (
         <BookingDetailSheet
           reservationId={sheet.reservationId}
@@ -251,7 +289,7 @@ export default function Rooms() {
         />
       )}
       {sheet?.type === 'housekeeping' && <HousekeepingSheet room={sheet.room} onClose={() => setSheet(null)} />}
-      {sheet?.type === 'newBooking' && <NewBookingSheet onClose={() => setSheet(null)} />}
+      {sheet?.type === 'newBooking' && <NewBookingSheet editReservation={sheet.preSelectedRoom ? { room_id: sheet.preSelectedRoom.id } : null} onClose={() => setSheet(null)} />}
       {sheet?.type === 'editBooking' && <NewBookingSheet editReservation={sheet.reservation} onClose={() => setSheet(null)} />}
     </div>
   );

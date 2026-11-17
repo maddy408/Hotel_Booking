@@ -64,6 +64,10 @@ final class ReservationController
         if ($name === '') {
             throw \App\Support\ApiException::validation(['name' => 'Guest name cannot be empty.']);
         }
+
+        $filesInput = $request->file('documents') ?? $request->file('files') ?? $_FILES['documents'] ?? $_FILES['files'] ?? null;
+        $documentFiles = \App\Support\OccupantDocumentUploader::normalizeFiles($filesInput);
+
         return $this->reservations->create(
             (int) $request->attribute('hotelId'),
             (int) $data['roomId'],
@@ -78,6 +82,10 @@ final class ReservationController
             (int) $request->attribute('userId'),
             isset($data['checkOutTime']) ? (string) $data['checkOutTime'] : null,
             isset($data['notes']) ? trim((string) $data['notes']) : null,
+            isset($data['bookingSource']) || isset($data['booking_source']) ? (string) ($data['bookingSource'] ?? $data['booking_source']) : 'Social Media',
+            isset($data['referredByGuestId']) && $data['referredByGuestId'] !== '' ? (int) $data['referredByGuestId'] : (isset($data['referred_by_guest_id']) && $data['referred_by_guest_id'] !== '' ? (int) $data['referred_by_guest_id'] : null),
+            isset($data['otherSource']) ? (string) $data['otherSource'] : (isset($data['other_source']) ? (string) $data['other_source'] : null),
+            $documentFiles,
         );
     }
 
@@ -110,6 +118,9 @@ final class ReservationController
             isset($data['phone']) ? (string) $data['phone'] : null,
             isset($data['notes']) ? trim((string) $data['notes']) : null,
             isset($data['guestId']) && $data['guestId'] !== '' ? (int) $data['guestId'] : null,
+            isset($data['bookingSource']) || isset($data['booking_source']) ? (string) ($data['bookingSource'] ?? $data['booking_source']) : null,
+            isset($data['referredByGuestId']) && $data['referredByGuestId'] !== '' ? (int) $data['referredByGuestId'] : (isset($data['referred_by_guest_id']) && $data['referred_by_guest_id'] !== '' ? (int) $data['referred_by_guest_id'] : null),
+            isset($data['otherSource']) ? (string) $data['otherSource'] : (isset($data['other_source']) ? (string) $data['other_source'] : null),
         );
     }
 
@@ -191,10 +202,42 @@ final class ReservationController
 
     public function checkIn(Request $request): array
     {
+        $persons = $request->input('persons');
+        $personsVal = ($persons !== null && is_numeric($persons)) ? (int) $persons : null;
+
+        $filesInput = $request->file('documents') ?? $request->file('documents[]') ?? $request->file('files') ?? $request->file('files[]') ?? $_FILES['documents'] ?? $_FILES['documents[]'] ?? $_FILES['files'] ?? $_FILES['files[]'] ?? null;
+        $documentFiles = \App\Support\OccupantDocumentUploader::normalizeFiles($filesInput);
+
+        $occupantTargets = $request->input('occupantTargets') ?? $request->input('occupantTargets[]') ?? $_POST['occupantTargets'] ?? $_POST['occupantTargets[]'] ?? [];
+        if (is_string($occupantTargets)) {
+            $decoded = json_decode($occupantTargets, true);
+            $occupantTargets = is_array($decoded) ? $decoded : [];
+        }
+
+        $occupants = $request->input('occupants') ?? $request->input('occupants[]') ?? $_POST['occupants'] ?? $_POST['occupants[]'] ?? [];
+        if (is_string($occupants)) {
+            $decoded = json_decode($occupants, true);
+            $occupants = is_array($decoded) ? $decoded : [];
+        }
+
+        $preBookingDocAssignments = $request->input('preBookingDocAssignments') ?? $request->input('preBookingDocAssignments[]') ?? $_POST['preBookingDocAssignments'] ?? $_POST['preBookingDocAssignments[]'] ?? [];
+        if (is_string($preBookingDocAssignments)) {
+            $decoded = json_decode($preBookingDocAssignments, true);
+            $preBookingDocAssignments = is_array($decoded) ? $decoded : [];
+        }
+
+        $verifyDocuments = filter_var($request->input('verifyDocuments') ?? false, FILTER_VALIDATE_BOOLEAN);
+
         return $this->stays->checkInFromReservation(
             (int) $request->routeParams['id'],
             (int) $request->attribute('hotelId'),
             (int) $request->attribute('userId'),
+            $personsVal,
+            $documentFiles,
+            (array) $occupantTargets,
+            (array) $occupants,
+            $verifyDocuments,
+            (array) $preBookingDocAssignments,
         );
     }
 }
