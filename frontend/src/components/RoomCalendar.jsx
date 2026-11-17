@@ -12,8 +12,10 @@ export default function RoomCalendar({ initialDate, onDateSelect, className = ''
   const [today] = useState(() => new Date());
   const initial = initialDate || today;
 
-  const [viewYear, setViewYear] = useState(() => initial.getFullYear());
-  const [viewMonth, setViewMonth] = useState(() => initial.getMonth());
+  const [{ year: viewYear, month: viewMonth }, setViewDate] = useState(() => ({
+    year: initial.getFullYear(),
+    month: initial.getMonth(),
+  }));
   const [selectedDate, setSelectedDate] = useState(() => initial);
 
   const calendarDays = useMemo(
@@ -22,29 +24,26 @@ export default function RoomCalendar({ initialDate, onDateSelect, className = ''
   );
 
   const handlePrevMonth = () => {
-    setViewMonth((prevMonth) => {
-      if (prevMonth === 0) {
-        setViewYear((prevYear) => prevYear - 1);
-        return 11;
+    setViewDate(({ year, month }) => {
+      if (month === 0) {
+        return { year: year - 1, month: 11 };
       }
-      return prevMonth - 1;
+      return { year, month: month - 1 };
     });
   };
 
   const handleNextMonth = () => {
-    setViewMonth((prevMonth) => {
-      if (prevMonth === 11) {
-        setViewYear((prevYear) => prevYear + 1);
-        return 0;
+    setViewDate(({ year, month }) => {
+      if (month === 11) {
+        return { year: year + 1, month: 0 };
       }
-      return prevMonth + 1;
+      return { year, month: month + 1 };
     });
   };
 
   const handleGoToToday = () => {
     const now = new Date();
-    setViewYear(now.getFullYear());
-    setViewMonth(now.getMonth());
+    setViewDate({ year: now.getFullYear(), month: now.getMonth() });
     setSelectedDate(now);
     if (onDateSelect) {
       onDateSelect(now);
@@ -54,8 +53,7 @@ export default function RoomCalendar({ initialDate, onDateSelect, className = ''
   const handleDateClick = (item) => {
     setSelectedDate(item.date);
     if (!item.isCurrentMonth) {
-      setViewYear(item.year);
-      setViewMonth(item.month);
+      setViewDate({ year: item.year, month: item.month });
     }
     if (onDateSelect) {
       onDateSelect(item.date);
