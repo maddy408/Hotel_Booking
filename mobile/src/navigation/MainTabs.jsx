@@ -1,0 +1,213 @@
+import { Pressable } from 'react-native';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { useNavigation } from '@react-navigation/native';
+import { useAuth } from '../auth/AuthContext.jsx';
+import { colors, fonts } from '../theme/theme';
+import {
+  RoomsIcon,
+  BookingsIcon,
+  DailyOpsIcon,
+  GuestsIcon,
+  BillsIcon,
+  MoreIcon,
+  MenuIcon,
+} from '../components/Icons.jsx';
+
+import RoomsScreen from '../screens/rooms/RoomsScreen.jsx';
+import BookingsScreen from '../screens/bookings/BookingsScreen.jsx';
+import DailyOpsScreen from '../screens/dailyops/DailyOpsScreen.jsx';
+import GuestsScreen from '../screens/guests/GuestsScreen.jsx';
+import GuestDetailsScreen from '../screens/guests/GuestDetailsScreen.jsx';
+import AllReferralsScreen from '../screens/guests/AllReferralsScreen.jsx';
+import BillsScreen from '../screens/bills/BillsScreen.jsx';
+import InvoicePrintScreen from '../screens/bills/InvoicePrintScreen.jsx';
+import MoreMenuScreen from '../screens/more/MoreMenuScreen.jsx';
+import ReportsScreen from '../screens/more/ReportsScreen.jsx';
+import RoomMasterScreen from '../screens/more/RoomMasterScreen.jsx';
+import UsersScreen from '../screens/more/UsersScreen.jsx';
+import SettingsScreen from '../screens/more/SettingsScreen.jsx';
+import NoPermissionScreen from '../screens/NoPermissionScreen.jsx';
+
+const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
+
+function DrawerButton() {
+  const navigation = useNavigation();
+  return (
+    <Pressable
+      onPress={() => navigation.openDrawer()}
+      hitSlop={12}
+      style={{ marginLeft: 4, marginRight: 8, padding: 6 }}
+      accessibilityLabel="Open Navigation Drawer"
+    >
+      <MenuIcon color="#FFFFFF" size={22} />
+    </Pressable>
+  );
+}
+
+const headerOptions = {
+  headerStyle: { backgroundColor: colors.header },
+  headerTintColor: colors.headerText,
+  headerTitleStyle: { fontFamily: fonts.displaySemibold, fontSize: 17 },
+  headerLeft: () => <DrawerButton />,
+};
+
+function RoomsStack() {
+  return (
+    <Stack.Navigator screenOptions={headerOptions}>
+      <Stack.Screen name="RoomsHome" component={RoomsScreen} options={{ title: 'Rooms' }} />
+    </Stack.Navigator>
+  );
+}
+
+function BookingsStack() {
+  return (
+    <Stack.Navigator screenOptions={headerOptions}>
+      <Stack.Screen name="BookingsHome" component={BookingsScreen} options={{ title: 'Bookings' }} />
+    </Stack.Navigator>
+  );
+}
+
+function DailyOpsStack() {
+  const { user } = useAuth();
+  const allowed = ['admin', 'manager', 'receptionist'].includes(user?.role);
+  return (
+    <Stack.Navigator screenOptions={headerOptions}>
+      <Stack.Screen name="DailyOpsHome" component={allowed ? DailyOpsScreen : NoPermissionScreen} options={{ title: 'Daily Ops' }} />
+    </Stack.Navigator>
+  );
+}
+
+function GuestsStack() {
+  return (
+    <Stack.Navigator screenOptions={headerOptions}>
+      <Stack.Screen name="GuestsHome" component={GuestsScreen} options={{ title: 'Guests' }} />
+      <Stack.Screen
+        name="GuestDetails"
+        component={GuestDetailsScreen}
+        options={{ title: 'Guest', headerLeft: undefined }}
+      />
+      <Stack.Screen
+        name="AllReferrals"
+        component={AllReferralsScreen}
+        options={{ title: 'Referrals', headerLeft: undefined }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+function BillsStack() {
+  return (
+    <Stack.Navigator screenOptions={headerOptions}>
+      <Stack.Screen name="BillsHome" component={BillsScreen} options={{ title: 'Bills' }} />
+      <Stack.Screen
+        name="InvoicePrint"
+        component={InvoicePrintScreen}
+        options={{ title: 'Invoice', headerLeft: undefined }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+function MoreStack() {
+  return (
+    <Stack.Navigator screenOptions={headerOptions}>
+      <Stack.Screen name="MoreMenu" component={MoreMenuScreen} options={{ title: 'More' }} />
+      <Stack.Screen
+        name="Reports"
+        component={ReportsScreen}
+        options={{ title: 'Reports', headerLeft: undefined }}
+      />
+      <Stack.Screen
+        name="RoomMaster"
+        component={RoomMasterScreen}
+        options={{ title: 'Room Master', headerLeft: undefined }}
+      />
+      <Stack.Screen
+        name="Users"
+        component={UsersScreen}
+        options={{ title: 'Users', headerLeft: undefined }}
+      />
+      <Stack.Screen
+        name="SettingsScreen"
+        component={SettingsScreen}
+        options={{ title: 'Settings', headerLeft: undefined }}
+      />
+    </Stack.Navigator>
+  );
+}
+
+export default function MainTabs() {
+  return (
+    <Tab.Navigator
+      screenOptions={{
+        headerShown: false,
+        tabBarActiveTintColor: '#FFFFFF',
+        tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.55)',
+        tabBarStyle: {
+          backgroundColor: colors.header,
+          borderTopWidth: 0,
+          height: 62,
+          paddingBottom: 8,
+          paddingTop: 6,
+        },
+        tabBarActiveBackgroundColor: 'rgba(255, 255, 255, 0.12)',
+        tabBarItemStyle: {
+          borderRadius: 8,
+          marginHorizontal: 3,
+          marginVertical: 3,
+        },
+        tabBarLabelStyle: {
+          fontFamily: fonts.bodySemibold,
+          fontSize: 10.5,
+          fontWeight: '600',
+        },
+      }}
+    >
+      <Tab.Screen
+        name="Rooms"
+        component={RoomsStack}
+        options={{
+          tabBarIcon: ({ color, size }) => <RoomsIcon color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name="Bookings"
+        component={BookingsStack}
+        options={{
+          tabBarIcon: ({ color, size }) => <BookingsIcon color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name="DailyOps"
+        component={DailyOpsStack}
+        options={{
+          title: 'Daily Ops',
+          tabBarIcon: ({ color, size }) => <DailyOpsIcon color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name="Guests"
+        component={GuestsStack}
+        options={{
+          tabBarIcon: ({ color, size }) => <GuestsIcon color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name="Bills"
+        component={BillsStack}
+        options={{
+          tabBarIcon: ({ color, size }) => <BillsIcon color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name="More"
+        component={MoreStack}
+        options={{
+          tabBarIcon: ({ color, size }) => <MoreIcon color={color} size={size} />,
+        }}
+      />
+    </Tab.Navigator>
+  );
+}
