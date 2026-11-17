@@ -1,9 +1,10 @@
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useInvoiceByStay } from '../api/invoices';
 import { fd, inr } from '../lib/format';
 
 export default function InvoicePrint() {
   const { stayId } = useParams();
+  const navigate = useNavigate();
   const { data, isLoading, isError, error } = useInvoiceByStay(stayId);
 
   if (isLoading) return <div style={{ padding: 40 }}>Loading invoice…</div>;
@@ -29,6 +30,23 @@ export default function InvoicePrint() {
   const advanceMethods = Array.from(new Set(advancePayments.map((p) => p.method?.toUpperCase()).filter(Boolean))).join(', ');
   const checkoutMethods = Array.from(new Set(checkoutPayments.map((p) => p.method?.toUpperCase()).filter(Boolean))).join(', ');
 
+  const handleClose = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      window.close();
+      setTimeout(() => {
+        if (!window.closed) {
+          if (document.referrer && document.referrer.startsWith(window.location.origin)) {
+            window.location.href = document.referrer;
+          } else {
+            navigate('/');
+          }
+        }
+      }, 150);
+    }
+  };
+
   return (
     <div className="invwrap">
       <style>{`
@@ -48,13 +66,16 @@ export default function InvoicePrint() {
         table.inv-table td.r, table.inv-table th.r { text-align: right; font-family: var(--mono, 'JetBrains Mono', monospace); }
         .inv-total td { font-weight: 700; border-top: 2px solid var(--color-heading); border-bottom: none; color: var(--color-heading); }
         .inv-balance { text-align: right; font-size: 20px; font-weight: 700; margin-top: 8px; color: var(--color-heading); }
-        .no-print { margin-bottom: 20px; }
+        .no-print { margin-bottom: 20px; display: flex; gap: 8px; align-items: center; }
         @media print { .no-print { display: none; } }
       `}</style>
 
       <div className="no-print">
         <button className="btn dark" type="button" onClick={() => window.print()}>
           Print
+        </button>
+        <button className="btn" type="button" onClick={handleClose}>
+          Close
         </button>
       </div>
 
