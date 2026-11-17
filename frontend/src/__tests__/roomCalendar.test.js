@@ -181,8 +181,11 @@ describe('RoomCalendar Monthly Calendar Logic Verification', () => {
     // Date cell height requirement: approximately 38–42px
     assert.ok(cssContent.includes('38px'), 'Date cells specify 38px height');
 
-    // Primary purple highlight #802C62
-    assert.ok(cssContent.includes('#802C62'), 'Selected date uses primary purple #802C62');
+    // Navbar background highlight #0B0B58 / var(--color-header)
+    assert.ok(
+      cssContent.includes('#0B0B58') || cssContent.includes('var(--color-header'),
+      'Selected date uses application navbar background color'
+    );
 
     // Responsive tablet and mobile media queries
     assert.ok(cssContent.includes('@media (max-width: 1024px)'), 'Tablet breakpoint defined');

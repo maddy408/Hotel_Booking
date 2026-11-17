@@ -1,6 +1,6 @@
 /* ==========================================================================
    RoomCalendar Component Styles - Tamarind Court
-   Theme: Lavender / Plum / Purple Hotel Theme (#802C62 Primary Purple)
+   Theme: Deep Royal Navy Blue (#0B0B58 - Application Navbar Theme)
    Compact, Elegant Monthly Calendar Widget
    ========================================================================== */
 
@@ -38,9 +38,9 @@
    -------------------------------------------------------------------------- */
 .room-cal-card {
   background: var(--color-surface, #ffffff);
-  border: 1px solid var(--color-border, #eae4ef);
+  border: 1px solid var(--color-border, #E2E8F0);
   border-radius: 12px;
-  box-shadow: var(--shadow-card, 0 2px 8px rgba(48, 34, 61, 0.06));
+  box-shadow: var(--shadow-card, 0 2px 8px rgba(11, 11, 88, 0.06));
   overflow: hidden;
   box-sizing: border-box;
   width: 100%;
@@ -49,14 +49,14 @@
 }
 
 .room-cal-card:hover {
-  box-shadow: var(--shadow-hover, 0 4px 12px rgba(48, 34, 61, 0.09));
+  box-shadow: var(--shadow-hover, 0 4px 12px rgba(11, 11, 88, 0.09));
 }
 
 /* --------------------------------------------------------------------------
-   3. Purple Card Header with Compact Today Button
+   3. Card Header with Compact Today Button (Navbar Background Color)
    -------------------------------------------------------------------------- */
 .room-cal-header {
-  background: var(--color-primary, #802C62);
+  background: var(--color-header, var(--color-primary, #0B0B58));
   color: #ffffff;
   padding: 7px 12px;
   display: flex;
@@ -104,7 +104,7 @@
 
 .room-cal-today-btn:hover {
   background: #ffffff;
-  color: #802C62;
+  color: var(--color-header, var(--color-primary, #0B0B58));
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   transform: translateY(-1px);
 }
@@ -126,9 +126,9 @@
 }
 
 .room-cal-nav-btn {
-  background: var(--color-surface-secondary, #f1eaf8);
-  color: #802C62;
-  border: 1px solid var(--color-border, #eae4ef);
+  background: var(--color-surface-secondary, #F1F5F9);
+  color: var(--color-header, var(--color-primary, #0B0B58));
+  border: 1px solid var(--color-border, #E2E8F0);
   border-radius: 6px;
   width: 28px;
   height: 28px;
@@ -142,10 +142,10 @@
 }
 
 .room-cal-nav-btn:hover {
-  background: #802C62;
-  border-color: #802C62;
+  background: var(--color-header, var(--color-primary, #0B0B58));
+  border-color: var(--color-header, var(--color-primary, #0B0B58));
   color: #ffffff;
-  box-shadow: 0 1px 3px rgba(48, 34, 61, 0.12);
+  box-shadow: 0 1px 3px rgba(11, 11, 88, 0.12);
 }
 
 .room-cal-month-year-group {
@@ -161,7 +161,7 @@
   font-family: inherit;
   font-size: 13.5px;
   font-weight: 700;
-  color: var(--color-heading, #30223d);
+  color: var(--color-heading, #0F172A);
   letter-spacing: 0.2px;
   white-space: nowrap;
 }
@@ -180,7 +180,7 @@
 .room-cal-weekday {
   font-size: 11px;
   font-weight: 700;
-  color: var(--color-text-secondary, #81748c);
+  color: var(--color-text-secondary, #64748B);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   user-select: none;
@@ -189,14 +189,14 @@
 /* --------------------------------------------------------------------------
    6. Date Grid with Subtle Borders & Small Elegant Date Numbers
    Date cell height: 38–42px
-   Selected date highlight: Primary purple #802C62
+   Selected date highlight: Application navbar background color #0B0B58
    -------------------------------------------------------------------------- */
 .room-cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
   gap: 1px;
-  background-color: var(--color-border, #eae4ef);
-  border: 1px solid var(--color-border, #eae4ef);
+  background-color: var(--color-border, #E2E8F0);
+  border: 1px solid var(--color-border, #E2E8F0);
   border-radius: 8px;
   overflow: hidden;
   box-sizing: border-box;
@@ -204,7 +204,7 @@
 
 .room-cal-day {
   background-color: #ffffff;
-  color: var(--color-text-primary, #30223d);
+  color: var(--color-text-primary, #0F172A);
   border: none;
   font-family: inherit;
   font-size: 12px;
@@ -230,40 +230,40 @@
 
 /* Hover for normal in-month days */
 .room-cal-day:hover:not(.is-selected) {
-  background-color: var(--color-surface-secondary, #f1eaf8);
-  color: #802C62;
+  background-color: var(--color-secondary-light, #EEF2FF);
+  color: var(--color-header, var(--color-primary, #0B0B58));
 }
 
 /* Dates from adjacent (previous / next) months */
 .room-cal-day.out-month {
-  color: #a89cb2;
-  background-color: #faf8fc;
+  color: var(--color-muted, #94A3B8);
+  background-color: #F8FAFC;
 }
 
 .room-cal-day.out-month:hover:not(.is-selected) {
-  background-color: #f6f0fb;
-  color: var(--color-secondary, #87377d);
+  background-color: #EEF2FF;
+  color: var(--color-header, var(--color-primary, #0B0B58));
 }
 
-/* Today's date (subtle purple highlight when NOT selected) */
+/* Today's date (subtle highlight when NOT selected) */
 .room-cal-day.is-today:not(.is-selected) {
-  background-color: #ede2f5;
-  color: #802C62;
+  background-color: var(--color-secondary-light, #EEF2FF);
+  color: var(--color-header, var(--color-primary, #0B0B58));
   font-weight: 700;
-  box-shadow: inset 0 0 0 1.5px #802C62;
+  box-shadow: inset 0 0 0 1.5px var(--color-header, var(--color-primary, #0B0B58));
 }
 
-/* Selected date (primary purple #802C62 background + white text) */
+/* Selected date (matches application navbar background color) */
 .room-cal-day.is-selected {
-  background-color: #802C62 !important;
+  background-color: var(--color-header, var(--color-primary, #0B0B58)) !important;
   color: #ffffff !important;
   font-weight: 700;
-  box-shadow: 0 2px 6px rgba(128, 44, 98, 0.35);
+  box-shadow: 0 2px 6px rgba(11, 11, 88, 0.35);
   z-index: 1;
 }
 
 .room-cal-day.is-selected:hover {
-  background-color: #692350 !important;
+  background-color: var(--color-header-dark, var(--color-primary-dark, #07073B)) !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -272,8 +272,8 @@
 .room-cal-selected-info {
   margin-top: 6px;
   padding: 5px 8px;
-  background-color: var(--color-surface-secondary, #f1eaf8);
-  border: 1px solid var(--color-border, #eae4ef);
+  background-color: var(--color-surface-secondary, #F1F5F9);
+  border: 1px solid var(--color-border, #E2E8F0);
   border-radius: 6px;
   box-sizing: border-box;
 }
@@ -286,20 +286,20 @@
 }
 
 .room-cal-info-icon {
-  color: #802C62;
+  color: var(--color-header, var(--color-primary, #0B0B58));
   flex-shrink: 0;
 }
 
 .room-cal-info-label {
   font-size: 11px;
   font-weight: 600;
-  color: var(--color-text-secondary, #81748c);
+  color: var(--color-text-secondary, #64748B);
 }
 
 .room-cal-info-value {
   font-size: 11.5px;
   font-weight: 700;
-  color: var(--color-heading, #30223d);
+  color: var(--color-heading, #0F172A);
 }
 
 /* --------------------------------------------------------------------------

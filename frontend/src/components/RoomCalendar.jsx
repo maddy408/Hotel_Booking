@@ -64,7 +64,7 @@ export default function RoomCalendar({ initialDate, onDateSelect, className = ''
 
   return (
     <div className={`room-cal-card ${className}`.trim()} aria-label="Monthly Calendar">
-      {/* 1. Purple Card Header with Icon, Heading and Compact Today Button */}
+      {/* 1. Card Header with Icon, Heading and Compact Today Button */}
       <div className="room-cal-header">
         <div className="room-cal-header-title">
           <svg
