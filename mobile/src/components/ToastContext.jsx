@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useRef, useState } from 'react';
-import { Animated, StyleSheet, Text } from 'react-native';
+import { Animated, StyleSheet, Text, View } from 'react-native';
 import { colors, fonts, radii } from '../theme/theme';
 
 const ToastContext = createContext(null);
@@ -16,7 +16,7 @@ export function ToastProvider({ children }) {
       clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => setMessage(null));
-      }, 3000);
+      }, 4000);
     },
     [opacity]
   );
@@ -25,9 +25,11 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={toast}>
       {children}
       {message != null && (
-        <Animated.View pointerEvents="none" style={[styles.toast, { opacity }]}>
-          <Text style={styles.text}>{message}</Text>
-        </Animated.View>
+        <View pointerEvents="none" style={styles.toastOverlay}>
+          <Animated.View style={[styles.toast, { opacity }]}>
+            <Text style={styles.text}>{message}</Text>
+          </Animated.View>
+        </View>
       )}
     </ToastContext.Provider>
   );
@@ -40,22 +42,33 @@ export function useToast() {
 }
 
 const styles = StyleSheet.create({
+  toastOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    paddingBottom: 40,
+    zIndex: 99999,
+    elevation: 999,
+  },
   toast: {
-    position: 'absolute',
-    left: 24,
-    right: 24,
-    bottom: 32,
-    backgroundColor: colors.heading,
+    backgroundColor: '#1E293B',
     borderRadius: radii.md,
     paddingVertical: 12,
-    paddingHorizontal: 18,
+    paddingHorizontal: 20,
+    maxWidth: '90%',
     alignItems: 'center',
-    elevation: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.15)',
   },
   text: {
-    color: colors.surface,
+    color: '#FFFFFF',
     fontFamily: fonts.bodySemibold,
-    fontSize: 14,
+    fontSize: 13.5,
     textAlign: 'center',
   },
 });

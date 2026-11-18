@@ -1,6 +1,7 @@
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts, radii, shadow, statusColors } from '../theme/theme';
+import { useToast } from './ToastContext.jsx';
 
 /**
  * Mobile equivalent of the web's Sheet.jsx scrim + popup — rendered as a full-screen

@@ -10,6 +10,7 @@ import CheckoutSheet from '../../components/sheets/CheckoutSheet.jsx';
 import BookingDetailSheet from '../../components/sheets/BookingDetailSheet.jsx';
 import HousekeepingSheet from '../../components/sheets/HousekeepingSheet.jsx';
 import NewBookingSheet from '../../components/sheets/NewBookingSheet.jsx';
+import RoomCalendar from '../../components/RoomCalendar.jsx';
 import { useRooms } from '../../api/rooms';
 import { todayIso } from '../../lib/format';
 import { colors, fonts, radii } from '../../theme/theme';
@@ -70,6 +71,8 @@ export default function RoomsScreen() {
         <Button title="+ Direct Check-in" variant="success" size="sm" onPress={() => setSheet({ type: 'direct' })} style={{ flex: 1 }} />
         <Button title="+ Pre Booking" variant="primary" size="sm" onPress={() => setSheet({ type: 'newBooking' })} style={{ flex: 1 }} />
       </View>
+
+      <RoomCalendar style={{ marginBottom: 12 }} />
 
       <View style={styles.countGrid}>
         {STATUS_ORDER.map((s) => {

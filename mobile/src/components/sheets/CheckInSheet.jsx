@@ -326,7 +326,9 @@ export default function CheckInSheet({ room, reservation, onClose }) {
     setNameTouched(true);
 
     if (isRoomOccupied || !isRoomReady) {
-      setServerRoomError(roomReadinessError);
+      const msg = roomReadinessError || 'Room is not ready for check-in.';
+      setServerRoomError(msg);
+      toast(msg);
       return;
     }
     if (!isFromReservation && !/^[6-9]\d{9}$/.test(phone || '')) {
@@ -337,7 +339,10 @@ export default function CheckInSheet({ room, reservation, onClose }) {
       toast('Enter guest name.');
       return;
     }
-    if (isPersonsExceeded) return;
+    if (isPersonsExceeded) {
+      toast(`This room allows a maximum of ${roomMaxPersons} persons.`);
+      return;
+    }
 
     let hasOccErrors = false;
     const occErrors = {};
@@ -350,11 +355,11 @@ export default function CheckInSheet({ room, reservation, onClose }) {
     });
     if (hasOccErrors) {
       setOccupantErrors(occErrors);
-      toast('Please enter required details for all occupants.');
+      toast('Please enter required details (Name, Gender, 10-digit Phone) for all occupants.');
       return;
     }
     if (!allOccupantsHaveIdProof || !allDocumentsAssigned) {
-      toast('Every occupant must have an ID proof document attached and assigned.');
+      toast('Every occupant must have an ID proof document attached.');
       return;
     }
 
@@ -363,20 +368,24 @@ export default function CheckInSheet({ room, reservation, onClose }) {
     if (isFromReservation) {
       if (confirmedAdvance <= 0) {
         setServerAdvanceError(ADVANCE_REQUIRED_MSG);
+        toast(ADVANCE_REQUIRED_MSG);
         return;
       }
     } else {
       if (bookingSource === 'Reference – Existing Member' && (!referredByGuestId || referredByGuestId <= 0)) {
         setSourceError('Please select an existing member as reference.');
+        toast('Please select an existing member as reference.');
         return;
       }
       if (bookingSource === 'Other' && !otherSource.trim()) {
         setSourceError('Please enter person name for reference.');
+        toast('Please enter person name for reference.');
         return;
       }
       const advVal = advance === '' ? 0 : Number(advance);
       if (isNaN(advVal) || advVal <= 0) {
         setServerAdvanceError(ADVANCE_REQUIRED_MSG);
+        toast(ADVANCE_REQUIRED_MSG);
         return;
       }
     }
@@ -555,30 +564,61 @@ export default function CheckInSheet({ room, reservation, onClose }) {
           {personsError ? <Text style={styles.err}>{personsError}</Text> : null}
         </View>
 
-        <View style={{ gap: 8 }}>
-          <View style={styles.rowBetween}>
-            <Text style={[styles.label, { fontWeight: '700' }]}>Occupant Details</Text>
-            <View style={styles.pillBadge}><Text style={styles.pillBadgeText}>{occupants.length} {occupants.length === 1 ? 'Person' : 'Persons'}</Text></View>
-          </View>
-          {occupants.map((occ, idx) => {
-            const occErr = occupantErrors[idx] || {};
-            const docCount = getOccupantDocumentCount(idx);
-            return (
-              <View key={idx} style={styles.occCard}>
-                <Text style={styles.occHeader}>Person {idx + 1} {idx === 0 ? '(Primary Guest)' : ''}</Text>
-                <Input placeholder="Full name" value={occ.name} onChangeText={(v) => handleOccupantFieldChange(idx, 'name', v)} error={occErr.name} style={{ marginBottom: 6 }} />
-                <Segmented options={['Male', 'Female', 'Other']} value={occ.gender} onChange={(v) => handleOccupantFieldChange(idx, 'gender', v)} style={{ marginBottom: 6 }} />
-                <Input placeholder="10-digit mobile" keyboardType="phone-pad" maxLength={10} value={occ.phone} onChangeText={(v) => handleOccupantFieldChange(idx, 'phone', v.replace(/\D/g, '').slice(0, 10))} error={occErr.phone} />
-                <View style={styles.rowBetween}>
-                  <Text style={docCount > 0 ? styles.docOk : styles.docMissing}>
-                    {docCount > 0 ? `✓ ${docCount} ID document(s) attached` : '✗ Missing ID proof document'}
-                  </Text>
-                  <Pressable onPress={() => pickDocument(idx)}><Text style={styles.docAction}>+ Attach ID</Text></Pressable>
+          <View style={{ gap: 8 }}>
+            <View style={styles.rowBetween}>
+              <Text style={[styles.label, { fontWeight: '700' }]}>Occupant Details</Text>
+              <View style={styles.pillBadge}><Text style={styles.pillBadgeText}>{occupants.length} {occupants.length === 1 ? 'Person' : 'Persons'}</Text></View>
+            </View>
+            {occupants.map((occ, idx) => {
+              const occErr = occupantErrors[idx] || {};
+              const docCount = getOccupantDocumentCount(idx);
+              const occFiles = selectedFiles.filter((f) => f.occupantTarget === idx);
+
+              return (
+                <View key={idx} style={styles.occCard}>
+                  <Text style={styles.occHeader}>Person {idx + 1} {idx === 0 ? '(Primary Guest)' : ''}</Text>
+                  <Input placeholder="Full name *" value={occ.name} onChangeText={(v) => handleOccupantFieldChange(idx, 'name', v)} error={occErr.name} style={{ marginBottom: 6 }} />
+                  <Text style={[styles.subLabel, { marginBottom: 4 }]}>Gender *</Text>
+                  <Segmented options={['Male', 'Female', 'Other']} value={occ.gender} onChange={(v) => handleOccupantFieldChange(idx, 'gender', v)} style={{ marginBottom: 6 }} />
+                  {occErr.gender ? <Text style={styles.err}>{occErr.gender}</Text> : null}
+                  <Input placeholder="10-digit mobile *" keyboardType="phone-pad" maxLength={10} value={occ.phone} onChangeText={(v) => handleOccupantFieldChange(idx, 'phone', v.replace(/\D/g, '').slice(0, 10))} error={occErr.phone} style={{ marginBottom: 8 }} />
+
+                  {/* Dedicated Choose File Button and Upload Area */}
+                  <View style={styles.uploadSection}>
+                    <Text style={styles.subLabel}>ID Proof Document *</Text>
+                    <Pressable
+                      style={[styles.chooseFileBtn, docCount > 0 ? styles.chooseFileBtnSuccess : styles.chooseFileBtnActive]}
+                      onPress={() => pickDocument(idx)}
+                    >
+                      <Text style={styles.chooseFileIcon}>📎</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.chooseFileTitle}>
+                          {docCount > 0 ? `Attach Another Document (P${idx + 1})` : `Choose File / Upload ID (P${idx + 1})`}
+                        </Text>
+                        <Text style={styles.chooseFileSubtitle}>PDF, PNG, JPG or WebP (Max 10MB)</Text>
+                      </View>
+                    </Pressable>
+
+                    {/* Attached files list for this occupant */}
+                    {occFiles.map((file) => (
+                      <View key={file.id} style={styles.occFilePill}>
+                        <Text style={styles.occFileName} numberOfLines={1}>📄 {file.name}</Text>
+                        <Pressable onPress={() => removeFile(file.id)} hitSlop={8} style={styles.occFileDelete}>
+                          <Text style={styles.occFileDeleteText}>✕</Text>
+                        </Pressable>
+                      </View>
+                    ))}
+
+                    <View style={styles.rowBetween}>
+                      <Text style={docCount > 0 ? styles.docOk : styles.docMissing}>
+                        {docCount > 0 ? `✓ ${docCount} ID document(s) uploaded` : '⚠️ Please upload ID proof document'}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
-              </View>
-            );
-          })}
-        </View>
+              );
+            })}
+          </View>
 
         {isFromReservation && preBookingDocs?.length > 0 && (
           <View style={{ gap: 6 }}>
@@ -670,10 +710,14 @@ export default function CheckInSheet({ room, reservation, onClose }) {
 
         <Button
           title={isPending ? 'Confirming Check-In…' : `Confirm Check-In · Room ${roomNo}`}
-          variant="success" size="lg" loading={isPending} disabled={!allMandatoryChecksPassed} onPress={onSubmit}
+          variant="success" size="lg" loading={isPending} onPress={onSubmit}
         />
         {!allMandatoryChecksPassed && (
-          <Text style={styles.hint}>Complete all mandatory checks above to enable Confirm Check-In.</Text>
+          <Text style={styles.hint}>
+            {!isAdvanceValid ? '• Please enter and specify advance payment.\n' : ''}
+            {!allOccupantsHaveIdProof ? '• Please choose & attach ID proof document.\n' : ''}
+            {!allOccupantsValid ? '• Please fill occupant full name, gender & 10-digit mobile.' : ''}
+          </Text>
         )}
       </View>
     </Sheet>
@@ -691,6 +735,46 @@ const styles = StyleSheet.create({
   pillBadgeText: { fontFamily: fonts.bodyBold, fontSize: 11, color: colors.primary },
   occCard: { backgroundColor: colors.cardSecondary, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.md, padding: 10, gap: 6 },
   occHeader: { fontFamily: fonts.bodyBold, fontSize: 12.5, color: colors.heading },
+  subLabel: { fontFamily: fonts.bodySemibold, fontSize: 11.5, color: colors.textSecondary },
+  uploadSection: { marginTop: 4, gap: 6 },
+  chooseFileBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: '#94A3B8',
+    borderRadius: radii.md,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  chooseFileBtnActive: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(59, 130, 246, 0.05)',
+  },
+  chooseFileBtnSuccess: {
+    borderColor: colors.success,
+    backgroundColor: 'rgba(34, 197, 94, 0.05)',
+  },
+  chooseFileIcon: { fontSize: 20 },
+  chooseFileTitle: { fontFamily: fonts.bodyBold, fontSize: 12.5, color: colors.heading },
+  chooseFileSubtitle: { fontFamily: fonts.body, fontSize: 10.5, color: colors.textSecondary, marginTop: 1 },
+  occFilePill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginTop: 2,
+  },
+  occFileName: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 11.5, color: colors.text, marginRight: 8 },
+  occFileDelete: { padding: 4 },
+  occFileDeleteText: { fontSize: 13, color: colors.danger, fontWeight: '700' },
   docOk: { fontFamily: fonts.bodySemibold, fontSize: 11.5, color: colors.success },
   docMissing: { fontFamily: fonts.bodySemibold, fontSize: 11.5, color: colors.danger },
   docAction: { fontFamily: fonts.bodyBold, fontSize: 12, color: colors.primary },
