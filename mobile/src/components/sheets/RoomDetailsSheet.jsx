@@ -52,7 +52,7 @@ function Accordion({ title, badge, children, defaultOpen = false }) {
   );
 }
 
-export default function RoomDetailsSheet({ room, onClose, onViewStay, onEarlyCheckout, onCheckout, onViewBooking, onCheckIn, onPreBook }) {
+export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvoice, onEarlyCheckout, onCheckout, onViewBooking, onCheckIn, onPreBook }) {
   const toast = useToast();
   const hkAction = useHousekeepingAction();
   const [loadingDocId, setLoadingDocId] = useState(null);
@@ -251,7 +251,8 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onEarlyChe
         <View style={styles.footer}>
           <Button title="Close" variant="outline" size="sm" onPress={onClose} style={{ flex: 1 }} />
           <Button title="View Stay" variant="outline" size="sm" onPress={() => { onClose(); onViewStay?.(stay.id); }} style={{ flex: 1 }} />
-          <Button title="Early Checkout" variant="outline" size="sm" onPress={() => { onClose(); onEarlyCheckout?.(stay.id); }} style={{ flex: 1, borderColor: colors.warning }} textStyle={{ color: colors.warning }} />
+          <Button title="Invoice" variant="outline" size="sm" onPress={() => { onClose(); onViewInvoice?.(stay.id); }} style={{ flex: 1 }} />
+          <Button title="Early Out" variant="outline" size="sm" onPress={() => { onClose(); onEarlyCheckout?.(stay.id); }} style={{ flex: 1, borderColor: colors.warning }} textStyle={{ color: colors.warning }} />
           <Button title="Check Out" variant="info" size="sm" onPress={() => { onClose(); onCheckout?.(stay.id); }} style={{ flex: 1 }} />
         </View>
       </Sheet>

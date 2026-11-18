@@ -5,6 +5,7 @@ import Button from '../../components/ui/Button.jsx';
 import RoomTile from '../../components/RoomTile.jsx';
 import DirectCheckInPicker from '../../components/sheets/DirectCheckInPicker.jsx';
 import RoomDetailsSheet from '../../components/sheets/RoomDetailsSheet.jsx';
+import StayDetailSheet from '../../components/sheets/StayDetailSheet.jsx';
 import CheckInSheet from '../../components/sheets/CheckInSheet.jsx';
 import CheckoutSheet from '../../components/sheets/CheckoutSheet.jsx';
 import BookingDetailSheet from '../../components/sheets/BookingDetailSheet.jsx';
@@ -24,7 +25,7 @@ function roomMatchesFilter(r, f) {
   return r.status === f;
 }
 
-export default function RoomsScreen() {
+export default function RoomsScreen({ navigation }) {
   const { data, isLoading, isError, error, refetch, isRefetching } = useRooms();
   const [filter, setFilter] = useState(null);
   const [sheet, setSheet] = useState(null);
@@ -91,6 +92,17 @@ export default function RoomsScreen() {
         })}
       </View>
 
+      {filter && (
+        <View style={styles.filterBanner}>
+          <Text style={styles.filterText}>
+            Showing {STATUS_LABEL[filter]} rooms ({rooms.filter((r) => roomMatchesFilter(r, filter)).length})
+          </Text>
+          <Pressable onPress={() => setFilter(null)} style={styles.clearFilterBtn} hitSlop={8}>
+            <Text style={styles.clearFilterText}>Show all {rooms.length} rooms</Text>
+          </Pressable>
+        </View>
+      )}
+
       {floors.map(({ floor, rooms: floorRooms }) => (
         <View key={floor} style={{ marginTop: 6 }}>
           <Text style={styles.floorLabel}>{floor === 0 ? 'Ground Floor' : `Floor ${floor}`}</Text>
@@ -124,7 +136,8 @@ export default function RoomsScreen() {
         <RoomDetailsSheet
           room={sheet.room}
           onClose={() => setSheet(null)}
-          onViewStay={() => setSheet(null)}
+          onViewStay={(stayId) => setSheet({ type: 'stayDetail', stayId })}
+          onViewInvoice={(stayId) => navigation.navigate('Bills', { screen: 'InvoicePrint', params: { stayId } })}
           onEarlyCheckout={(stayId) => setSheet({ type: 'checkout', stayId, initialMode: 'early' })}
           onCheckout={(stayId) => setSheet({ type: 'checkout', stayId })}
           onViewBooking={(reservationId) => setSheet({ type: 'booking', reservationId })}
@@ -134,6 +147,15 @@ export default function RoomsScreen() {
               : setSheet({ type: 'checkin', room: roomOrReservation })
           }
           onPreBook={(room) => setSheet({ type: 'newBooking', presetRoom: room })}
+        />
+      )}
+      {sheet?.type === 'stayDetail' && (
+        <StayDetailSheet
+          stayId={sheet.stayId}
+          onClose={() => setSheet(null)}
+          onEarlyCheckout={(stayId) => setSheet({ type: 'checkout', stayId, initialMode: 'early' })}
+          onCheckout={(stayId) => setSheet({ type: 'checkout', stayId })}
+          onPrintInvoice={(stayId) => navigation.navigate('Bills', { screen: 'InvoicePrint', params: { stayId } })}
         />
       )}
       {sheet?.type === 'checkin' && <CheckInSheet room={sheet.room} onClose={() => setSheet(null)} />}
@@ -165,6 +187,19 @@ const styles = StyleSheet.create({
   countNum: { fontFamily: fonts.display, fontSize: 20, color: colors.heading },
   countLabel: { fontFamily: fonts.bodySemibold, fontSize: 11, color: colors.textSecondary },
   countSub: { fontFamily: fonts.body, fontSize: 9.5, color: colors.warning, marginTop: 2 },
+  filterBanner: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.secondaryLight,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: radii.sm,
+    marginBottom: 10,
+  },
+  filterText: { fontFamily: fonts.bodySemibold, fontSize: 12.5, color: colors.primary },
+  clearFilterBtn: { paddingVertical: 2, paddingHorizontal: 6 },
+  clearFilterText: { fontFamily: fonts.bodyBold, fontSize: 12, color: colors.primary, textDecorationLine: 'underline' },
   floorLabel: { fontFamily: fonts.bodySemibold, fontSize: 13, color: colors.textSecondary, marginBottom: 8, marginTop: 4 },
   tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 });

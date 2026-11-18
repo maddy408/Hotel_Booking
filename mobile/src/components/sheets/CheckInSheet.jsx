@@ -90,9 +90,13 @@ export default function CheckInSheet({ room, reservation, onClose }) {
     const list = [];
     for (let i = 0; i < initialPersonsCount; i++) {
       if (i === 0) {
-        list.push({ name: isFromReservation ? (reservation.guest_name || '') : '', gender: '', phone: isFromReservation ? (reservation.guest_phone || '') : '' });
+        list.push({
+          name: isFromReservation ? (reservation.guest_name || '') : '',
+          gender: 'Male',
+          phone: isFromReservation ? (reservation.guest_phone || '') : '',
+        });
       } else {
-        list.push({ name: '', gender: '', phone: '' });
+        list.push({ name: '', gender: 'Male', phone: '' });
       }
     }
     return list;
@@ -175,7 +179,7 @@ export default function CheckInSheet({ room, reservation, onClose }) {
     } else {
       setOccupants((prev) => {
         const next = [...prev];
-        while (next.length < num) next.push({ name: '', gender: '', phone: '' });
+        while (next.length < num) next.push({ name: '', gender: 'Male', phone: '' });
         return next;
       });
     }
@@ -448,18 +452,20 @@ export default function CheckInSheet({ room, reservation, onClose }) {
     } catch (err) {
       if (err.fields?.room || err.message?.includes('not ready') || err.message?.includes('maintenance') || err.message?.includes('already occupied')) {
         setServerRoomError(err.fields?.room || err.message);
-        toast(err.message);
+        toast(err.fields?.room || err.message);
         return;
       }
       if (err.fields?.advanceAmount || err.message?.includes('advance')) {
         setServerAdvanceError(ADVANCE_REQUIRED_MSG);
+        toast(ADVANCE_REQUIRED_MSG);
         return;
       }
       if (err.fields?.persons || err.message?.includes('allows a maximum of')) {
         setServerPersonsError(err.fields?.persons || err.message);
+        toast(err.fields?.persons || err.message);
         return;
       }
-      toast(err.message);
+      toast(err.message || 'Check-in failed. Please verify the details.');
     }
   };
 

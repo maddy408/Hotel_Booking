@@ -2,6 +2,7 @@ import { Pressable } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useNavigation } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { colors, fonts } from '../theme/theme';
 import {
@@ -86,12 +87,12 @@ function GuestsStack() {
       <Stack.Screen
         name="GuestDetails"
         component={GuestDetailsScreen}
-        options={{ title: 'Guest', headerLeft: undefined }}
+        options={{ title: 'Guest' }}
       />
       <Stack.Screen
         name="AllReferrals"
         component={AllReferralsScreen}
-        options={{ title: 'Referrals', headerLeft: undefined }}
+        options={{ title: 'Referrals' }}
       />
     </Stack.Navigator>
   );
@@ -104,7 +105,7 @@ function BillsStack() {
       <Stack.Screen
         name="InvoicePrint"
         component={InvoicePrintScreen}
-        options={{ title: 'Invoice', headerLeft: undefined }}
+        options={{ title: 'Invoice' }}
       />
     </Stack.Navigator>
   );
@@ -117,28 +118,32 @@ function MoreStack() {
       <Stack.Screen
         name="Reports"
         component={ReportsScreen}
-        options={{ title: 'Reports', headerLeft: undefined }}
+        options={{ title: 'Reports' }}
       />
       <Stack.Screen
         name="RoomMaster"
         component={RoomMasterScreen}
-        options={{ title: 'Room Master', headerLeft: undefined }}
+        options={{ title: 'Room Master' }}
       />
       <Stack.Screen
         name="Users"
         component={UsersScreen}
-        options={{ title: 'Users', headerLeft: undefined }}
+        options={{ title: 'Users' }}
       />
       <Stack.Screen
         name="SettingsScreen"
         component={SettingsScreen}
-        options={{ title: 'Settings', headerLeft: undefined }}
+        options={{ title: 'Settings' }}
       />
     </Stack.Navigator>
   );
 }
 
 export default function MainTabs() {
+  const insets = useSafeAreaInsets();
+  const bottomPadding = Math.max(insets.bottom, 8);
+  const tabHeight = 54 + bottomPadding;
+
   return (
     <Tab.Navigator
       screenOptions={{
@@ -148,8 +153,8 @@ export default function MainTabs() {
         tabBarStyle: {
           backgroundColor: colors.header,
           borderTopWidth: 0,
-          height: 62,
-          paddingBottom: 8,
+          height: tabHeight,
+          paddingBottom: bottomPadding,
           paddingTop: 6,
         },
         tabBarActiveBackgroundColor: 'rgba(255, 255, 255, 0.12)',
