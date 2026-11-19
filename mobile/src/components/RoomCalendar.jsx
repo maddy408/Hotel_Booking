@@ -9,15 +9,17 @@ import {
 } from '../lib/calendar.js';
 import { colors, fonts, radii } from '../theme/theme';
 
-export default function RoomCalendar({ initialDate, onDateSelect, style }) {
+export default function RoomCalendar({ initialDate, selectedDate: controlledSelectedDate, onDateSelect, style }) {
   const [today] = useState(() => new Date());
-  const initial = initialDate || today;
+  const initial = initialDate || controlledSelectedDate || today;
 
   const [{ year: viewYear, month: viewMonth }, setViewDate] = useState(() => ({
     year: initial.getFullYear(),
     month: initial.getMonth(),
   }));
-  const [selectedDate, setSelectedDate] = useState(() => initial);
+  const [internalSelectedDate, setInternalSelectedDate] = useState(() => initial);
+
+  const selectedDate = controlledSelectedDate !== undefined ? controlledSelectedDate : internalSelectedDate;
 
   const calendarDays = useMemo(
     () => getCalendarGrid(viewYear, viewMonth),
@@ -41,12 +43,12 @@ export default function RoomCalendar({ initialDate, onDateSelect, style }) {
   const handleGoToToday = () => {
     const now = new Date();
     setViewDate({ year: now.getFullYear(), month: now.getMonth() });
-    setSelectedDate(now);
+    setInternalSelectedDate(now);
     if (onDateSelect) onDateSelect(now);
   };
 
   const handleDateClick = (item) => {
-    setSelectedDate(item.date);
+    setInternalSelectedDate(item.date);
     if (!item.isCurrentMonth) {
       setViewDate({ year: item.year, month: item.month });
     }

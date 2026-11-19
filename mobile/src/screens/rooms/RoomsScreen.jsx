@@ -13,11 +13,22 @@ import HousekeepingSheet from '../../components/sheets/HousekeepingSheet.jsx';
 import NewBookingSheet from '../../components/sheets/NewBookingSheet.jsx';
 import RoomCalendar from '../../components/RoomCalendar.jsx';
 import { useRooms } from '../../api/rooms';
-import { todayIso } from '../../lib/format';
+import { useReservations } from '../../api/reservations';
+import { useDoneStays } from '../../api/stays';
+import { todayIso, fdWithYear } from '../../lib/format';
 import { colors, fonts, radii } from '../../theme/theme';
 
 const STATUS_ORDER = ['free', 'booked', 'occupied', 'cleaning', 'repair'];
 const STATUS_LABEL = { free: 'Free', booked: 'Booked', occupied: 'Occupied', cleaning: 'Cleaning', repair: 'Repair' };
+
+function toIsoString(date) {
+  if (!date) return todayIso();
+  if (typeof date === 'string') return date.slice(0, 10);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
 function roomMatchesFilter(r, f) {
   if (!f) return true;
@@ -27,23 +38,178 @@ function roomMatchesFilter(r, f) {
 
 export default function RoomsScreen({ navigation }) {
   const { data, isLoading, isError, error, refetch, isRefetching } = useRooms();
+  const { data: reservations = [] } = useReservations();
+  const { data: doneStays = [] } = useDoneStays();
+
+  const [selectedDateObj, setSelectedDateObj] = useState(() => new Date());
   const [filter, setFilter] = useState(null);
   const [sheet, setSheet] = useState(null);
 
-  const rooms = data?.rooms || [];
+  const baseRooms = data?.rooms || [];
   const today = todayIso();
+  const selectedDateIso = toIsoString(selectedDateObj);
+  const isTodaySelected = selectedDateIso === today;
+
+  // Compute room status & tile metadata dynamically for selectedDateIso
+  const rooms = useMemo(() => {
+    if (!baseRooms.length) return [];
+    if (isTodaySelected) {
+      return baseRooms;
+    }
+
+    const isPast = selectedDateIso < today;
+
+    return baseRooms.map((room) => {
+      const roomId = Number(room.id);
+
+      // 1. Check if occupied on selectedDateIso
+      let activeStay = null;
+
+      if (!isPast) {
+        // Today or future: check room's current active stay
+        if (room.status === 'occupied' && room.stayId) {
+          const inDate = room.checkInDate || today;
+          const outDate = room.checkoutPlanned || '9999-12-31';
+          if (inDate <= selectedDateIso && selectedDateIso < outDate) {
+            activeStay = {
+              stayId: room.stayId,
+              guestName: room.guestName,
+              persons: room.persons || 1,
+              checkoutPlanned: room.checkoutPlanned,
+            };
+          }
+        }
+      } else {
+        // Past date: check completed stays and current stays
+        if (Array.isArray(doneStays)) {
+          const foundDone = doneStays.find((s) => {
+            if (Number(s.room_id) !== roomId) return false;
+            const inDate = (s.check_in_date || '').slice(0, 10);
+            const outDate = (s.checkout_actual || s.checkout_planned || '').slice(0, 10);
+            return inDate <= selectedDateIso && selectedDateIso < outDate;
+          });
+          if (foundDone) {
+            activeStay = {
+              stayId: foundDone.id,
+              guestName: foundDone.guest_name,
+              persons: foundDone.persons || 1,
+              checkoutPlanned: (foundDone.checkout_actual || foundDone.checkout_planned || '').slice(0, 10),
+            };
+          }
+        }
+
+        if (!activeStay && room.status === 'occupied' && room.stayId) {
+          const inDate = room.checkInDate || today;
+          const outDate = room.checkoutPlanned || '9999-12-31';
+          if (inDate <= selectedDateIso && selectedDateIso < outDate) {
+            activeStay = {
+              stayId: room.stayId,
+              guestName: room.guestName,
+              persons: room.persons || 1,
+              checkoutPlanned: room.checkoutPlanned,
+            };
+          }
+        }
+      }
+
+      if (activeStay) {
+        return {
+          ...room,
+          status: 'occupied',
+          stayId: activeStay.stayId,
+          guestName: activeStay.guestName,
+          persons: activeStay.persons,
+          checkoutPlanned: activeStay.checkoutPlanned,
+          hasPendingBooking: false,
+          pendingBooking: null,
+        };
+      }
+
+      // 2. Check reservations overlapping selectedDateIso
+      if (Array.isArray(reservations)) {
+        const matchingRes = reservations.find((res) => {
+          if (Number(res.room_id) !== roomId) return false;
+          if (res.status !== 'pending') return false;
+          const inDate = (res.check_in_date || '').slice(0, 10);
+          const outDate = (res.check_out_date || '').slice(0, 10);
+          return inDate <= selectedDateIso && selectedDateIso < outDate;
+        });
+
+        if (matchingRes) {
+          return {
+            ...room,
+            status: 'booked',
+            guestName: matchingRes.guest_name,
+            persons: matchingRes.persons || 1,
+            bookingId: matchingRes.id,
+            bookingCode: matchingRes.booking_code,
+            bookingCheckIn: matchingRes.check_in_date,
+            hasPendingBooking: true,
+            pendingBooking: {
+              id: matchingRes.id,
+              bookingCode: matchingRes.booking_code,
+              guestName: matchingRes.guest_name,
+              checkInDate: matchingRes.check_in_date,
+              checkOutDate: matchingRes.check_out_date,
+              persons: matchingRes.persons || 1,
+            },
+          };
+        }
+      }
+
+      // 3. Maintenance / Housekeeping
+      if (room.housekeepingStatus === 'repair') {
+        return {
+          ...room,
+          status: 'repair',
+          guestName: null,
+          persons: 0,
+          stayId: null,
+          hasPendingBooking: false,
+          pendingBooking: null,
+        };
+      }
+
+      if (isPast) {
+        return {
+          ...room,
+          status: 'free',
+          guestName: null,
+          persons: 0,
+          stayId: null,
+          hasPendingBooking: false,
+          pendingBooking: null,
+        };
+      }
+
+      // Future date: temporary cleaning condition today is completed in future
+      return {
+        ...room,
+        status: 'free',
+        guestName: null,
+        persons: 0,
+        stayId: null,
+        hasPendingBooking: false,
+        pendingBooking: null,
+      };
+    });
+  }, [baseRooms, reservations, doneStays, selectedDateIso, today, isTodaySelected]);
 
   const counts = useMemo(() => {
     const c = { free: 0, booked: 0, occupied: 0, cleaning: 0, repair: 0 };
-    const leaving = rooms.filter((r) => r.status === 'occupied' && r.checkoutPlanned <= today).length;
-    rooms.forEach((r) => { if (c[r.status] !== undefined) c[r.status]++; });
+    const leaving = rooms.filter((r) => r.status === 'occupied' && r.checkoutPlanned === selectedDateIso).length;
+    rooms.forEach((r) => {
+      if (c[r.status] !== undefined) c[r.status]++;
+    });
     return { ...c, leaving };
-  }, [rooms, today]);
+  }, [rooms, selectedDateIso]);
 
   const floors = useMemo(() => {
     const filtered = rooms.filter((r) => roomMatchesFilter(r, filter));
     const byFloor = {};
-    filtered.forEach((r) => { (byFloor[r.floor] ??= []).push(r); });
+    filtered.forEach((r) => {
+      (byFloor[r.floor] ??= []).push(r);
+    });
     return Object.keys(byFloor)
       .sort((a, b) => Number(a) - Number(b))
       .map((f) => ({ floor: Number(f), rooms: byFloor[f].sort((a, b) => a.roomNo - b.roomNo) }));
@@ -73,7 +239,34 @@ export default function RoomsScreen({ navigation }) {
         <Button title="+ Pre Booking" variant="primary" size="sm" onPress={() => setSheet({ type: 'newBooking' })} style={{ flex: 1 }} />
       </View>
 
-      <RoomCalendar style={{ marginBottom: 12 }} />
+      <RoomCalendar
+        style={{ marginBottom: 12 }}
+        selectedDate={selectedDateObj}
+        onDateSelect={(date) => setSelectedDateObj(date)}
+      />
+
+      {/* Date banner indicating dynamic view */}
+      <View style={styles.dateBanner}>
+        <View style={styles.dateBannerLeft}>
+          <Text style={styles.dateBannerTitle}>
+            {isTodaySelected ? 'Today’s Room Status' : `Room Status: ${fdWithYear(selectedDateIso)}`}
+          </Text>
+          <Text style={styles.dateBannerSubtitle}>
+            {isTodaySelected
+              ? 'Real-time live status'
+              : `${selectedDateIso < today ? 'Past' : 'Projected'} availability for selected date`}
+          </Text>
+        </View>
+        {!isTodaySelected && (
+          <Pressable
+            style={styles.resetDateBtn}
+            onPress={() => setSelectedDateObj(new Date())}
+            hitSlop={8}
+          >
+            <Text style={styles.resetDateText}>Reset to Today</Text>
+          </Pressable>
+        )}
+      </View>
 
       <View style={styles.countGrid}>
         {STATUS_ORDER.map((s) => {
@@ -86,7 +279,11 @@ export default function RoomsScreen({ navigation }) {
             >
               <Text style={styles.countNum}>{counts[s]}</Text>
               <Text style={styles.countLabel}>{STATUS_LABEL[s]}</Text>
-              {s === 'occupied' && counts.leaving > 0 ? <Text style={styles.countSub}>{counts.leaving} leaving today</Text> : null}
+              {s === 'occupied' && counts.leaving > 0 ? (
+                <Text style={styles.countSub}>
+                  {counts.leaving} leaving {isTodaySelected ? 'today' : 'on date'}
+                </Text>
+              ) : null}
             </Pressable>
           );
         })}
@@ -179,6 +376,28 @@ export default function RoomsScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   actionBar: { flexDirection: 'row', gap: 10, marginBottom: 14 },
+  dateBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: radii.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  dateBannerLeft: { flex: 1 },
+  dateBannerTitle: { fontFamily: fonts.bodyBold, fontSize: 13, color: colors.heading },
+  dateBannerSubtitle: { fontFamily: fonts.body, fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+  resetDateBtn: {
+    backgroundColor: colors.secondaryLight,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radii.xs,
+  },
+  resetDateText: { fontFamily: fonts.bodySemibold, fontSize: 11, color: colors.primary },
   countGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   countCard: {
     flexGrow: 1, minWidth: '18%', backgroundColor: colors.card, borderRadius: radii.md, borderWidth: 1,
