@@ -9,7 +9,7 @@ export function useStayBill(stayId) {
   return useQuery({ queryKey: ['stay-bill', stayId], queryFn: () => api.get(`/stays/${stayId}/bill`), enabled: !!stayId });
 }
 
-export function useEarlyCheckoutPreview(stayId, { checkoutDate, discount, earlyCheckoutFee } = {}) {
+export function useEarlyCheckoutPreview(stayId, { checkoutDate, discount, earlyCheckoutFee } = {}, options = {}) {
   const query = new URLSearchParams();
   if (checkoutDate) query.set('checkoutDate', checkoutDate);
   if (discount !== undefined && discount !== null && discount !== '') query.set('discount', discount);
@@ -18,7 +18,8 @@ export function useEarlyCheckoutPreview(stayId, { checkoutDate, discount, earlyC
   return useQuery({
     queryKey: ['early-checkout-preview', stayId, checkoutDate, discount, earlyCheckoutFee],
     queryFn: () => api.get(`/stays/${stayId}/early-checkout-preview${qStr ? `?${qStr}` : ''}`),
-    enabled: !!stayId,
+    enabled: !!stayId && options.enabled !== false,
+    ...options,
   });
 }
 

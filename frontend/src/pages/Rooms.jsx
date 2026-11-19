@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useRooms } from '../api/rooms';
+import { todayIso } from '../lib/format';
 import RoomTile from '../components/RoomTile.jsx';
 import CheckInSheet from '../components/sheets/CheckInSheet.jsx';
 import CheckoutSheet from '../components/sheets/CheckoutSheet.jsx';
@@ -95,7 +96,9 @@ export default function Rooms() {
   }
 
   const { rooms, counts } = data;
-  const leaving = rooms.filter((r) => r.status === 'occupied' && r.dueToday).length;
+  const today = todayIso();
+  const overdueCount = rooms.filter((r) => r.status === 'occupied' && (r.isOverdue || (r.checkoutPlanned && r.checkoutPlanned.slice(0, 10) < today))).length;
+  const leaving = rooms.filter((r) => r.status === 'occupied' && (r.dueToday || (r.checkoutPlanned && r.checkoutPlanned.slice(0, 10) === today))).length;
   const displayCounts = counts || { free: 0, booked: 0, occupied: 0, cleaning: 0, repair: 0 };
 
   const roomMatchesFilter = (r, f) => {
@@ -108,7 +111,11 @@ export default function Rooms() {
   const sub = {
     free: 'Ready to give',
     booked: 'Active booking',
-    occupied: leaving ? `${leaving} leaving today` : 'Ongoing stay',
+    occupied: overdueCount > 0
+      ? `${overdueCount} overdue${leaving > 0 ? ` · ${leaving} leaving` : ''}`
+      : leaving > 0
+        ? `${leaving} leaving today`
+        : 'Ongoing stay',
     cleaning: 'Being cleaned',
     repair: 'Not usable',
   };

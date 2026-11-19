@@ -1,4 +1,4 @@
-import { fd, inr, todayIso } from '../lib/format';
+import { fd, inr, todayIso, nightsBetween } from '../lib/format';
 
 const LABEL = { free: 'FREE', booked: 'BOOKED', occupied: 'OCCUPIED', cleaning: 'CLEANING', repair: 'REPAIR' };
 
@@ -8,10 +8,25 @@ export default function RoomTile({ room, onClick, onOpenBooking }) {
   const pendingGuest = room.pendingBooking?.guestName ? room.pendingBooking.guestName.split(' ')[0] : 'Guest';
   let meta = '';
   let due = false;
+  let isOverdue = false;
+  let overdueDays = 0;
+
+  const plannedIso = room.checkoutPlanned ? room.checkoutPlanned.slice(0, 10) : null;
 
   if (room.status === 'occupied') {
-    due = room.checkoutPlanned <= today;
-    meta = due ? 'Leaving today' : 'Till ' + fd(room.checkoutPlanned);
+    if (plannedIso && plannedIso < today) {
+      isOverdue = true;
+      due = true;
+      overdueDays = nightsBetween(plannedIso, today);
+      meta = `Due was ${fd(plannedIso)}`;
+    } else if (plannedIso && plannedIso === today) {
+      due = true;
+      meta = 'Leaving today';
+    } else if (plannedIso) {
+      meta = 'Till ' + fd(plannedIso);
+    } else {
+      meta = 'Ongoing stay';
+    }
   } else if (room.status === 'booked') {
     if (room.housekeepingStatus === 'repair') {
       meta = 'Maintenance · ' + (room.bookingCode || 'Booked');
@@ -86,7 +101,34 @@ export default function RoomTile({ room, onClick, onOpenBooking }) {
         </span>
       ) : null}
 
-      <span className={`m${due ? ' due' : ''}`}>{meta}</span>
+      {/* Compact Inline Overdue Stay Alert */}
+      {isOverdue && (
+        <span
+          className="room-overdue-warn"
+          title={`Checkout was planned on ${fd(plannedIso)} · Overdue by ${overdueDays} day${overdueDays > 1 ? 's' : ''}`}
+        >
+          <span className="overdue-tag">
+            <svg
+              width="10"
+              height="10"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+              style={{ flexShrink: 0 }}
+            >
+              <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            <span>{overdueDays}d overdue</span>
+          </span>
+          <span className="overdue-dates">· Due {fd(plannedIso)}</span>
+        </span>
+      )}
 
       {room.hasPendingBooking && room.pendingBooking && room.status === 'occupied' && (
         <span
@@ -117,6 +159,8 @@ export default function RoomTile({ room, onClick, onOpenBooking }) {
           </span>
         </span>
       )}
+
+      {!isOverdue && <span className={`m${due ? ' due' : ''}`}>{meta}</span>}
 
       <span className="st">{LABEL[room.status] || room.status.toUpperCase()}</span>
     </button>

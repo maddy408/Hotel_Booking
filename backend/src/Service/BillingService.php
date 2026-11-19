@@ -44,7 +44,8 @@ class BillingService
 
     /**
      * @return array{
-     *   nights:int, plannedNights:int, billableNights:int, unusedNights:int, isEarlyCheckout:bool,
+     *   nights:int, plannedNights:int, billableNights:int, unusedNights:int, additionalNights:int,
+     *   isEarlyCheckout:bool, isLateCheckout:bool, isNormalCheckout:bool, checkoutType:string,
      *   roomRate:float, roomAmount:float, gstRate:float, roomGstAmount:float,
      *   extrasAmount:float, extrasGstAmount:float, earlyCheckoutFee:float, discountAmount:float,
      *   total:float, advancePaid:float, otherPayments:float, totalSuccessfulPayments:float,
@@ -62,10 +63,25 @@ class BillingService
         $rate = (float) $stay['rate'];
         $referenceDate = $stay['checkout_actual'] ?? $asOfDate ?? date('Y-m-d');
 
+        if ($referenceDate < $stay['check_in_date']) {
+            throw \App\Support\ApiException::validation([
+                'actualCheckoutDate' => sprintf(
+                    'Actual checkout date (%s) cannot be earlier than check-in date (%s).',
+                    $referenceDate,
+                    $stay['check_in_date']
+                ),
+            ]);
+        }
+
         $actualNights = self::nightsBetween($stay['check_in_date'], $referenceDate);
         $plannedNights = self::nightsBetween($stay['check_in_date'], $stay['checkout_planned']);
         $isEarlyCheckout = ($referenceDate < $stay['checkout_planned']);
+        $isLateCheckout = ($referenceDate > $stay['checkout_planned']);
+        $isNormalCheckout = ($referenceDate === $stay['checkout_planned']);
+        $checkoutType = $isEarlyCheckout ? 'early' : ($isLateCheckout ? 'late' : 'normal');
+
         $unusedNights = $isEarlyCheckout ? max(0, $plannedNights - $actualNights) : 0;
+        $additionalNights = $isLateCheckout ? max(0, $actualNights - $plannedNights) : 0;
 
         $hotelSettings = $this->settings !== null ? ($this->settings->find($hotelId) ?? []) : [];
         $refundUnusedNights = (bool) ($hotelSettings['early_checkout_refund_unused_nights'] ?? 1);
@@ -74,10 +90,12 @@ class BillingService
         $billableNights = ($isEarlyCheckout && !$refundUnusedNights) ? $plannedNights : $actualNights;
         $roomAmount = $billableNights * $rate;
 
-        // Early checkout fee calculation
-        if ($overrideEarlyCheckoutFee !== null) {
-            $earlyCheckoutFee = max(0.0, round($overrideEarlyCheckoutFee, 2));
-        } elseif (isset($stay['early_checkout_fee']) && (float) $stay['early_checkout_fee'] > 0) {
+        // Early checkout fee calculation - applies strictly to early checkout
+        if (!$isEarlyCheckout && ($stay['status'] ?? '') !== 'checked_out') {
+            $earlyCheckoutFee = 0.0;
+        } elseif ($overrideEarlyCheckoutFee !== null) {
+            $earlyCheckoutFee = $isEarlyCheckout ? max(0.0, round($overrideEarlyCheckoutFee, 2)) : 0.0;
+        } elseif (isset($stay['early_checkout_fee']) && (float) $stay['early_checkout_fee'] > 0 && (($stay['status'] ?? '') === 'checked_out' || $isEarlyCheckout)) {
             $earlyCheckoutFee = (float) $stay['early_checkout_fee'];
         } elseif ($isEarlyCheckout) {
             $feeType = $hotelSettings['early_checkout_fee_type'] ?? 'none';
@@ -154,7 +172,11 @@ class BillingService
             'plannedNights' => $plannedNights,
             'billableNights' => $billableNights,
             'unusedNights' => $unusedNights,
+            'additionalNights' => $additionalNights,
             'isEarlyCheckout' => $isEarlyCheckout,
+            'isLateCheckout' => $isLateCheckout,
+            'isNormalCheckout' => $isNormalCheckout,
+            'checkoutType' => $checkoutType,
             'roomRate' => $rate,
             'roomAmount' => round($roomAmount, 2),
             'gstRate' => $gstRate,

@@ -503,6 +503,15 @@ final class StayService
             throw ApiException::notFound('Stay not found.');
         }
         $targetDate = $checkoutDate ?? date('Y-m-d');
+        if ($targetDate < $stay['check_in_date']) {
+            throw ApiException::validation([
+                'checkoutDate' => sprintf(
+                    'Actual checkout date (%s) cannot be earlier than check-in date (%s).',
+                    $targetDate,
+                    $stay['check_in_date']
+                ),
+            ]);
+        }
         $bill = $this->billing->computeBill($stay, $targetDate, $overrideFee, $overrideDiscount);
 
         $reservationId = $stay['reservation_id'] !== null ? (int) $stay['reservation_id'] : null;
@@ -537,7 +546,11 @@ final class StayService
             'actualNightsStayed' => $bill['nights'],
             'plannedNights' => $bill['plannedNights'],
             'unusedNights' => $bill['unusedNights'],
+            'additionalNights' => $bill['additionalNights'],
             'isEarlyCheckout' => $bill['isEarlyCheckout'],
+            'isLateCheckout' => $bill['isLateCheckout'],
+            'isNormalCheckout' => $bill['isNormalCheckout'],
+            'checkoutType' => $bill['checkoutType'],
             'originalRoomRate' => $bill['roomRate'],
             'actualRoomCharges' => $bill['roomAmount'],
             'additionalStayCharges' => $bill['extrasAmount'],
@@ -759,7 +772,8 @@ final class StayService
         ?string $discountReason = null,
         ?float $earlyCheckoutFee = null,
         ?int $refundParentPaymentId = null,
-        ?string $refundReason = null
+        ?string $refundReason = null,
+        ?string $expectedCheckoutType = null
     ): array {
         $this->db->beginTransaction();
         try {
@@ -776,6 +790,54 @@ final class StayService
             }
 
             $actualDate = $actualCheckoutDate ?? date('Y-m-d');
+            if ($actualDate < $stay['check_in_date']) {
+                throw ApiException::validation([
+                    'actualCheckoutDate' => sprintf(
+                        'Actual checkout date (%s) cannot be earlier than check-in date (%s).',
+                        $actualDate,
+                        $stay['check_in_date']
+                    ),
+                ]);
+            }
+
+            $isEarly = ($actualDate < $stay['checkout_planned']);
+            $isLate = ($actualDate > $stay['checkout_planned']);
+            $isNormal = ($actualDate === $stay['checkout_planned']);
+
+            if ($expectedCheckoutType !== null && $expectedCheckoutType !== '') {
+                if ($expectedCheckoutType === 'early' && !$isEarly) {
+                    throw ApiException::validation([
+                        'actualCheckoutDate' => sprintf(
+                            'Actual checkout date (%s) must be before planned checkout date (%s) for early checkout.',
+                            $actualDate,
+                            $stay['checkout_planned']
+                        ),
+                    ]);
+                }
+                if (($expectedCheckoutType === 'late' || $expectedCheckoutType === 'extended') && !$isLate) {
+                    throw ApiException::validation([
+                        'actualCheckoutDate' => sprintf(
+                            'Actual checkout date (%s) must be after planned checkout date (%s) for late checkout / extended stay.',
+                            $actualDate,
+                            $stay['checkout_planned']
+                        ),
+                    ]);
+                }
+                if ($expectedCheckoutType === 'normal' && !$isNormal) {
+                    throw ApiException::validation([
+                        'actualCheckoutDate' => sprintf(
+                            'Actual checkout date (%s) must equal planned checkout date (%s) for normal checkout.',
+                            $actualDate,
+                            $stay['checkout_planned']
+                        ),
+                    ]);
+                }
+            }
+
+            if (!$isEarly) {
+                $earlyCheckoutFee = 0.0;
+            }
+
             $reservationId = $stay['reservation_id'] !== null ? (int) $stay['reservation_id'] : null;
 
             // 1. Retrieve the bill based on actual checkout date, fee and discounts
@@ -911,7 +973,7 @@ final class StayService
             // If originating reservation exists, adjust its check_out_date if needed so future dates are free
             if ($reservationId !== null) {
                 $res = $this->reservations->find($reservationId);
-                if ($res !== null && $actualDate > $res['check_in_date'] && $res['check_out_date'] > $actualDate) {
+                if ($res !== null && $actualDate > $res['check_in_date'] && $res['check_out_date'] !== $actualDate) {
                     $this->reservations->update(
                         $reservationId,
                         (int) $res['room_id'],
@@ -940,6 +1002,7 @@ final class StayService
                     'status' => 'checked_out',
                     'total' => $finalBill['total'],
                     'actual_checkout_date' => $actualDate,
+                    'checkout_type' => $finalBill['checkoutType'],
                     'collected_at_checkout' => $outstanding > 0 ? $outstanding : 0,
                     'refunded_at_checkout' => $refundIssued,
                     'discount_amount' => $effDiscount,

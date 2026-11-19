@@ -151,6 +151,16 @@ export default function RoomDetailsSheet({
     const balance = Number(bill?.balance ?? (totalInvoice - netPaid));
     const outstandingBalance = Number(bill?.outstandingBalance ?? (balance > 0 ? balance : 0));
 
+    const plannedCheckoutDate = stay?.checkout_planned ? stay.checkout_planned.slice(0, 10) : null;
+    const isLate = Boolean(
+      (plannedCheckoutDate && today > plannedCheckoutDate) ||
+      bill?.isLateCheckout ||
+      bill?.checkoutType === 'late'
+    );
+    const isEarlyEligible = Boolean(
+      plannedCheckoutDate && today < plannedCheckoutDate && !isLate
+    );
+
     const actualPersonsCount = Number(stay.persons || 1);
     const personsDisplay = `${actualPersonsCount} ${actualPersonsCount === 1 ? 'Person' : 'Persons'}`;
     const occupantsList = stay.occupants && stay.occupants.length > 0 ? stay.occupants : [];
@@ -256,6 +266,11 @@ export default function RoomDetailsSheet({
                       ({stay.checkout_time.slice(0, 5)})
                     </span>
                   ) : null}
+                  {isLate && (
+                    <span style={{ fontSize: 11, marginLeft: 6, color: 'var(--color-danger, #b43d50)', fontWeight: 700 }}>
+                      (Overdue)
+                    </span>
+                  )}
                 </span>
               </div>
               <div className="rd-field">
@@ -694,22 +709,24 @@ export default function RoomDetailsSheet({
             </svg>
             <span>View Stay</span>
           </button>
-          <button
-            className="btn"
-            type="button"
-            onClick={() => {
-              onClose();
-              onEarlyCheckout?.(stay.id);
-            }}
-            style={{
-              color: 'var(--color-warning-text, #b77920)',
-              borderColor: 'var(--color-warning-border, #f7ddb8)',
-              background: 'var(--color-warning-bg, #fff3e4)',
-              fontWeight: 600,
-            }}
-          >
-            Early Check Out
-          </button>
+          {isEarlyEligible && (
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                onClose();
+                onEarlyCheckout?.(stay.id);
+              }}
+              style={{
+                color: 'var(--color-warning-text, #b77920)',
+                borderColor: 'var(--color-warning-border, #f7ddb8)',
+                background: 'var(--color-warning-bg, #fff3e4)',
+                fontWeight: 600,
+              }}
+            >
+              Early Check Out
+            </button>
+          )}
           <button
             className="btn blue"
             type="button"
@@ -719,7 +736,7 @@ export default function RoomDetailsSheet({
             }}
             style={{ fontWeight: 700 }}
           >
-            Check Out
+            {isLate ? 'Late Check Out' : 'Check Out'}
           </button>
         </div>
       </Sheet>

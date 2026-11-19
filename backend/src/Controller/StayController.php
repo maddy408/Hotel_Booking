@@ -154,10 +154,17 @@ final class StayController
 
     public function earlyCheckoutPreview(Request $request): array
     {
+        $checkoutDate = $request->input('checkoutDate') ?: null;
+        if ($checkoutDate !== null) {
+            Validator::assert(['checkoutDate' => $checkoutDate], [
+                'checkoutDate' => 'required|date',
+            ]);
+        }
+
         return $this->stays->earlyCheckoutPreview(
             (int) $request->routeParams['id'],
             (int) $request->attribute('hotelId'),
-            $request->input('checkoutDate') ?: null,
+            $checkoutDate,
             $request->input('discount') !== null ? (float) $request->input('discount') : null,
             $request->input('earlyCheckoutFee') !== null ? (float) $request->input('earlyCheckoutFee') : null,
         );
@@ -212,6 +219,12 @@ final class StayController
         if (array_key_exists('amount', $data)) {
             $rules['amount'] = 'required|numeric|min:0';
         }
+        if (!empty($data['actualCheckoutDate'])) {
+            $rules['actualCheckoutDate'] = 'required|date';
+        }
+        if (!empty($data['checkoutType'])) {
+            $rules['checkoutType'] = 'in:early,late,normal,extended';
+        }
         Validator::assert($data, $rules);
 
         return $this->stays->checkout(
@@ -227,6 +240,7 @@ final class StayController
             isset($data['earlyCheckoutFee']) ? (float) $data['earlyCheckoutFee'] : null,
             isset($data['refundParentPaymentId']) ? (int) $data['refundParentPaymentId'] : null,
             isset($data['refundReason']) ? (string) $data['refundReason'] : null,
+            isset($data['checkoutType']) ? (string) $data['checkoutType'] : null,
         );
     }
 }

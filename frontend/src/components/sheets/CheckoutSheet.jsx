@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import RefundSheet from './RefundSheet.jsx';
 import {
@@ -22,14 +22,41 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
   const { data: rawBill, isError: isBillError, error: billError } = useStayBill(stayId);
 
   const [actualCheckoutDate, setActualCheckoutDate] = useState(todayIso());
+  const [dateOverridden, setDateOverridden] = useState(false);
   const [discountVal, setDiscountVal] = useState('');
   const [discountReason, setDiscountReason] = useState('');
   const [showDiscountInput, setShowDiscountInput] = useState(false);
 
-  const { data: previewData } = useEarlyCheckoutPreview(stayId, {
-    checkoutDate: actualCheckoutDate,
-    discount: discountVal !== '' ? Number(discountVal) : undefined,
-  });
+  // Synchronize checkout date with initialMode once stay data is loaded
+  useEffect(() => {
+    if (!dateOverridden && stay) {
+      if (initialMode === 'checkout' && stay.checkout_planned && todayIso() < stay.checkout_planned) {
+        setActualCheckoutDate(stay.checkout_planned);
+      } else if (todayIso() >= stay.check_in_date) {
+        setActualCheckoutDate(todayIso());
+      } else {
+        setActualCheckoutDate(stay.check_in_date);
+      }
+    }
+  }, [stay, initialMode, dateOverridden]);
+
+  const isDateInvalid = !actualCheckoutDate || (stay && actualCheckoutDate < stay.check_in_date);
+
+  const checkoutType = useMemo(() => {
+    if (!stay?.checkout_planned || !actualCheckoutDate) return 'normal';
+    if (actualCheckoutDate < stay.checkout_planned) return 'early';
+    if (actualCheckoutDate > stay.checkout_planned) return 'late';
+    return 'normal';
+  }, [actualCheckoutDate, stay?.checkout_planned]);
+
+  const { data: previewData } = useEarlyCheckoutPreview(
+    stayId,
+    {
+      checkoutDate: actualCheckoutDate,
+      discount: discountVal !== '' ? Number(discountVal) : undefined,
+    },
+    { enabled: !!stayId && !isDateInvalid }
+  );
 
   const addExtra = useAddExtra();
   const removeExtra = useRemoveExtra();
@@ -117,7 +144,9 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
 
   const isCheckedOut = stay.status === 'checked_out';
   const today = todayIso();
-  const isEarly = !isCheckedOut && (initialMode === 'early' || stay.checkout_planned > actualCheckoutDate);
+  const isEarly = !isCheckedOut && checkoutType === 'early';
+  const isLate = !isCheckedOut && checkoutType === 'late';
+  const isNormal = !isCheckedOut && checkoutType === 'normal';
 
   const addExtraCharge = async () => {
     const amt = Number(xAmount);
@@ -148,16 +177,30 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
   const bal = bill.balance;
 
   const doCheckout = async () => {
+    if (isDateInvalid) {
+      toast(
+        !actualCheckoutDate
+          ? 'Please select a valid checkout date.'
+          : `Actual checkout date cannot be earlier than check-in date (${fd(stay.check_in_date)}).`
+      );
+      return;
+    }
     try {
       const amtToPass = bal > 0 ? bal : 0;
+      const defaultRefundReason = isEarly
+        ? 'Early checkout refund for unused night(s)'
+        : isLate
+          ? 'Late checkout overpayment refund'
+          : 'Checkout refund';
       const result = await checkout.mutateAsync({
         stayId,
         paymentMethod: pay,
         amount: amtToPass,
         actualCheckoutDate,
+        checkoutType,
         discountAmount: discountVal !== '' ? Number(discountVal) : Number(stay.discount_amount || 0),
         discountReason: discountReason || stay.discount_reason,
-        refundReason: bal < 0 ? (refundReason || 'Early checkout refund') : null,
+        refundReason: bal < 0 ? (refundReason || defaultRefundReason) : null,
       });
 
       setCompletedResult(result);
@@ -175,8 +218,24 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
         <SheetHeader
           status="occupied"
           badge={stay.room_no}
-          title={isCheckedOut ? 'Bill Details (Checked Out)' : isEarly ? 'Early Check out' : 'Check out'}
-          subtitle={`${stay.room_type_name} · ${isCheckedOut ? 'Settled' : isEarly ? 'Checking out before planned date' : 'Standard checkout'}`}
+          title={
+            isCheckedOut
+              ? 'Bill Details (Checked Out)'
+              : isEarly
+                ? 'Early Check out'
+                : isLate
+                  ? 'Late Check out'
+                  : 'Check out'
+          }
+          subtitle={`${stay.room_type_name} · ${
+            isCheckedOut
+              ? 'Settled'
+              : isEarly
+                ? `Checking out before planned date (${fd(stay.checkout_planned)})`
+                : isLate
+                  ? `Extended stay beyond planned date (${fd(stay.checkout_planned)})`
+                  : 'Standard checkout'
+          }`}
           onClose={onClose}
         />
         <div className="sb">
@@ -201,7 +260,12 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
               {isCheckedOut ? (
                 fd(stay.checkout_actual || today)
               ) : (
-                <span style={{ fontWeight: 600 }}>{fd(actualCheckoutDate)} {isEarly && <span style={{ color: 'var(--mnt, #f59e0b)' }}>(Early)</span>}</span>
+                <span style={{ fontWeight: 600 }}>
+                  {actualCheckoutDate ? fd(actualCheckoutDate) : '—'}{' '}
+                  {isEarly && <span style={{ color: 'var(--mnt, #f59e0b)' }}>(Early Checkout)</span>}
+                  {isLate && <span style={{ color: 'var(--color-primary, #70265F)' }}>(Late Checkout / Extended Stay)</span>}
+                  {isNormal && <span className="muted" style={{ fontWeight: 500 }}>(Scheduled Checkout)</span>}
+                </span>
               )}
             </dd>
             <dt>Actual Nights Stayed</dt>
@@ -209,7 +273,17 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
               <strong>{bill.nights} night{bill.nights > 1 ? 's' : ''}</strong>
               {isEarly && (
                 <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>
-                  (Planned: {bill.plannedNights} nights, Unused: {bill.unusedNights})
+                  (Planned: {bill.plannedNights} nights, Unused: {bill.unusedNights ?? Math.max(0, (bill.plannedNights || 1) - (bill.nights || 1))})
+                </span>
+              )}
+              {isLate && (
+                <span style={{ marginLeft: 6, fontSize: 12, color: 'var(--color-primary, #70265F)', fontWeight: 600 }}>
+                  (Planned: {bill.plannedNights} nights, Additional: {bill.additionalNights ?? Math.max(0, (bill.nights || 1) - (bill.plannedNights || 1))})
+                </span>
+              )}
+              {isNormal && (
+                <span className="muted" style={{ marginLeft: 6, fontSize: 12 }}>
+                  (Planned: {bill.plannedNights} nights)
                 </span>
               )}
             </dd>
@@ -354,24 +428,77 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
             )}
           </div>
 
-          {/* Early Checkout Notice & Date Selector */}
+          {/* Checkout Notice & Date Selector */}
           {!isCheckedOut && (
-            <div style={{ padding: '8px 12px', borderRadius: 6, background: isEarly ? 'var(--cln-bg, #fef3c7)' : 'var(--color-bg-secondary)', border: `1px solid ${isEarly ? 'var(--cln-border, #fde68a)' : 'var(--color-border)'}`, fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-              <div>
-                <strong>Checkout Date: </strong>
-                <span>{fd(actualCheckoutDate)}</span>
-                {isEarly && <span style={{ color: 'var(--cln, #d97706)', marginLeft: 6 }}>· Early checkout recalculation active</span>}
+            <div
+              style={{
+                padding: '10px 12px',
+                borderRadius: 6,
+                background: isDateInvalid ? '#fef2f2' : isEarly ? 'var(--cln-bg, #fef3c7)' : isLate ? 'var(--color-lavender-light, #f1eaf8)' : 'var(--color-bg-secondary, #f8fafc)',
+                border: `1px solid ${isDateInvalid ? '#fecaca' : isEarly ? 'var(--cln-border, #fde68a)' : isLate ? 'var(--color-lavender-border, #eae4ef)' : 'var(--color-border, #e2e8f0)'}`,
+                fontSize: 13,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <div>
+                  <strong>Checkout Date: </strong>
+                  <span>{actualCheckoutDate ? fd(actualCheckoutDate) : '—'}</span>
+                  {isEarly && (
+                    <span style={{ color: 'var(--cln, #d97706)', marginLeft: 6, fontWeight: 600 }}>
+                      · Early checkout recalculation active ({bill.unusedNights ?? Math.max(0, (bill.plannedNights || 1) - (bill.nights || 1))} unused night{(bill.unusedNights ?? Math.max(0, (bill.plannedNights || 1) - (bill.nights || 1))) !== 1 ? 's' : ''})
+                    </span>
+                  )}
+                  {isLate && (
+                    <span style={{ color: 'var(--color-primary, #70265F)', marginLeft: 6, fontWeight: 600 }}>
+                      · Extended stay recalculation active (+{bill.additionalNights ?? Math.max(0, (bill.nights || 1) - (bill.plannedNights || 1))} additional night{(bill.additionalNights ?? Math.max(0, (bill.nights || 1) - (bill.plannedNights || 1))) !== 1 ? 's' : ''})
+                    </span>
+                  )}
+                  {isNormal && (
+                    <span className="muted" style={{ marginLeft: 6 }}>
+                      · Scheduled checkout date
+                    </span>
+                  )}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <label style={{ fontSize: 12 }} className="muted">Change Date:</label>
+                  <input
+                    type="date"
+                    style={{ padding: '2px 6px', fontSize: 12 }}
+                    value={actualCheckoutDate}
+                    min={stay.check_in_date}
+                    onChange={(e) => {
+                      setDateOverridden(true);
+                      setActualCheckoutDate(e.target.value);
+                    }}
+                  />
+                </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <label style={{ fontSize: 12 }} className="muted">Change Date:</label>
-                <input
-                  type="date"
-                  style={{ padding: '2px 6px', fontSize: 12 }}
-                  value={actualCheckoutDate}
-                  min={stay.check_in_date}
-                  onChange={(e) => setActualCheckoutDate(e.target.value)}
-                />
-              </div>
+              {isDateInvalid && (
+                <div
+                  style={{
+                    color: 'var(--bad, #ef4444)',
+                    background: '#ffffff',
+                    border: '1px solid #fecaca',
+                    borderRadius: 4,
+                    padding: '6px 10px',
+                    fontSize: 12,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontWeight: 500,
+                  }}
+                >
+                  <span>⚠️</span>
+                  <span>
+                    {!actualCheckoutDate
+                      ? 'Please select a valid checkout date.'
+                      : `Invalid date selection: Actual checkout date cannot be earlier than check-in date (${fd(stay.check_in_date)}).`}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
@@ -381,6 +508,16 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
               <tr>
                 <td>
                   Actual stay: {bill.nights} night{bill.nights > 1 ? 's' : ''} × {inr(stay.rate)}
+                  {isLate && (
+                    <span style={{ fontSize: 11, color: 'var(--color-primary, #70265F)', marginLeft: 6, fontWeight: 600 }}>
+                      (+{bill.additionalNights ?? Math.max(0, (bill.nights || 1) - (bill.plannedNights || 1))} extended)
+                    </span>
+                  )}
+                  {isEarly && (
+                    <span style={{ fontSize: 11, color: 'var(--mnt, #f59e0b)', marginLeft: 6, fontWeight: 600 }}>
+                      ({bill.unusedNights ?? Math.max(0, (bill.plannedNights || 1) - (bill.nights || 1))} unused)
+                    </span>
+                  )}
                 </td>
                 <td className="mono">{inr(bill.roomAmount)}</td>
               </tr>
@@ -431,7 +568,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                 </tr>
               ))}
 
-              {Number(bill.earlyCheckoutFee) > 0 && (
+              {Number(bill.earlyCheckoutFee) > 0 && (isEarly || isCheckedOut) && (
                 <tr className="sub" style={{ color: 'var(--bad, #ef4444)' }}>
                   <td>Early Checkout Policy Fee</td>
                   <td className="mono">+{inr(bill.earlyCheckoutFee)}</td>
@@ -638,7 +775,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                       <b>Bill is fully paid. Complete checkout for Room {stay.room_no}?</b>
                       <span className="muted">Room {stay.room_no} will go for cleaning.</span>
                       <div className="row2">
-                        <button className="btn blue" type="button" disabled={checkout.isPending} onClick={doCheckout}>
+                        <button className="btn blue" type="button" disabled={checkout.isPending || isDateInvalid} onClick={doCheckout}>
                           {checkout.isPending ? 'Checking out...' : 'Yes, check out'}
                         </button>
                         <button className="btn" type="button" disabled={checkout.isPending} onClick={() => setConfirming(false)}>
@@ -647,7 +784,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                       </div>
                     </div>
                   ) : (
-                    <button className="btn blue big" type="button" onClick={() => setConfirming(true)}>
+                    <button className="btn blue big" type="button" disabled={isDateInvalid} onClick={() => setConfirming(true)}>
                       Complete checkout (Fully paid)
                     </button>
                   )}
@@ -672,7 +809,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                         Full payment of {inr(bal)} is required before checkout. Room {stay.room_no} will go for cleaning.
                       </span>
                       <div className="row2">
-                        <button className="btn blue" type="button" disabled={checkout.isPending} onClick={doCheckout}>
+                        <button className="btn blue" type="button" disabled={checkout.isPending || isDateInvalid} onClick={doCheckout}>
                           {checkout.isPending ? 'Processing payment...' : 'Yes, collect & check out'}
                         </button>
                         <button className="btn" type="button" disabled={checkout.isPending} onClick={() => setConfirming(false)}>
@@ -681,7 +818,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                       </div>
                     </div>
                   ) : (
-                    <button className="btn blue big" type="button" onClick={() => setConfirming(true)}>
+                    <button className="btn blue big" type="button" disabled={isDateInvalid} onClick={() => setConfirming(true)}>
                       Check out · Collect {inr(bal)}
                     </button>
                   )}
@@ -724,7 +861,13 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                     <label>Refund Note / Reason</label>
                     <input
                       type="text"
-                      placeholder="e.g. Early checkout refund for unused night(s)"
+                      placeholder={
+                        isEarly
+                          ? 'e.g. Early checkout refund for unused night(s)'
+                          : isLate
+                            ? 'e.g. Refund for excess advance on late checkout'
+                            : 'e.g. Refund for excess advance payment'
+                      }
                       value={refundReason}
                       onChange={(e) => setRefundReason(e.target.value)}
                     />
@@ -735,7 +878,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                       <b>Refund {inr(Math.abs(bal))} by {pay.toUpperCase()} to complete checkout?</b>
                       <span className="muted">Room {stay.room_no} will go for cleaning.</span>
                       <div className="row2">
-                        <button className="btn blue" type="button" disabled={checkout.isPending} onClick={doCheckout}>
+                        <button className="btn blue" type="button" disabled={checkout.isPending || isDateInvalid} onClick={doCheckout}>
                           {checkout.isPending ? 'Processing refund...' : 'Yes, refund & check out'}
                         </button>
                         <button className="btn" type="button" disabled={checkout.isPending} onClick={() => setConfirming(false)}>
@@ -744,7 +887,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                       </div>
                     </div>
                   ) : (
-                    <button className="btn blue big" type="button" onClick={() => setConfirming(true)}>
+                    <button className="btn blue big" type="button" disabled={isDateInvalid} onClick={() => setConfirming(true)}>
                       Check out · Refund {inr(Math.abs(bal))}
                     </button>
                   )}

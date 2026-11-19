@@ -297,4 +297,123 @@ describe('Update Floor Room Tiles & Room Details Verification', () => {
     assert.equal(secondFloor.length, 1);
     assert.equal(secondFloor[0].roomNo, 201);
   });
+
+  // -------------------------------------------------------------------------
+  // Test 9: Overdue occupied room tile warning state (Compact Inline Alert)
+  // -------------------------------------------------------------------------
+  it('9. an overdue occupied room displays compact inline overdue warning badge with duration and planned date', () => {
+    // Logic mirror for RoomTile overdue derivation
+    const deriveRoomTileState = (room, today) => {
+      const plannedIso = room.checkoutPlanned ? room.checkoutPlanned.slice(0, 10) : null;
+      let isOverdue = false;
+      let overdueDays = 0;
+      let due = false;
+      let meta = '';
+
+      if (room.status === 'occupied') {
+        if (plannedIso && plannedIso < today) {
+          isOverdue = true;
+          due = true;
+          const diff = (new Date(`${today}T00:00:00`) - new Date(`${plannedIso}T00:00:00`)) / 86400000;
+          overdueDays = Math.max(1, Math.round(diff));
+          meta = `Due was ${plannedIso}`;
+        } else if (plannedIso && plannedIso === today) {
+          due = true;
+          meta = 'Leaving today';
+        } else if (plannedIso) {
+          meta = 'Till ' + plannedIso;
+        } else {
+          meta = 'Ongoing stay';
+        }
+      }
+
+      const statusTag = (room.status || '').toUpperCase();
+      const compactAlertText = isOverdue ? `${overdueDays}d overdue` : null;
+      const secondaryDateText = isOverdue ? `· Due ${plannedIso}` : null;
+
+      return { isOverdue, overdueDays, due, meta, statusTag, compactAlertText, secondaryDateText };
+    };
+
+    // User scenario: Room 207, Planned Checkout 17 Nov, Today is 19 Nov
+    const overdueRoom = {
+      id: 207,
+      roomNo: 207,
+      status: 'occupied',
+      checkoutPlanned: '2026-11-17',
+      guestName: 'Luxy',
+    };
+
+    const tileState = deriveRoomTileState(overdueRoom, '2026-11-19');
+
+    assert.equal(tileState.isOverdue, true);
+    assert.equal(tileState.overdueDays, 2);
+    assert.equal(tileState.statusTag, 'OCCUPIED');
+    assert.equal(tileState.compactAlertText, '2d overdue');
+    assert.equal(tileState.secondaryDateText, '· Due 2026-11-17');
+    // Must NOT say "Leaving today" for an overdue stay!
+    assert.notEqual(tileState.meta, 'Leaving today');
+
+    // Leaving today scenario: Planned Checkout 19 Nov, Today is 19 Nov
+    const leavingTodayRoom = {
+      id: 202,
+      roomNo: 202,
+      status: 'occupied',
+      checkoutPlanned: '2026-11-19',
+      guestName: 'Ramya',
+    };
+    const leavingState = deriveRoomTileState(leavingTodayRoom, '2026-11-19');
+    assert.equal(leavingState.isOverdue, false);
+    assert.equal(leavingState.due, true);
+    assert.equal(leavingState.meta, 'Leaving today');
+    assert.equal(leavingState.statusTag, 'OCCUPIED');
+
+    // Future stay scenario: Planned Checkout 22 Nov, Today is 19 Nov
+    const futureStayRoom = {
+      id: 205,
+      roomNo: 205,
+      status: 'occupied',
+      checkoutPlanned: '2026-11-22',
+      guestName: 'Kavitha',
+    };
+    const futureState = deriveRoomTileState(futureStayRoom, '2026-11-19');
+    assert.equal(futureState.isOverdue, false);
+    assert.equal(futureState.due, false);
+    assert.equal(futureState.meta, 'Till 2026-11-22');
+    assert.equal(futureState.statusTag, 'OCCUPIED');
+  });
+
+  // -------------------------------------------------------------------------
+  // Test 10: Rooms page statistics subtext clearly distinguishes overdue rooms
+  // -------------------------------------------------------------------------
+  it('10. rooms overview statistics subtext accurately highlights overdue rooms', () => {
+    const getOccupiedSubtext = (rooms, today) => {
+      const overdueCount = rooms.filter((r) => r.status === 'occupied' && (r.isOverdue || (r.checkoutPlanned && r.checkoutPlanned.slice(0, 10) < today))).length;
+      const leaving = rooms.filter((r) => r.status === 'occupied' && (r.dueToday || (r.checkoutPlanned && r.checkoutPlanned.slice(0, 10) === today))).length;
+
+      return overdueCount > 0
+        ? `${overdueCount} overdue${leaving > 0 ? ` · ${leaving} leaving` : ''}`
+        : leaving > 0
+          ? `${leaving} leaving today`
+          : 'Ongoing stay';
+    };
+
+    const roomsWithOverdue = [
+      { id: 207, status: 'occupied', checkoutPlanned: '2026-11-17', isOverdue: true },
+      { id: 202, status: 'occupied', checkoutPlanned: '2026-11-19', dueToday: true },
+      { id: 205, status: 'occupied', checkoutPlanned: '2026-11-25' },
+    ];
+
+    const sub = getOccupiedSubtext(roomsWithOverdue, '2026-11-19');
+    assert.equal(sub, '1 overdue · 1 leaving');
+
+    const roomsOnlyOverdue = [
+      { id: 207, status: 'occupied', checkoutPlanned: '2026-11-17', isOverdue: true },
+    ];
+    assert.equal(getOccupiedSubtext(roomsOnlyOverdue, '2026-11-19'), '1 overdue');
+
+    const roomsOnlyLeaving = [
+      { id: 202, status: 'occupied', checkoutPlanned: '2026-11-19', dueToday: true },
+    ];
+    assert.equal(getOccupiedSubtext(roomsOnlyLeaving, '2026-11-19'), '1 leaving today');
+  });
 });

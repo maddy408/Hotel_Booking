@@ -3,7 +3,7 @@ import Sheet, { SheetHeader } from '../Sheet.jsx';
 import { useStay, useStayBill, useAddExtra, useRemoveExtra } from '../../api/stays';
 import { fetchOccupantDocumentBlob, useUploadStayDocuments } from '../../api/occupantDocuments';
 import { useToast } from '../../context/ToastContext.jsx';
-import { fd, inr } from '../../lib/format';
+import { fd, inr, todayIso } from '../../lib/format';
 
 const EXTRAS = ['Food', 'Laundry', 'Extra bed', 'Taxi', 'Other'];
 
@@ -22,6 +22,16 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
   const fileInputRef = useRef(null);
 
   const bill = stay?.bill || rawBill;
+  const today = todayIso();
+  const plannedCheckoutDate = stay?.checkout_planned ? stay.checkout_planned.slice(0, 10) : null;
+  const isLate = Boolean(
+    (plannedCheckoutDate && today > plannedCheckoutDate) ||
+    bill?.isLateCheckout ||
+    bill?.checkoutType === 'late'
+  );
+  const isEarlyEligible = Boolean(
+    plannedCheckoutDate && today < plannedCheckoutDate && !isLate
+  );
 
   const handleViewDocument = async (doc) => {
     try {
@@ -113,17 +123,19 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
             <span>Print Invoice Preview</span>
           </a>
 
-          <button
-            className="btn sm"
-            type="button"
-            onClick={() => {
-              onClose();
-              onEarlyCheckout?.(stay.id);
-            }}
-            style={{ color: 'var(--cln, #d97706)', borderColor: 'var(--cln-border, #fde68a)', background: 'var(--cln-bg, #fef3c7)', fontWeight: 600 }}
-          >
-            Early Check Out
-          </button>
+          {isEarlyEligible && (
+            <button
+              className="btn sm"
+              type="button"
+              onClick={() => {
+                onClose();
+                onEarlyCheckout?.(stay.id);
+              }}
+              style={{ color: 'var(--cln, #d97706)', borderColor: 'var(--cln-border, #fde68a)', background: 'var(--cln-bg, #fef3c7)', fontWeight: 600 }}
+            >
+              Early Check Out
+            </button>
+          )}
 
           <button
             className="btn blue sm"
@@ -134,7 +146,7 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
             }}
             style={{ fontWeight: 700 }}
           >
-            Check Out
+            {isLate ? 'Late Check Out' : 'Check Out'}
           </button>
         </div>
 
@@ -380,7 +392,7 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
               onCheckout?.(stay.id);
             }}
           >
-            Check Out
+            {isLate ? 'Late Check Out' : 'Check Out'}
           </button>
         </div>
       </div>

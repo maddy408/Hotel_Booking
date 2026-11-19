@@ -114,6 +114,7 @@ final class RoomService
                 'checkoutPlanned' => null,
                 'checkoutTime' => null,
                 'dueToday' => false,
+                'isOverdue' => false,
                 'bookingId' => null,
                 'bookingCode' => null,
                 'bookingCheckIn' => null,
@@ -127,7 +128,8 @@ final class RoomService
                 $dto['stayId'] = (int) $stay['stay_id'];
                 $dto['checkoutPlanned'] = $stay['checkout_planned'];
                 $dto['checkoutTime'] = $stay['checkout_time'] ?? null;
-                $dto['dueToday'] = $stay['checkout_planned'] <= $today;
+                $dto['dueToday'] = $stay['checkout_planned'] === $today;
+                $dto['isOverdue'] = $stay['checkout_planned'] < $today;
                 $dto['persons'] = max(1, (int) ($stay['persons'] ?? 1));
             } elseif ($status === 'booked' && $activeBooking !== null) {
                 $dto['guestName'] = $activeBooking['guest_name'];
