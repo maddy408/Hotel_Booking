@@ -112,15 +112,34 @@ export function useCheckInReservation() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (payload) => {
-      if (typeof FormData !== 'undefined' && payload instanceof FormData) {
-        const id = payload.get('reservationId') || payload.get('id');
-        return api.post(`/reservations/${id}/check-in`, payload);
+      // payload can be:
+      // 1. { id, formData }
+      // 2. { id, ...data }
+      // 3. FormData directly
+      // 4. raw reservation ID number
+      let id;
+      let body;
+
+      if (payload && typeof payload === 'object') {
+        if (payload.formData) {
+          id = payload.id;
+          body = payload.formData;
+        } else if (typeof FormData !== 'undefined' && payload instanceof FormData) {
+          const idFromPart = (typeof payload.getAll === 'function' ? payload.getAll('id')?.[0] : null)
+            || payload._parts?.find?.((p) => p[0] === 'id' || p[0] === 'reservationId')?.[1];
+          id = idFromPart;
+          body = payload;
+        } else {
+          const { id: extractedId, ...rest } = payload;
+          id = extractedId;
+          body = rest;
+        }
+      } else {
+        id = payload;
+        body = {};
       }
-      if (typeof payload === 'object' && payload !== null) {
-        const { id, ...body } = payload;
-        return api.post(`/reservations/${id}/check-in`, body);
-      }
-      return api.post(`/reservations/${payload}/check-in`);
+
+      return api.post(`/reservations/${id}/check-in`, body);
     },
     onSuccess: () => invalidate(qc),
   });

@@ -43,12 +43,12 @@ export function useToast() {
 
 const styles = StyleSheet.create({
   toastOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    justifyContent: 'flex-end',
+    position: 'absolute',
+    bottom: 40,
+    left: 20,
+    right: 20,
     alignItems: 'center',
-    paddingBottom: 40,
     zIndex: 99999,
-    elevation: 999,
   },
   toast: {
     backgroundColor: '#1E293B',

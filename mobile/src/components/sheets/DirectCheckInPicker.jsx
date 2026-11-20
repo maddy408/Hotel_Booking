@@ -7,7 +7,10 @@ export default function DirectCheckInPicker({ rooms, onPick, onClose }) {
   const free = rooms.filter((r) => r.status === 'free').sort((a, b) => a.roomNo - b.roomNo);
   const byType = {};
   free.forEach((r) => {
-    (byType[r.roomType.id] ??= { name: r.roomType.name, rate: r.roomType.rate, rooms: [] }).rooms.push(r);
+    const typeId = r.roomType?.id ?? 'default';
+    const typeName = r.roomType?.name ?? 'Standard Room';
+    const typeRate = r.roomType?.rate ?? 0;
+    (byType[typeId] ??= { name: typeName, rate: typeRate, rooms: [] }).rooms.push(r);
   });
 
   return (

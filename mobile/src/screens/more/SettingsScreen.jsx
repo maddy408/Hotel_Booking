@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View, ScrollView } from 'react-native';
 import Screen, { ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
 import Button from '../../components/ui/Button.jsx';
@@ -15,7 +15,9 @@ import { useToast } from '../../components/ToastContext.jsx';
 import { formatCheckoutHour } from '../../lib/format';
 import { colors, fonts, radii } from '../../theme/theme';
 
-export default function SettingsScreen() {
+import BackButton from '../../components/ui/BackButton.jsx';
+
+export default function SettingsScreen({ navigation }) {
   const { data, isLoading, isError, error, refetch } = useSettings();
   const updateHotel = useUpdateHotel();
   const updateCheckoutHour = useUpdateCheckoutHour();
@@ -42,35 +44,59 @@ export default function SettingsScreen() {
     whatsappCheckinEnabled: true,
   });
 
+  const initializedRef = useRef(false);
   useEffect(() => {
-    if (data?.hotel) {
-      setHotel({
-        name: data.hotel.name || '',
-        phone: data.hotel.phone || '',
-        email: data.hotel.email || '',
-        address: data.hotel.address || '',
-        timezone: data.hotel.timezone || 'Asia/Kolkata',
-      });
-    }
-    if (data?.settings) {
-      setCheckoutHour(String(data.settings.checkout_hour ?? 12));
-      setGst({
-        gstSlab1MaxRate: String(data.settings.gst_slab1_max_rate ?? '7500.00'),
-        gstSlab1GstRate: String(Math.round(Number(data.settings.gst_slab1_gst_rate ?? 0.05) * 100)),
-        gstSlab2MaxRate: String(data.settings.gst_slab2_max_rate ?? '7500.00'),
-        gstSlab2GstRate: String(Math.round(Number(data.settings.gst_slab2_gst_rate ?? 0.18) * 100)),
-        gstSlab3GstRate: String(Math.round(Number(data.settings.gst_slab3_gst_rate ?? 0.18) * 100)),
-      });
-      setPolicies({
-        cancellationRefundPercentage: String(data.settings.cancellation_refund_percentage ?? '100'),
-        freeCancellationHours: String(data.settings.free_cancellation_hours ?? '24'),
-        earlyCheckoutFeePerNight: String(data.settings.early_checkout_fee_per_night ?? '0'),
-      });
-      setWhatsapp({
-        whatsappCheckinEnabled: data.settings.whatsapp_checkin_enabled !== false,
-      });
+    if (data && !initializedRef.current) {
+      initializedRef.current = true;
+      if (data.hotel) {
+        setHotel({
+          name: data.hotel.name || '',
+          phone: data.hotel.phone || '',
+          email: data.hotel.email || '',
+          address: data.hotel.address || '',
+          timezone: data.hotel.timezone || 'Asia/Kolkata',
+        });
+      }
+      if (data.settings) {
+        setCheckoutHour(String(data.settings.checkout_hour ?? 12));
+        setGst({
+          gstSlab1MaxRate: String(data.settings.gst_slab1_max_rate ?? '7500.00'),
+          gstSlab1GstRate: String(Math.round(Number(data.settings.gst_slab1_gst_rate ?? 0.05) * 100)),
+          gstSlab2MaxRate: String(data.settings.gst_slab2_max_rate ?? '7500.00'),
+          gstSlab2GstRate: String(Math.round(Number(data.settings.gst_slab2_gst_rate ?? 0.18) * 100)),
+          gstSlab3GstRate: String(Math.round(Number(data.settings.gst_slab3_gst_rate ?? 0.18) * 100)),
+        });
+        setPolicies({
+          cancellationRefundPercentage: String(data.settings.cancellation_refund_percentage ?? '100'),
+          freeCancellationHours: String(data.settings.free_cancellation_hours ?? '24'),
+          earlyCheckoutFeePerNight: String(data.settings.early_checkout_fee_per_night ?? '0'),
+        });
+        setWhatsapp({
+          whatsappCheckinEnabled: data.settings.whatsapp_checkin_enabled !== false,
+        });
+      }
     }
   }, [data]);
+
+  const isDirty = Boolean(
+    data && (
+      hotel.name !== (data.hotel?.name || '') ||
+      hotel.phone !== (data.hotel?.phone || '') ||
+      hotel.email !== (data.hotel?.email || '') ||
+      hotel.address !== (data.hotel?.address || '') ||
+      checkoutHour !== String(data.settings?.checkout_hour ?? 12)
+    )
+  );
+
+  const prevDirtyRef = useRef(false);
+  useEffect(() => {
+    if (prevDirtyRef.current !== isDirty) {
+      prevDirtyRef.current = isDirty;
+      navigation?.setOptions?.({
+        headerLeft: () => <BackButton fallbackRoute="MoreMenu" hasUnsavedChanges={isDirty} />,
+      });
+    }
+  }, [navigation, isDirty]);
 
   if (isLoading) return <Screen><LoadingState /></Screen>;
   if (isError) return <Screen><ErrorState message={error?.message} onRetry={refetch} /></Screen>;

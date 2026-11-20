@@ -1,10 +1,73 @@
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Button from './Button';
 import { colors, fonts } from '../../theme/theme';
 
+export const ScreenOverlayContext = createContext(null);
+
+export function useScreenOverlay() {
+  return useContext(ScreenOverlayContext);
+}
+
+class OverlayManager {
+  constructor() {
+    this.listeners = new Set();
+    this.items = new Map();
+  }
+
+  subscribe(listener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  registerOverlay(id, element) {
+    this.items.set(id, element);
+    this.notify();
+  }
+
+  unregisterOverlay(id) {
+    if (this.items.delete(id)) {
+      this.notify();
+    }
+  }
+
+  notify() {
+    const list = Array.from(this.items.entries()).map(([id, element]) => ({ id, element }));
+    this.listeners.forEach((fn) => fn(list));
+  }
+}
+
+function OverlayHost({ manager }) {
+  const [overlays, setOverlays] = useState([]);
+
+  useEffect(() => {
+    return manager.subscribe((list) => {
+      setOverlays(list);
+    });
+  }, [manager]);
+
+  if (!overlays.length) return null;
+
+  return (
+    <View style={[StyleSheet.absoluteFill, { zIndex: 9999, elevation: 9999 }]} pointerEvents="box-none">
+      {overlays.map((o) => (
+        <View key={o.id} style={[StyleSheet.absoluteFill, { zIndex: 9999, elevation: 9999 }]} pointerEvents="box-none">
+          {o.element}
+        </View>
+      ))}
+    </View>
+  );
+}
+
 /** Shared screen shell: safe area + optional scroll + keyboard avoidance, matching web's <main class="gut"><div class="inner">. */
 export default function Screen({ children, scroll = true, refreshing, onRefresh, contentStyle }) {
+  const manager = useMemo(() => new OverlayManager(), []);
+  const contextValue = useMemo(() => ({
+    registerOverlay: (id, element) => manager.registerOverlay(id, element),
+    unregisterOverlay: (id) => manager.unregisterOverlay(id),
+  }), [manager]);
+
   const inner = scroll ? (
     <ScrollView
       contentContainerStyle={[styles.content, contentStyle]}
@@ -18,11 +81,14 @@ export default function Screen({ children, scroll = true, refreshing, onRefresh,
   );
 
   return (
-    <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        {inner}
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+    <ScreenOverlayContext.Provider value={contextValue}>
+      <SafeAreaView style={styles.safe} edges={['left', 'right', 'bottom']}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          {inner}
+          <OverlayHost manager={manager} />
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </ScreenOverlayContext.Provider>
   );
 }
 

@@ -30,7 +30,9 @@ export function useStayRefundSummary(stayId) {
   });
 }
 
-export function useDoneStays(range = {}) {
+const EMPTY_RANGE = Object.freeze({});
+
+export function useDoneStays(range = EMPTY_RANGE) {
   const params = new URLSearchParams(range).toString();
   return useQuery({ queryKey: ['stays-done', range], queryFn: () => api.get(`/stays${params ? `?${params}` : ''}`) });
 }
@@ -51,8 +53,13 @@ export function useDirectCheckIn() {
     mutationFn: (payload) => api.post('/stays', payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['rooms'] });
+      qc.invalidateQueries({ queryKey: ['reservations'] });
       qc.invalidateQueries({ queryKey: ['today-checkouts'] });
       qc.invalidateQueries({ queryKey: ['all-referrals'] });
+      qc.invalidateQueries({ queryKey: ['stays-done'] });
+      qc.invalidateQueries({ queryKey: ['guests'] });
+      qc.invalidateQueries({ queryKey: ['guest'] });
+      qc.invalidateQueries({ queryKey: ['guest-referrals'] });
     },
   });
 }

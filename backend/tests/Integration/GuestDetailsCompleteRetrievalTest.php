@@ -134,9 +134,15 @@ final class GuestDetailsCompleteRetrievalTest extends TestCase
         $this->assertEqualsWithDelta(500.0, (float) $res['payment_summary']['advanceTotal'], 0.01);
         $this->assertEqualsWithDelta(1000.0, (float) $res['payment_summary']['additionalTotal'], 0.01);
         $this->assertEqualsWithDelta(0.0, (float) $res['payment_summary']['refundTotal'], 0.01);
-        $this->assertEqualsWithDelta(2200.0, (float) $res['payment_summary']['totalRoomCharges'], 0.01);
-        $this->assertEqualsWithDelta(110.0, (float) $res['payment_summary']['totalGst'], 0.01);
-        $this->assertEqualsWithDelta(810.0, (float) $res['payment_summary']['outstandingBalance'], 0.01);
+
+        $nights = BillingService::nightsBetween('2026-11-16', date('Y-m-d'));
+        $expectedRoomCharges = 2200.0 * $nights;
+        $expectedGst = $expectedRoomCharges * 0.05;
+        $expectedOutstanding = ($expectedRoomCharges + $expectedGst) - 1500.0;
+
+        $this->assertEqualsWithDelta($expectedRoomCharges, (float) $res['payment_summary']['totalRoomCharges'], 0.01);
+        $this->assertEqualsWithDelta($expectedGst, (float) $res['payment_summary']['totalGst'], 0.01);
+        $this->assertEqualsWithDelta($expectedOutstanding, (float) $res['payment_summary']['outstandingBalance'], 0.01);
     }
 
     public function testReferrerGuestDetailsShowsKalaiUnderPeopleReferred(): void

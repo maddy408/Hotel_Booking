@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import Button from '../ui/Button.jsx';
@@ -21,6 +22,7 @@ const EXTRAS = ['Food', 'Laundry', 'Extra bed', 'Taxi', 'Other'];
  * The balance-based refund-at-checkout flow below (bal < 0 branch) IS fully functional.
  */
 export default function CheckoutSheet({ stayId, onClose, initialMode }) {
+  const navigation = useNavigation();
   const { data: stay, isError: isStayError, error: stayError } = useStay(stayId);
   const { data: bill, isError: isBillError, error: billError } = useStayBill(stayId);
 
@@ -189,12 +191,18 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
           </View>
           {(bill.charges || []).map((x) => (
             <View key={x.id} style={styles.billRow}>
-              <Text style={styles.billLabel}>
-                {x.label}{' '}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+                <Text style={styles.billLabel}>{x.label}</Text>
                 {!isCheckedOut && !completedResult ? (
-                  <Text onPress={() => removeExtra.mutate({ stayId, chargeId: x.id })} style={styles.removeFile}> ✕</Text>
+                  <Pressable
+                    hitSlop={10}
+                    onPress={() => removeExtra.mutate({ stayId, chargeId: x.id })}
+                    style={styles.removeBtn}
+                  >
+                    <Text style={styles.removeFile}>✕</Text>
+                  </Pressable>
                 ) : null}
-              </Text>
+              </View>
               <Text style={styles.billValue}>{inr(x.amount)}</Text>
             </View>
           ))}
@@ -254,13 +262,29 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
             <Text style={styles.label}>Check out completed</Text>
             <Text style={styles.value}>Final Invoice: {inr(completedResult.bill?.total || bill.total)}</Text>
             <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Button title="Print Invoice" variant="outline" size="sm" onPress={() => Linking.openURL(`${BASE_URL}/print/invoice/${stayId}`)} />
+              <Button
+                title="Print Invoice"
+                variant="outline"
+                size="sm"
+                onPress={() => {
+                  onClose();
+                  navigation.navigate('Bills', { screen: 'InvoicePrint', params: { stayId } });
+                }}
+              />
               <Button title="Done" variant="outline" size="sm" onPress={onClose} />
             </View>
           </View>
         ) : isCheckedOut ? (
           <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-            <Button title="Print Invoice" variant="outline" size="sm" onPress={() => Linking.openURL(`${BASE_URL}/print/invoice/${stayId}`)} />
+            <Button
+              title="Print Invoice"
+              variant="outline"
+              size="sm"
+              onPress={() => {
+                onClose();
+                navigation.navigate('Bills', { screen: 'InvoicePrint', params: { stayId } });
+              }}
+            />
             <Button title="Close" variant="outline" size="sm" onPress={onClose} />
           </View>
         ) : (
@@ -357,6 +381,7 @@ const styles = StyleSheet.create({
   fileRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radii.sm, padding: 8 },
   fileName: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.text },
   docAction: { fontFamily: fonts.bodyBold, fontSize: 12, color: colors.primary },
+  removeBtn: { padding: 4 },
   removeFile: { fontSize: 13, color: colors.danger },
   warn: { backgroundColor: colors.warningBg, borderWidth: 1, borderColor: colors.warningBorder, borderRadius: radii.md, padding: 10 },
   warnText: { fontFamily: fonts.bodyMedium, fontSize: 12.5, color: colors.warning },

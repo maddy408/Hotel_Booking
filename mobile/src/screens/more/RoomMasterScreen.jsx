@@ -302,14 +302,14 @@ export default function RoomMasterScreen() {
 
       {/* MODAL: EDIT INDIVIDUAL ROOM */}
       {editRoom && (
-        <Sheet onClose={() => setEditRoom(null)}>
+        <Sheet compact onClose={() => setEditRoom(null)}>
           <SheetHeader title={`Room ${editRoom.roomNo}`} onClose={() => setEditRoom(null)} />
           <View style={styles.body}>
             <Text style={styles.meta}>{editRoom.roomType?.name} · Floor {editRoom.floor}</Text>
             <Button
               title="Mark Under Repair"
               variant="danger"
-              size="sm"
+              size="md"
               loading={updateRoom.isPending}
               onPress={async () => {
                 try {
@@ -324,7 +324,7 @@ export default function RoomMasterScreen() {
             <Button
               title="Mark Ready (Clean)"
               variant="success"
-              size="sm"
+              size="md"
               loading={updateRoom.isPending}
               onPress={async () => {
                 try {

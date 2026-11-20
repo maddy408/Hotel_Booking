@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useGuests } from '../api/guests';
 import { Input } from './ui/Field';
 import { colors, fonts, radii } from '../theme/theme';
@@ -56,12 +56,10 @@ export default function ReferredBySelect({ value, onChange, initialGuest = null,
           ) : filtered.length === 0 ? (
             <Text style={styles.msg}>{search.trim() ? 'No matching guests found' : 'No guests available'}</Text>
           ) : (
-            <FlatList
-              data={filtered.slice(0, 20)}
-              keyExtractor={(g) => String(g.id)}
-              style={{ maxHeight: 220 }}
-              renderItem={({ item: g }) => (
+            <View>
+              {filtered.slice(0, 20).map((g) => (
                 <Pressable
+                  key={g.id}
                   style={styles.row}
                   onPress={() => {
                     onChange(g.id, g);
@@ -72,8 +70,8 @@ export default function ReferredBySelect({ value, onChange, initialGuest = null,
                   <Text style={styles.name}>{g.name}</Text>
                   <Text style={styles.phone}>{g.phone}</Text>
                 </Pressable>
-              )}
-            />
+              ))}
+            </View>
           )}
         </View>
       ) : null}

@@ -47,7 +47,7 @@ export default function CustomDrawerContent(props) {
 
   return (
     <View style={styles.container}>
-      <DrawerContentScrollView {...props} contentContainerStyle={styles.scrollContent}>
+      <DrawerContentScrollView {...props} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
         {/* Header Profile Card */}
         <View style={styles.header}>
           <View style={styles.crestWrap}>

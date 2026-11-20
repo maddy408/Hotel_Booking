@@ -142,10 +142,20 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
   };
 
   const isPending = create.isPending || update.isPending;
+  const isFormDirty = isEdit
+    ? Boolean(phone !== (editReservation.guest_phone || '') || name !== (editReservation.guest_name || '') || Number(advance) !== Number(editReservation.advance_paid || 0))
+    : Boolean(phone.trim() || name.trim() || Number(advance) > 0);
 
   return (
-    <Sheet onClose={onClose}>
-      <SheetHeader status="booked" badge={isEdit ? editReservation.booking_code : 'NEW'} title={isEdit ? 'Change booking' : 'New booking'} subtitle={isEdit ? 'Update reservation details' : 'Phone call or walk-in booking'} onClose={onClose} />
+    <Sheet onClose={onClose} hasUnsavedChanges={isFormDirty}>
+      <SheetHeader
+        status="booked"
+        badge={isEdit ? editReservation.booking_code : 'NEW'}
+        title={isEdit ? 'Change booking' : 'New booking'}
+        subtitle={isEdit ? 'Update reservation details' : 'Phone call or walk-in booking'}
+        onClose={onClose}
+        hasUnsavedChanges={isFormDirty}
+      />
       <View style={styles.body}>
         <View>
           <Text style={styles.label}>Mobile number *</Text>

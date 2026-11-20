@@ -712,9 +712,33 @@ final class ReservationService
         }
     }
 
+    public function isReservationOverdue(array $reservation, int $hotelId): bool
+    {
+        if (($reservation['status'] ?? '') !== 'pending') {
+            return false;
+        }
+        $today = $this->hotelToday($hotelId);
+        return (string) ($reservation['check_in_date'] ?? '') < $today;
+    }
+
     public function list(int $hotelId): array
     {
-        return $this->reservations->listPending($hotelId);
+        $today = $this->hotelToday($hotelId);
+        $list = $this->reservations->listPending($hotelId);
+        foreach ($list as &$res) {
+            $isOverdue = ($res['status'] === 'pending' && (string) $res['check_in_date'] < $today);
+            $res['is_overdue'] = $isOverdue;
+            $res['check_in_overdue'] = $isOverdue;
+            $res['hotel_today'] = $today;
+        }
+        unset($res);
+        return $list;
+    }
+
+    public function listOverdue(int $hotelId): array
+    {
+        $list = $this->list($hotelId);
+        return array_values(array_filter($list, static fn (array $res): bool => !empty($res['is_overdue'])));
     }
 
     public function find(int $id, int $hotelId): array
@@ -723,6 +747,12 @@ final class ReservationService
         if ($reservation === null || (int) $reservation['hotel_id'] !== $hotelId) {
             throw ApiException::notFound('Booking not found.');
         }
+        $today = $this->hotelToday($hotelId);
+        $isOverdue = ($reservation['status'] === 'pending' && (string) $reservation['check_in_date'] < $today);
+        $reservation['is_overdue'] = $isOverdue;
+        $reservation['check_in_overdue'] = $isOverdue;
+        $reservation['hotel_today'] = $today;
+
         if ($this->occupantDocService !== null) {
             $reservation['documents'] = $this->occupantDocService->getDocumentsForReservation($hotelId, $id);
         }

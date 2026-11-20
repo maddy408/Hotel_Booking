@@ -19,7 +19,12 @@ final class ReservationController
 
     public function index(Request $request): array
     {
-        return $this->reservations->list((int) $request->attribute('hotelId'));
+        $hotelId = (int) $request->attribute('hotelId');
+        $status = $request->input('status');
+        if ($status === 'overdue' || $request->input('overdue') === '1' || $request->input('overdue') === 'true') {
+            return $this->reservations->listOverdue($hotelId);
+        }
+        return $this->reservations->list($hotelId);
     }
 
     public function show(Request $request): array

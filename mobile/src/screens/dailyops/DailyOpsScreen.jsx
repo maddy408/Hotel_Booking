@@ -133,7 +133,7 @@ export default function DailyOpsScreen({ navigation }) {
                   style={styles.row}
                   onPress={() => {
                     if (isDone) {
-                      navigation.navigate('Bills', { screen: 'InvoicePrint', params: { stayId: s.id || s.stay_id } });
+                      navigation.navigate('Bills', { screen: 'InvoicePrint', params: { stayId: s.id || s.stay_id, invoiceId: s.invoice_id } });
                     } else {
                       setSheet({ type: 'checkout', stayId: s.id || s.stay_id });
                     }

@@ -25,7 +25,7 @@ export default function RoomTile({ room, onPress, onOpenBooking }) {
       meta = room.bookingCode ? `${room.bookingCode} · Ready` : 'Ready';
     }
   } else if (room.status === 'free') {
-    meta = room.nextBookingDate ? 'Booked ' + fd(room.nextBookingDate) : `₹${Math.round(room.roomType.rate)}`;
+    meta = room.nextBookingDate ? 'Booked ' + fd(room.nextBookingDate) : `₹${Math.round(room.roomType?.rate || 0)}`;
   } else if (room.status === 'repair') {
     meta = (room.note || '').split('.')[0] || 'Under repair';
   } else {
@@ -44,33 +44,44 @@ export default function RoomTile({ room, onPress, onOpenBooking }) {
   const c = statusColors[room.status] || statusColors.free;
 
   return (
-    <Pressable style={[styles.tile, { borderColor: c.border, backgroundColor: c.bg }]} onPress={onPress}>
-      <View style={styles.topRow}>
-        <Text style={[styles.roomNo, { color: c.fg }]}>{room.roomNo}</Text>
-        <Text style={styles.roomType} numberOfLines={1}>{room.roomType.name}</Text>
-      </View>
+    <View style={[styles.tile, { borderColor: c.border, backgroundColor: c.bg }]}>
+      <Pressable
+        onPress={onPress}
+        style={styles.tileMain}
+        hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
+        accessibilityRole="button"
+        accessibilityLabel={`Room ${room.roomNo}, ${room.roomType?.name || 'Room'}, ${room.status}`}
+      >
+        <View pointerEvents="none" style={styles.topRow}>
+          <Text style={[styles.roomNo, { color: c.fg }]}>{room.roomNo}</Text>
+          <Text style={styles.roomType} numberOfLines={1}>{room.roomType?.name || ''}</Text>
+        </View>
 
-      <View style={styles.personsRow}>
-        <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={colors.textSecondary} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-          <Path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-          <Circle cx="12" cy="7" r="4" />
-        </Svg>
-        <Text style={styles.personsText}>{personsDisplay}</Text>
-      </View>
+        <View pointerEvents="none" style={styles.personsRow}>
+          <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={colors.textSecondary} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+            <Path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+            <Circle cx="12" cy="7" r="4" />
+          </Svg>
+          <Text style={styles.personsText}>{personsDisplay}</Text>
+        </View>
 
-      {(room.status === 'occupied' || room.status === 'booked') && guestName ? (
-        <Text style={styles.guest} numberOfLines={1}>Guest: {guestName}</Text>
-      ) : null}
+        {(room.status === 'occupied' || room.status === 'booked') && guestName ? (
+          <Text pointerEvents="none" style={styles.guest} numberOfLines={1}>Guest: {guestName}</Text>
+        ) : null}
 
-      <Text style={[styles.meta, due && { color: colors.danger, fontWeight: '700' }]} numberOfLines={1}>{meta}</Text>
+        <Text pointerEvents="none" style={[styles.meta, due && { color: colors.danger, fontWeight: '700' }]} numberOfLines={1}>{meta}</Text>
+
+        <View pointerEvents="none" style={[styles.statusChip, { backgroundColor: c.fg }]}>
+          <Text style={styles.statusChipText}>{LABEL[room.status] || room.status.toUpperCase()}</Text>
+        </View>
+      </Pressable>
 
       {room.hasPendingBooking && room.pendingBooking && room.status === 'occupied' && (
         <Pressable
           style={styles.conflict}
-          onPress={(e) => {
-            e.stopPropagation?.();
-            onOpenBooking?.(room.pendingBooking.id);
-          }}
+          onPress={() => onOpenBooking?.(room.pendingBooking.id)}
+          accessibilityRole="button"
+          accessibilityLabel={`Room conflict: booking ${room.pendingBooking.bookingCode}`}
         >
           <Text style={styles.conflictTitle} numberOfLines={1}>▲ {room.pendingBooking.bookingCode} · {pendingGuest}</Text>
           <Text style={styles.conflictDates} numberOfLines={1}>
@@ -79,11 +90,7 @@ export default function RoomTile({ room, onPress, onOpenBooking }) {
           <Text style={styles.conflictAction}>Room conflict · View…</Text>
         </Pressable>
       )}
-
-      <View style={[styles.statusChip, { backgroundColor: c.fg }]}>
-        <Text style={styles.statusChipText}>{LABEL[room.status] || room.status.toUpperCase()}</Text>
-      </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -92,6 +99,10 @@ const styles = StyleSheet.create({
     width: '48%',
     borderWidth: 1.5,
     borderRadius: radii.lg,
+    overflow: 'hidden',
+  },
+  tileMain: {
+    flex: 1,
     padding: 10,
     gap: 3,
   },
@@ -103,7 +114,9 @@ const styles = StyleSheet.create({
   guest: { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.heading },
   meta: { fontFamily: fonts.body, fontSize: 11.5, color: colors.textSecondary, marginTop: 2 },
   conflict: {
-    marginTop: 4,
+    marginHorizontal: 10,
+    marginBottom: 10,
+    marginTop: 0,
     padding: 6,
     borderRadius: radii.sm,
     backgroundColor: colors.dangerBg,

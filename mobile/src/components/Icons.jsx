@@ -146,6 +146,15 @@ export function MenuIcon({ color = '#fff', size = 22 }) {
   );
 }
 
+export function ArrowLeftIcon({ color = '#fff', size = 22 }) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" stroke={color} {...base}>
+      <Line x1="19" y1="12" x2="5" y2="12" />
+      <Polyline points="12 19 5 12 12 5" />
+    </Svg>
+  );
+}
+
 export function EyeIcon({ color = '#64748B', size = 20 }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" stroke={color} {...base}>

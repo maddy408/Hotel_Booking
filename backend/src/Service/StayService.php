@@ -123,6 +123,7 @@ final class StayService
             }
 
             $this->validateOccupants($persons, $occupants, $guestName, $guestPhone);
+            $this->assertNoDuplicateActiveOccupants($hotelId, $occupants);
 
             $checkoutPlanned = $this->addDays($today, max(1, $days));
             $this->availability->assertFree($roomId, $today, $checkoutPlanned);
@@ -289,7 +290,13 @@ final class StayService
                 throw ApiException::validation(['persons' => $msg], $msg);
             }
 
-            $this->validateOccupants($actualPersons, $occupants, $reservation['guest_name'] ?? '', $reservation['guest_phone'] ?? '');
+            $bookerGuestId = (int) $reservation['guest_id'];
+            $bookerGuest = $this->guestService->findForHotel($hotelId, $bookerGuestId);
+            $bookerName = trim((string) ($bookerGuest['name'] ?? ''));
+            $bookerPhone = preg_replace('/[^\d]/', '', (string) ($bookerGuest['phone'] ?? ''));
+
+            $this->validateOccupants($actualPersons, $occupants, $bookerName, $bookerPhone);
+            $this->assertNoDuplicateActiveOccupants($hotelId, $occupants);
 
             $today = date('Y-m-d');
             $nights = BillingService::nightsBetween($reservation['check_in_date'], $reservation['check_out_date']);
@@ -327,8 +334,27 @@ final class StayService
                 : null;
             $resOtherSource = $reservation['other_source'] ?? null;
 
+            $primaryOcc = $occupants[0] ?? [];
+            $primaryOccName = trim((string) ($primaryOcc['name'] ?? ''));
+            $primaryOccPhone = preg_replace('/[^\d]/', '', (string) ($primaryOcc['phone'] ?? ''));
+
+            // Associate stay with actual room occupant if different from booking contact
+            if ($primaryOccPhone !== '' && strlen($primaryOccPhone) === 10 && $bookerPhone !== '' && $primaryOccPhone !== $bookerPhone) {
+                $primaryGuest = $this->guestService->findOrCreateMinimal(
+                    $hotelId,
+                    $primaryOccPhone,
+                    $primaryOccName !== '' ? $primaryOccName : 'Primary Guest',
+                    $bookerGuest['city'] ?? null
+                );
+                $stayGuestId = (int) $primaryGuest['id'];
+                $stayGuestName = $primaryGuest['name'];
+            } else {
+                $stayGuestId = $bookerGuestId;
+                $stayGuestName = $primaryOccName !== '' ? $primaryOccName : $bookerName;
+            }
+
             $stayId = $this->stays->create(
-                $hotelId, $reservationId, $roomId, (int) $reservation['guest_id'],
+                $hotelId, $reservationId, $roomId, $stayGuestId,
                 $actualPersons, (float) $reservation['rate'], $today, $checkoutPlanned, $userId,
                 $checkoutTime, $resGstRate, $resTaxAmount,
                 $resBookingSource, $resReferredByGuestId, $resOtherSource
@@ -341,8 +367,8 @@ final class StayService
                     $hotelId,
                     $stayId,
                     $actualPersons,
-                    (int) $reservation['guest_id'],
-                    $reservation['guest_name'] ?? null,
+                    $stayGuestId,
+                    $stayGuestName,
                     $occupants
                 );
 
@@ -1116,6 +1142,91 @@ final class StayService
                     ['occupants' => "Occupant #{$num} phone number is required and must be 10 digits."],
                     "Occupant #{$num} phone number is required and must be 10 digits."
                 );
+            }
+        }
+    }
+
+    /**
+     * Prevents the same person from having simultaneous active in-house stays in multiple rooms.
+     * Compares incoming occupants against active occupants across all in-house stays in this hotel.
+     *
+     * Rules:
+     * 1. Requires both 10-digit clean phone AND normalized name to match before flagging a duplicate.
+     * 2. Family members or group members sharing a phone number with different names are NOT blocked.
+     * 3. Different guests with the same name but different phone numbers are NOT blocked.
+     * 4. Excludes the current stay if re-checking an existing stay.
+     *
+     * @param array<int, array{name?:?string, phone?:?string, gender?:?string}> $occupants
+     * @param int|null $excludeStayId
+     * @throws ApiException if duplicate active occupant detected
+     */
+    private function assertNoDuplicateActiveOccupants(int $hotelId, array $occupants, ?int $excludeStayId = null): void
+    {
+        if (empty($occupants)) {
+            return;
+        }
+
+        // 1. Check for duplicates within incoming occupants list
+        $seenIncoming = [];
+        foreach ($occupants as $idx => $occ) {
+            $num = $idx + 1;
+            $name = trim((string) ($occ['name'] ?? ''));
+            $phone = preg_replace('/[^\d]/', '', (string) ($occ['phone'] ?? ''));
+            if ($name === '' || strlen($phone) !== 10 || $phone === '0000000000') {
+                continue;
+            }
+            $normName = preg_replace('/\s+/', ' ', strtolower($name));
+            $key = $phone . '::' . $normName;
+            if (isset($seenIncoming[$key])) {
+                $prevNum = $seenIncoming[$key];
+                $msg = "Occupant '{$name}' is listed multiple times (occupant #{$prevNum} and #{$num}).";
+                throw ApiException::validation(['occupants' => $msg], $msg);
+            }
+            $seenIncoming[$key] = $num;
+        }
+
+        // 2. Fetch all active in-house occupants across other stays in this hotel
+        $sql = "SELECT o.id, o.stay_id, o.name, o.phone, r.room_no
+                FROM occupants o
+                JOIN stays s ON s.id = o.stay_id
+                JOIN rooms r ON r.id = s.room_id
+                WHERE s.hotel_id = :hotel_id
+                  AND s.status = 'in_house'";
+        $params = ['hotel_id' => $hotelId];
+        if ($excludeStayId !== null) {
+            $sql .= " AND s.id != :exclude_stay_id";
+            $params['exclude_stay_id'] = $excludeStayId;
+        }
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $activeOccupants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        if (empty($activeOccupants)) {
+            return;
+        }
+
+        // 3. Compare each incoming occupant against active in-house occupants
+        foreach ($occupants as $idx => $occ) {
+            $name = trim((string) ($occ['name'] ?? ''));
+            $phone = preg_replace('/[^\d]/', '', (string) ($occ['phone'] ?? ''));
+            if ($name === '' || strlen($phone) !== 10 || $phone === '0000000000') {
+                continue;
+            }
+            $normName = preg_replace('/\s+/', ' ', strtolower($name));
+
+            foreach ($activeOccupants as $active) {
+                $activePhone = preg_replace('/[^\d]/', '', (string) ($active['phone'] ?? ''));
+                $activeName = trim((string) ($active['name'] ?? ''));
+                if ($activeName === '' || strlen($activePhone) !== 10 || $activePhone === '0000000000') {
+                    continue;
+                }
+                $normActiveName = preg_replace('/\s+/', ' ', strtolower($activeName));
+
+                // Both clean phone AND normalized name match: exact duplicate person!
+                if ($phone === $activePhone && $normName === $normActiveName) {
+                    $errorMsg = "Occupant '{$name}' ({$phone}) already has an active stay in Room {$active['room_no']} (Stay #{$active['stay_id']}). An occupant cannot be checked into multiple rooms simultaneously.";
+                    throw ApiException::validation(['occupants' => $errorMsg], $errorMsg);
+                }
             }
         }
     }

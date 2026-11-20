@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
 import Screen, { ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
 import Button from '../../components/ui/Button.jsx';
 import BookingDetailSheet from '../../components/sheets/BookingDetailSheet.jsx';
@@ -18,72 +18,113 @@ export default function BookingsScreen() {
   if (isLoading) return <Screen><LoadingState /></Screen>;
   if (isError) return <Screen><ErrorState message={error?.message} onRetry={refetch} /></Screen>;
 
-  const today = todayIso();
+  const today = reservations.find((s) => s.hotel_today)?.hotel_today || todayIso();
   const tomorrow = addDaysIso(today, 1);
   const all = [...reservations].sort((a, b) => a.check_in_date.localeCompare(b.check_in_date) || a.room_no - b.room_no);
+  const isOverdue = (s) => Boolean(s.is_overdue ?? s.check_in_overdue ?? (s.status === 'pending' && s.check_in_date < today));
   const groups = [
-    ['Not came (date passed)', all.filter((s) => s.check_in_date < today)],
-    ['Today', all.filter((s) => s.check_in_date === today)],
-    ['Tomorrow', all.filter((s) => s.check_in_date === tomorrow)],
-    ['Later', all.filter((s) => s.check_in_date > tomorrow)],
+    ['CHECK-IN OVERDUE', all.filter(isOverdue)],
+    ['Today', all.filter((s) => !isOverdue(s) && s.check_in_date === today)],
+    ['Tomorrow', all.filter((s) => !isOverdue(s) && s.check_in_date === tomorrow)],
+    ['Later', all.filter((s) => !isOverdue(s) && s.check_in_date > tomorrow)],
   ].filter(([, list]) => list.length);
+
+  const sections = groups.map(([title, list]) => ({
+    title,
+    data: list,
+    isOverdueGroup: title === 'CHECK-IN OVERDUE',
+  }));
 
   const getRoom = (roomId) => roomsData?.rooms.find((r) => r.id === roomId);
 
-  return (
-    <Screen onRefresh={refetch} refreshing={isRefetching}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Bookings <Text style={styles.count}>{all.length}</Text></Text>
-        <Button title="+ New Booking" variant="primary" size="sm" onPress={() => setSheet({ type: 'new' })} />
-      </View>
+  const renderHeader = () => (
+    <View style={styles.header}>
+      <Text style={styles.title}>Bookings <Text style={styles.count}>{all.length}</Text></Text>
+      <Button title="+ New Booking" variant="primary" size="sm" onPress={() => setSheet({ type: 'new' })} />
+    </View>
+  );
 
-      {all.length ? (
-        groups.map(([title, list]) => (
-          <View key={title} style={{ marginBottom: 10 }}>
-            <Text style={styles.groupLabel}>{title} · {list.length}</Text>
-            {list.map((s) => {
-              const nights = nightsBetween(s.check_in_date, s.check_out_date);
-              const out = addDaysIso(today, nights);
-              const r = getRoom(s.room_id);
-              const hkStatus = r?.housekeepingStatus || s.housekeeping_status || 'ok';
-              const isOccupied = r?.status === 'occupied';
-              const isMaintenance = hkStatus === 'repair';
-              const isReady = hkStatus === 'ok';
-              const isLateArrival = s.status === 'pending' && (s.check_in_date < today || s.check_out_date <= today);
-              const lateArrivalConflict = isLateArrival
-                ? all.find((o) => o.id !== s.id && Number(o.room_id) === Number(s.room_id) && o.status === 'pending' && o.check_in_date < out && today < o.check_out_date)
-                : null;
-              const canIn = s.check_in_date <= today && !isOccupied && !isMaintenance && isReady && !lateArrivalConflict;
+  const renderSectionHeader = ({ section: { title, isOverdueGroup, data } }) => (
+    <View style={[styles.groupHeaderContainer, isOverdueGroup && styles.groupHeaderOverdue]}>
+      <Text style={[styles.groupLabel, isOverdueGroup && styles.groupLabelOverdue]}>
+        {isOverdueGroup ? '⚠️ ' : ''}{title} · {data.length}
+      </Text>
+      {isOverdueGroup && <Text style={styles.groupOverdueSubtext}>Arrival date passed</Text>}
+    </View>
+  );
 
-              return (
-                <Pressable key={s.id} style={styles.row} onPress={() => setSheet({ type: 'open', id: s.id })}>
-                  <View style={styles.rowTop}>
-                    <Text style={styles.bookingCode}>{s.booking_code}</Text>
-                    <View style={styles.roomTag}><Text style={styles.roomTagText}>{s.room_no}</Text></View>
-                  </View>
-                  <Text style={styles.guestName}>{s.guest_name}</Text>
-                  <Text style={styles.meta}>
-                    {s.guest_phone} · {fd(s.check_in_date)} → {fd(s.check_out_date)} · {nights}n · {s.persons}p
-                    {Number(s.advance_paid) > 0 ? ` · advance ${inr(s.advance_paid)}` : ' · advance not paid'}
-                  </Text>
-                  <Text style={[styles.status, { color: lateArrivalConflict ? colors.danger : isOccupied ? colors.info : isMaintenance ? colors.danger : isReady ? colors.success : colors.cleaning }]}>
-                    {lateArrivalConflict ? `Date conflict (${lateArrivalConflict.booking_code})` : isOccupied ? 'Room still occupied' : isMaintenance ? 'Room under maintenance' : isReady ? 'Room ready' : 'Room not ready (cleaning)'}
-                  </Text>
-                  {canIn ? (
-                    <Button
-                      title="Guest came · Check in" variant="success" size="sm"
-                      onPress={() => setSheet({ type: 'checkinFrom', reservation: s })}
-                      style={{ marginTop: 6, alignSelf: 'flex-start' }}
-                    />
-                  ) : null}
-                </Pressable>
-              );
-            })}
+  const renderBookingItem = ({ item: s, section: { isOverdueGroup } }) => {
+    const nights = nightsBetween(s.check_in_date, s.check_out_date);
+    const isOverdueItem = isOverdueGroup || isOverdue(s);
+    const daysOverdue = nightsBetween(s.check_in_date, today);
+    const out = addDaysIso(today, nights);
+    const r = getRoom(s.room_id);
+    const hkStatus = r?.housekeepingStatus || s.housekeeping_status || 'ok';
+    const isOccupied = r?.status === 'occupied';
+    const isMaintenance = hkStatus === 'repair';
+    const isReady = hkStatus === 'ok';
+    const isLateArrival = s.status === 'pending' && (s.check_in_date < today || s.check_out_date <= today);
+    const lateArrivalConflict = isLateArrival
+      ? all.find((o) => o.id !== s.id && Number(o.room_id) === Number(s.room_id) && o.status === 'pending' && o.check_in_date < out && today < o.check_out_date)
+      : null;
+    const canIn = s.check_in_date <= today && !isOccupied && !isMaintenance && isReady && !lateArrivalConflict;
+
+    return (
+      <View key={s.id} style={[styles.row, isOverdueItem && styles.rowOverdue]}>
+        <Pressable onPress={() => setSheet({ type: 'open', id: s.id })}>
+          <View style={styles.rowTop}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+              <Text style={styles.bookingCode}>{s.booking_code}</Text>
+              <View style={styles.roomTag}><Text style={styles.roomTagText}>{s.room_no}</Text></View>
+              {isOverdueItem && (
+                <View style={styles.overdueBadge}>
+                  <Text style={styles.overdueBadgeText}>{daysOverdue > 0 ? `${daysOverdue}d overdue` : 'Overdue'}</Text>
+                </View>
+              )}
+            </View>
           </View>
-        ))
-      ) : (
-        <Text style={styles.empty}>No bookings. Tap "New Booking" when a guest calls or comes to book.</Text>
-      )}
+          <Text style={styles.guestName}>{s.guest_name}</Text>
+          <Text style={styles.meta}>
+            {s.guest_phone} · {fd(s.check_in_date)} → {fd(s.check_out_date)} · {nights}n · {s.persons}p
+            {Number(s.advance_paid) > 0 ? ` · advance ${inr(s.advance_paid)}` : ' · advance not paid'}
+          </Text>
+          <Text style={[styles.status, { color: lateArrivalConflict ? colors.danger : isOccupied ? colors.info : isMaintenance ? colors.danger : isReady ? colors.success : colors.cleaning }]}>
+            {lateArrivalConflict ? `Date conflict (${lateArrivalConflict.booking_code})` : isOccupied ? 'Room still occupied' : isMaintenance ? 'Room under maintenance' : isReady ? 'Room ready' : 'Room not ready (cleaning)'}
+          </Text>
+        </Pressable>
+        {canIn ? (
+          <Button
+            title="Guest came · Check in" variant="success" size="sm"
+            onPress={() => setSheet({ type: 'checkinFrom', reservation: s })}
+            style={{ marginTop: 8, alignSelf: 'flex-start' }}
+          />
+        ) : null}
+      </View>
+    );
+  };
+
+  return (
+    <Screen scroll={false} contentStyle={{ padding: 0 }}>
+      <SectionList
+        sections={sections}
+        keyExtractor={(s) => String(s.id)}
+        renderSectionHeader={renderSectionHeader}
+        renderItem={renderBookingItem}
+        ListHeaderComponent={renderHeader}
+        ListEmptyComponent={
+          <Text style={styles.empty}>No bookings. Tap "New Booking" when a guest calls or comes to book.</Text>
+        }
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={!!isRefetching}
+            onRefresh={refetch}
+            colors={[colors.primary]}
+          />
+        }
+        stickySectionHeadersEnabled={false}
+        keyboardShouldPersistTaps="handled"
+      />
 
       {sheet?.type === 'new' && <NewBookingSheet onClose={() => setSheet(null)} />}
       {sheet?.type === 'open' && (
@@ -101,11 +142,19 @@ export default function BookingsScreen() {
 }
 
 const styles = StyleSheet.create({
+  listContent: { padding: 16, paddingBottom: 32 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   title: { fontFamily: fonts.display, fontSize: 19, color: colors.heading },
   count: { fontFamily: fonts.mono, fontSize: 14, color: colors.textSecondary },
-  groupLabel: { fontFamily: fonts.bodySemibold, fontSize: 12, color: colors.textSecondary, marginBottom: 6, textTransform: 'uppercase' },
+  groupHeaderContainer: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, marginBottom: 6 },
+  groupHeaderOverdue: { backgroundColor: '#FFE4E6', paddingHorizontal: 10, paddingVertical: 6, borderRadius: radii.xs, borderWidth: 1, borderColor: '#FECDD3' },
+  groupLabel: { fontFamily: fonts.bodySemibold, fontSize: 12, color: colors.textSecondary, textTransform: 'uppercase' },
+  groupLabelOverdue: { color: '#9F1239', fontFamily: fonts.bodyBold },
+  groupOverdueSubtext: { fontFamily: fonts.bodySemibold, fontSize: 11, color: '#BE123C' },
   row: { backgroundColor: colors.card, borderRadius: radii.md, borderWidth: 1, borderColor: colors.cardBorder, padding: 12, marginBottom: 8 },
+  rowOverdue: { borderLeftWidth: 3.5, borderLeftColor: '#E11D48', backgroundColor: '#FFFDFC' },
+  overdueBadge: { backgroundColor: '#FFE4E6', borderWidth: 1, borderColor: '#FECDD3', borderRadius: radii.xs, paddingHorizontal: 6, paddingVertical: 2 },
+  overdueBadgeText: { fontFamily: fonts.mono, fontSize: 10.5, color: '#9F1239', fontWeight: '700' },
   rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
   bookingCode: { fontFamily: fonts.mono, fontSize: 12, color: colors.textSecondary },
   roomTag: { backgroundColor: colors.secondaryLight, borderRadius: radii.xs, paddingHorizontal: 6, paddingVertical: 2 },

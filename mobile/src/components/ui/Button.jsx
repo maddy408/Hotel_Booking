@@ -1,3 +1,4 @@
+import { useCallback, useRef } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text } from 'react-native';
 import { colors, fonts, radii } from '../../theme/theme';
 
@@ -12,11 +13,31 @@ const VARIANTS = {
 /** Mirrors the web app's .btn / .btn.go / .btn.blue / .btn.dark / .btn.red classes. */
 export default function Button({ title, children, onPress, variant = 'outline', disabled, loading, size = 'md', style, textStyle }) {
   const v = VARIANTS[variant] || VARIANTS.outline;
-  const isDisabled = disabled || loading;
+  const isDisabled = Boolean(disabled || loading);
+  const lastPressRef = useRef(0);
+
+  const handlePress = useCallback(
+    (e) => {
+      if (isDisabled) return;
+      const now = Date.now();
+      // Guard against rapid duplicate taps within 450ms
+      if (now - lastPressRef.current < 450) {
+        return;
+      }
+      lastPressRef.current = now;
+      onPress?.(e);
+    },
+    [onPress, isDisabled]
+  );
+
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       disabled={isDisabled}
+      hitSlop={size === 'sm' ? { top: 8, bottom: 8, left: 8, right: 8 } : { top: 6, bottom: 6, left: 6, right: 6 }}
+      pressRetentionOffset={{ top: 10, bottom: 10, left: 10, right: 10 }}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: isDisabled, busy: !!loading }}
       style={({ pressed }) => [
         styles.base,
         size === 'sm' && styles.sm,
@@ -28,7 +49,7 @@ export default function Button({ title, children, onPress, variant = 'outline', 
       {loading ? (
         <ActivityIndicator color={v.text} size="small" />
       ) : (
-        <Text style={[styles.text, { color: v.text }, size === 'sm' && styles.textSm, textStyle]}>{title ?? children}</Text>
+        <Text pointerEvents="none" style={[styles.text, { color: v.text }, size === 'sm' && styles.textSm, textStyle]}>{title ?? children}</Text>
       )}
     </Pressable>
   );

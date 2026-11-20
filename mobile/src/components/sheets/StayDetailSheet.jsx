@@ -187,7 +187,7 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
           <Button
             title="Print Invoice"
             variant="outline"
-            size="md"
+            size="sm"
             onPress={() => {
               onClose();
               onPrintInvoice?.(stay.id);
@@ -197,7 +197,7 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
           <Button
             title="Early Checkout"
             variant="outline"
-            size="md"
+            size="sm"
             onPress={() => {
               onClose();
               onEarlyCheckout?.(stay.id);
@@ -208,7 +208,7 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
           <Button
             title="Check Out"
             variant="info"
-            size="md"
+            size="sm"
             onPress={() => {
               onClose();
               onCheckout?.(stay.id);

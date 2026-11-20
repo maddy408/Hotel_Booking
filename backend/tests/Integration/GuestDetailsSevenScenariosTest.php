@@ -83,13 +83,13 @@ final class GuestDetailsSevenScenariosTest extends TestCase
     }
 
     /**
-     * 2. Guest with multiple bookings (e.g. Guest 100954 Luxy or Guest 100471 John Doe)
+     * 2. Guest with multiple bookings (Guest 100471 John Doe)
      */
     public function testScenario2GuestWithMultipleBookings(): void
     {
-        $res = $this->getGuest(100954);
-        $this->assertSame(100954, (int) $res['id']);
-        $this->assertGreaterThan(1, count($res['bookings']), 'Guest 100954 must have multiple bookings');
+        $res = $this->getGuest(100471);
+        $this->assertSame(100471, (int) $res['id']);
+        $this->assertGreaterThan(1, count($res['bookings']), 'Guest 100471 must have multiple bookings');
 
         foreach ($res['bookings'] as $bk) {
             $this->assertArrayHasKey('id', $bk);
@@ -214,5 +214,38 @@ final class GuestDetailsSevenScenariosTest extends TestCase
         $this->assertSame(101, (int) $completedStay['room_no']);
         $this->assertSame(2, (int) $completedStay['persons']);
         $this->assertGreaterThanOrEqual(1, (int) $res['summary']['completedStays']);
+    }
+
+    /**
+     * 8. Restored profile for Guest #100954 Luxy (Phone 6545678900)
+     */
+    public function testRestoredLuxyProfile(): void
+    {
+        $res = $this->getGuest(100954);
+        $this->assertSame(100954, (int) $res['id']);
+        $this->assertSame('Luxy', $res['name']);
+        $this->assertSame('6545678900', $res['phone']);
+
+        // 1 genuine cancelled booking (BK-3256)
+        $this->assertCount(1, $res['bookings']);
+        $this->assertSame('BK-3256', $res['bookings'][0]['booking_code']);
+        $this->assertSame('cancelled', $res['bookings'][0]['status']);
+
+        // Stays and visits must be 0
+        $this->assertEmpty($res['stays'], 'Luxy must have 0 stays');
+        $this->assertSame(0, (int) $res['summary']['totalVisits']);
+        $this->assertSame(0, (int) $res['summary']['completedStays']);
+        $this->assertSame('Not Staying', $res['summary']['currentStayStatus']);
+        $this->assertNull($res['summary']['currentRoomNo']);
+
+        // Outstanding balance must be 0
+        $this->assertSame(0.0, (float) $res['summary']['outstandingBalance']);
+        $this->assertSame(0.0, (float) $res['payment_summary']['outstandingBalance']);
+
+        // Payments must contain only the genuine advance and refund
+        $this->assertCount(2, $res['payments']);
+        $paymentTypes = array_column($res['payments'], 'type');
+        $this->assertContains('advance', $paymentTypes);
+        $this->assertContains('refund', $paymentTypes);
     }
 }

@@ -36,16 +36,18 @@ function roomMatchesFilter(r, f) {
   return r.status === f;
 }
 
+const EMPTY_ARRAY = [];
+
 export default function RoomsScreen({ navigation }) {
   const { data, isLoading, isError, error, refetch, isRefetching } = useRooms();
-  const { data: reservations = [] } = useReservations();
-  const { data: doneStays = [] } = useDoneStays();
+  const { data: reservations = EMPTY_ARRAY } = useReservations();
+  const { data: doneStays = EMPTY_ARRAY } = useDoneStays();
 
   const [selectedDateObj, setSelectedDateObj] = useState(() => new Date());
   const [filter, setFilter] = useState(null);
   const [sheet, setSheet] = useState(null);
 
-  const baseRooms = data?.rooms || [];
+  const baseRooms = data?.rooms || EMPTY_ARRAY;
   const today = todayIso();
   const selectedDateIso = toIsoString(selectedDateObj);
   const isTodaySelected = selectedDateIso === today;
@@ -334,16 +336,25 @@ export default function RoomsScreen({ navigation }) {
           room={sheet.room}
           onClose={() => setSheet(null)}
           onViewStay={(stayId) => setSheet({ type: 'stayDetail', stayId })}
-          onViewInvoice={(stayId) => navigation.navigate('Bills', { screen: 'InvoicePrint', params: { stayId } })}
+          onViewInvoice={(stayId) => {
+            setSheet(null);
+            navigation.navigate('Bills', { screen: 'InvoicePrint', params: { stayId } });
+          }}
           onEarlyCheckout={(stayId) => setSheet({ type: 'checkout', stayId, initialMode: 'early' })}
           onCheckout={(stayId) => setSheet({ type: 'checkout', stayId })}
           onViewBooking={(reservationId) => setSheet({ type: 'booking', reservationId })}
-          onCheckIn={(roomOrReservation) =>
-            sheet.room.status === 'booked'
-              ? setSheet({ type: 'checkin-from-reservation', reservation: roomOrReservation })
-              : setSheet({ type: 'checkin', room: roomOrReservation })
-          }
-          onPreBook={(room) => setSheet({ type: 'newBooking', presetRoom: room })}
+          onCheckIn={(roomOrReservation) => {
+            if (sheet.room.status === 'booked' || roomOrReservation?.booking_code) {
+              setSheet({
+                type: 'checkin-from-reservation',
+                reservation: roomOrReservation,
+                triggerAdvanceError: Number(roomOrReservation.advance_paid ?? 0) <= 0,
+              });
+            } else {
+              setSheet({ type: 'checkin', room: roomOrReservation });
+            }
+          }}
+          onPreBook={(room) => setSheet({ type: 'newBooking', editReservation: { room_id: room.id } })}
         />
       )}
       {sheet?.type === 'stayDetail' && (
@@ -352,17 +363,32 @@ export default function RoomsScreen({ navigation }) {
           onClose={() => setSheet(null)}
           onEarlyCheckout={(stayId) => setSheet({ type: 'checkout', stayId, initialMode: 'early' })}
           onCheckout={(stayId) => setSheet({ type: 'checkout', stayId })}
-          onPrintInvoice={(stayId) => navigation.navigate('Bills', { screen: 'InvoicePrint', params: { stayId } })}
+          onPrintInvoice={(stayId) => {
+            setSheet(null);
+            navigation.navigate('Bills', { screen: 'InvoicePrint', params: { stayId } });
+          }}
         />
       )}
       {sheet?.type === 'checkin' && <CheckInSheet room={sheet.room} onClose={() => setSheet(null)} />}
-      {sheet?.type === 'checkin-from-reservation' && <CheckInSheet reservation={sheet.reservation} onClose={() => setSheet(null)} />}
+      {sheet?.type === 'checkin-from-reservation' && (
+        <CheckInSheet
+          reservation={sheet.reservation}
+          triggerAdvanceError={sheet.triggerAdvanceError}
+          onClose={() => setSheet(null)}
+        />
+      )}
       {sheet?.type === 'checkout' && <CheckoutSheet stayId={sheet.stayId} initialMode={sheet.initialMode} onClose={() => setSheet(null)} />}
       {sheet?.type === 'booking' && (
         <BookingDetailSheet
           reservationId={sheet.reservationId}
           onClose={() => setSheet(null)}
-          onCheckIn={(reservation) => setSheet({ type: 'checkin-from-reservation', reservation })}
+          onCheckIn={(reservation) =>
+            setSheet({
+              type: 'checkin-from-reservation',
+              reservation,
+              triggerAdvanceError: Number(reservation.advance_paid ?? 0) <= 0,
+            })
+          }
           onEdit={(reservation) => setSheet({ type: 'editBooking', editReservation: reservation })}
         />
       )}

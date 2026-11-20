@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Sheet from '../Sheet.jsx';
 import Button from '../ui/Button.jsx';
+import BackButton from '../ui/BackButton.jsx';
 import { Input } from '../ui/Field.jsx';
 import { useStay, useStayBill } from '../../api/stays';
 import { useReservation } from '../../api/reservations';
@@ -118,7 +119,9 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvo
       return (
         <Sheet onClose={onClose}>
           <View style={styles.header}>
+            <BackButton onPress={onClose} size={20} color={colors.heading} enableHardwareBack={false} style={{ marginRight: 4 }} />
             <Text style={styles.headerTitle}>Room {room.roomNo}</Text>
+            <Pressable onPress={onClose} hitSlop={10} style={{ marginLeft: 'auto' }}><Text style={styles.closeX}>×</Text></Pressable>
           </View>
           <View style={styles.body}><Text style={styles.value}>Loading…</Text></View>
         </Sheet>
@@ -144,6 +147,7 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvo
     return (
       <Sheet onClose={onClose}>
         <View style={[styles.header, { backgroundColor: statusColors.occupied.bg, borderBottomColor: statusColors.occupied.border }]}>
+          <BackButton onPress={onClose} size={20} color={colors.heading} enableHardwareBack={false} style={{ marginRight: 4 }} />
           <View style={[styles.roomBadge, { backgroundColor: statusColors.occupied.fg }]}>
             <Text style={styles.roomBadgeText}>{room.roomNo}</Text>
           </View>
@@ -249,11 +253,15 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvo
         </View>
 
         <View style={styles.footer}>
-          <Button title="Close" variant="outline" size="sm" onPress={onClose} style={{ flex: 1 }} />
-          <Button title="View Stay" variant="outline" size="sm" onPress={() => { onClose(); onViewStay?.(stay.id); }} style={{ flex: 1 }} />
-          <Button title="Invoice" variant="outline" size="sm" onPress={() => { onClose(); onViewInvoice?.(stay.id); }} style={{ flex: 1 }} />
-          <Button title="Early Out" variant="outline" size="sm" onPress={() => { onClose(); onEarlyCheckout?.(stay.id); }} style={{ flex: 1, borderColor: colors.warning }} textStyle={{ color: colors.warning }} />
-          <Button title="Check Out" variant="info" size="sm" onPress={() => { onClose(); onCheckout?.(stay.id); }} style={{ flex: 1 }} />
+          <View style={styles.footerRow}>
+            <Button title="Close" variant="outline" size="sm" onPress={onClose} style={{ flex: 1 }} />
+            <Button title="View Stay" variant="outline" size="sm" onPress={() => { onClose(); onViewStay?.(stay.id); }} style={{ flex: 1 }} />
+            <Button title="Invoice" variant="outline" size="sm" onPress={() => { onClose(); onViewInvoice?.(stay.id); }} style={{ flex: 1 }} />
+          </View>
+          <View style={styles.footerRow}>
+            <Button title="Early Out" variant="outline" size="sm" onPress={() => { onClose(); onEarlyCheckout?.(stay.id); }} style={{ flex: 1, borderColor: colors.warning }} textStyle={{ color: colors.warning }} />
+            <Button title="Check Out" variant="info" size="sm" onPress={() => { onClose(); onCheckout?.(stay.id); }} style={{ flex: 1 }} />
+          </View>
         </View>
       </Sheet>
     );
@@ -264,7 +272,11 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvo
     if (isBookingLoading || !reservation) {
       return (
         <Sheet onClose={onClose}>
-          <View style={styles.header}><Text style={styles.headerTitle}>Room {room.roomNo}</Text></View>
+          <View style={styles.header}>
+            <BackButton onPress={onClose} size={20} color={colors.heading} enableHardwareBack={false} style={{ marginRight: 4 }} />
+            <Text style={styles.headerTitle}>Room {room.roomNo}</Text>
+            <Pressable onPress={onClose} hitSlop={10} style={{ marginLeft: 'auto' }}><Text style={styles.closeX}>×</Text></Pressable>
+          </View>
           <View style={styles.body}><Text style={styles.value}>Loading…</Text></View>
         </Sheet>
       );
@@ -276,6 +288,7 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvo
     return (
       <Sheet onClose={onClose}>
         <View style={[styles.header, { backgroundColor: statusColors.booked.bg, borderBottomColor: statusColors.booked.border }]}>
+          <BackButton onPress={onClose} size={20} color={colors.heading} enableHardwareBack={false} style={{ marginRight: 4 }} />
           <View style={[styles.roomBadge, { backgroundColor: statusColors.booked.fg }]}>
             <Text style={styles.roomBadgeText}>{room.roomNo}</Text>
           </View>
@@ -336,6 +349,7 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvo
     return (
       <Sheet onClose={onClose}>
         <View style={[styles.header, { backgroundColor: statusColors.free.bg, borderBottomColor: statusColors.free.border }]}>
+          <BackButton onPress={onClose} size={20} color={colors.heading} enableHardwareBack={false} style={{ marginRight: 4 }} />
           <View style={[styles.roomBadge, { backgroundColor: statusColors.free.fg }]}>
             <Text style={styles.roomBadgeText}>{room.roomNo}</Text>
           </View>
@@ -369,6 +383,7 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvo
     return (
       <Sheet onClose={onClose}>
         <View style={[styles.header, { backgroundColor: statusColors.cleaning.bg, borderBottomColor: statusColors.cleaning.border }]}>
+          <BackButton onPress={onClose} size={20} color={colors.heading} enableHardwareBack={false} style={{ marginRight: 4 }} />
           <View style={[styles.roomBadge, { backgroundColor: statusColors.cleaning.fg }]}>
             <Text style={styles.roomBadgeText}>{room.roomNo}</Text>
           </View>
@@ -403,31 +418,36 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvo
   }
 
   // ----------------------------------------------------------------- REPAIR
-  return (
-    <Sheet onClose={onClose}>
-      <View style={[styles.header, { backgroundColor: statusColors.repair.bg, borderBottomColor: statusColors.repair.border }]}>
-        <View style={[styles.roomBadge, { backgroundColor: statusColors.repair.fg }]}>
-          <Text style={styles.roomBadgeText}>{room.roomNo}</Text>
+  if (room.status === 'repair') {
+    return (
+      <Sheet onClose={onClose}>
+        <View style={[styles.header, { backgroundColor: statusColors.repair.bg, borderBottomColor: statusColors.repair.border }]}>
+          <BackButton onPress={onClose} size={20} color={colors.heading} enableHardwareBack={false} style={{ marginRight: 4 }} />
+          <View style={[styles.roomBadge, { backgroundColor: statusColors.repair.fg }]}>
+            <Text style={styles.roomBadgeText}>{room.roomNo}</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.headerTitle}>Room {room.roomNo} · {room.roomType?.name}</Text>
+            <Text style={styles.headerSubtitle}>Under Repair</Text>
+          </View>
+          <Pressable onPress={onClose} hitSlop={10}><Text style={styles.closeX}>×</Text></Pressable>
         </View>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.headerTitle}>Room {room.roomNo} · {room.roomType?.name}</Text>
-          <Text style={styles.headerSubtitle}>Under Repair</Text>
+        <View style={styles.body}>
+          <Card title="Maintenance Details">
+            <Field label="Floor" value={room.floor === 0 ? 'Ground Floor' : `Floor ${room.floor}`} />
+            <Field label="Room Type" value={room.roomType?.name} />
+            <Field label="Reported Problem" value={room.note || 'Maintenance in progress'} bold color={colors.danger} />
+          </Card>
         </View>
-        <Pressable onPress={onClose} hitSlop={10}><Text style={styles.closeX}>×</Text></Pressable>
-      </View>
-      <View style={styles.body}>
-        <Card title="Maintenance Details">
-          <Field label="Floor" value={room.floor === 0 ? 'Ground Floor' : `Floor ${room.floor}`} />
-          <Field label="Room Type" value={room.roomType?.name} />
-          <Field label="Reported Problem" value={room.note || 'Maintenance in progress'} bold color={colors.danger} />
-        </Card>
-      </View>
-      <View style={styles.footer}>
-        <Button title="Close" variant="outline" size="sm" onPress={onClose} style={{ flex: 1 }} />
-        <Button title="Repair Done · Send for Cleaning" variant="success" size="sm" loading={hkAction.isPending} onPress={() => handleHousekeeping('cleaning')} style={{ flex: 2 }} />
-      </View>
-    </Sheet>
-  );
+        <View style={styles.footer}>
+          <Button title="Close" variant="outline" size="sm" onPress={onClose} style={{ flex: 1 }} />
+          <Button title="Repair Done · Send for Cleaning" variant="success" size="sm" loading={hkAction.isPending} onPress={() => handleHousekeeping('cleaning')} style={{ flex: 2 }} />
+        </View>
+      </Sheet>
+    );
+  }
+
+  return null;
 }
 
 const styles = StyleSheet.create({
@@ -462,5 +482,6 @@ const styles = StyleSheet.create({
   docName: { fontFamily: fonts.bodyMedium, fontSize: 12.5, color: colors.text, flex: 1 },
   docOwner: { fontFamily: fonts.body, fontSize: 11, color: colors.textSecondary },
   docAction: { fontFamily: fonts.bodySemibold, fontSize: 12, color: colors.primary },
-  footer: { flexDirection: 'row', gap: 8, padding: 14, borderTopWidth: 1, borderTopColor: colors.border, flexWrap: 'wrap' },
+  footer: { padding: 14, borderTopWidth: 1, borderTopColor: colors.border, gap: 8 },
+  footerRow: { flexDirection: 'row', gap: 8 },
 });

@@ -39,7 +39,7 @@ export default function LoginScreen() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAwareScrollView contentContainerStyle={styles.wrap} bottomOffset={40}>
+      <KeyboardAwareScrollView contentContainerStyle={styles.wrap} bottomOffset={40} keyboardShouldPersistTaps="handled">
         <View style={styles.card}>
           <View style={styles.crest}>
             <Svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke={colors.primary} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">

@@ -1,7 +1,7 @@
 import { Pressable } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { useNavigation } from '@react-navigation/native';
+import { getFocusedRouteNameFromRoute, useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext.jsx';
 import { colors, fonts } from '../theme/theme';
@@ -14,6 +14,7 @@ import {
   MoreIcon,
   MenuIcon,
 } from '../components/Icons.jsx';
+import BackButton from '../components/ui/BackButton.jsx';
 
 import RoomsScreen from '../screens/rooms/RoomsScreen.jsx';
 import BookingsScreen from '../screens/bookings/BookingsScreen.jsx';
@@ -87,12 +88,18 @@ function GuestsStack() {
       <Stack.Screen
         name="GuestDetails"
         component={GuestDetailsScreen}
-        options={{ title: 'Guest' }}
+        options={{
+          title: 'Guest',
+          headerLeft: () => <BackButton fallbackRoute="GuestsHome" />,
+        }}
       />
       <Stack.Screen
         name="AllReferrals"
         component={AllReferralsScreen}
-        options={{ title: 'Referrals' }}
+        options={{
+          title: 'Referrals',
+          headerLeft: () => <BackButton fallbackRoute="GuestsHome" />,
+        }}
       />
     </Stack.Navigator>
   );
@@ -105,7 +112,10 @@ function BillsStack() {
       <Stack.Screen
         name="InvoicePrint"
         component={InvoicePrintScreen}
-        options={{ title: 'Invoice' }}
+        options={{
+          title: 'Invoice',
+          headerLeft: () => <BackButton fallbackRoute="BillsHome" />,
+        }}
       />
     </Stack.Navigator>
   );
@@ -118,45 +128,69 @@ function MoreStack() {
       <Stack.Screen
         name="Reports"
         component={ReportsScreen}
-        options={{ title: 'Reports' }}
+        options={{
+          title: 'Reports',
+          headerLeft: () => <BackButton fallbackRoute="MoreMenu" />,
+        }}
       />
       <Stack.Screen
         name="RoomMaster"
         component={RoomMasterScreen}
-        options={{ title: 'Room Master' }}
+        options={{
+          title: 'Room Master',
+          headerLeft: () => <BackButton fallbackRoute="MoreMenu" />,
+        }}
       />
       <Stack.Screen
         name="Users"
         component={UsersScreen}
-        options={{ title: 'Users' }}
+        options={{
+          title: 'Users',
+          headerLeft: () => <BackButton fallbackRoute="MoreMenu" />,
+        }}
       />
       <Stack.Screen
         name="SettingsScreen"
         component={SettingsScreen}
-        options={{ title: 'Settings' }}
+        options={{
+          title: 'Settings',
+          headerLeft: () => <BackButton fallbackRoute="MoreMenu" />,
+        }}
       />
     </Stack.Navigator>
   );
 }
 
-export default function MainTabs() {
-  const insets = useSafeAreaInsets();
+const rootScreens = ['RoomsHome', 'BookingsHome', 'DailyOpsHome', 'GuestsHome', 'BillsHome', 'MoreMenu'];
+
+function getTabBarStyle(route, insets) {
   const bottomPadding = Math.max(insets.bottom, 8);
   const tabHeight = 54 + bottomPadding;
+  const baseStyle = {
+    backgroundColor: colors.header,
+    borderTopWidth: 0,
+    height: tabHeight,
+    paddingBottom: bottomPadding,
+    paddingTop: 6,
+  };
+
+  const routeName = getFocusedRouteNameFromRoute(route);
+  if (routeName && !rootScreens.includes(routeName)) {
+    return { display: 'none' };
+  }
+  return baseStyle;
+}
+
+export default function MainTabs() {
+  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerShown: false,
+        tabBarStyle: getTabBarStyle(route, insets),
         tabBarActiveTintColor: '#FFFFFF',
         tabBarInactiveTintColor: 'rgba(255, 255, 255, 0.55)',
-        tabBarStyle: {
-          backgroundColor: colors.header,
-          borderTopWidth: 0,
-          height: tabHeight,
-          paddingBottom: bottomPadding,
-          paddingTop: 6,
-        },
         tabBarActiveBackgroundColor: 'rgba(255, 255, 255, 0.12)',
         tabBarItemStyle: {
           borderRadius: 8,
@@ -168,7 +202,7 @@ export default function MainTabs() {
           fontSize: 10.5,
           fontWeight: '600',
         },
-      }}
+      })}
     >
       <Tab.Screen
         name="Rooms"

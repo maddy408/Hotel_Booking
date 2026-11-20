@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
@@ -23,7 +23,9 @@ const ADVANCE_REQUIRED_MSG = 'Please enter and collect the advance amount before
  * presentation layer (RN views instead of DOM/form elements, DocumentPicker instead
  * of <input type=file>) differs.
  */
-export default function CheckInSheet({ room, reservation, onClose }) {
+const EMPTY_ARRAY = [];
+
+export default function CheckInSheet({ room, reservation, onClose, triggerAdvanceError = false }) {
   const isFromReservation = !!reservation;
   const { data: settings } = useSettings();
   const toast = useToast();
@@ -189,13 +191,13 @@ export default function CheckInSheet({ room, reservation, onClose }) {
   const isPersonsExceeded = roomMaxPersons != null && personCount > Number(roomMaxPersons);
   const personsError = isPersonsExceeded ? `This room allows a maximum of ${roomMaxPersons} persons.` : serverPersonsError;
 
-  const [advanceSubmitted, setAdvanceSubmitted] = useState(false);
+  const [advanceSubmitted, setAdvanceSubmitted] = useState(triggerAdvanceError);
   const [serverAdvanceError, setServerAdvanceError] = useState('');
   const advNum = advance === '' || advance === null ? 0 : Number(advance);
   const isAdvanceEmptyOrZero = isNaN(advNum) || advNum <= 0;
 
   const advanceError = isFromReservation
-    ? (confirmedAdvance <= 0 && (advanceSubmitted || serverAdvanceError) ? ADVANCE_REQUIRED_MSG : '')
+    ? (confirmedAdvance <= 0 && (advanceSubmitted || serverAdvanceError || triggerAdvanceError) ? ADVANCE_REQUIRED_MSG : '')
     : ((advanceSubmitted && isAdvanceEmptyOrZero) || serverAdvanceError ? ADVANCE_REQUIRED_MSG : '');
 
   const { data: lookup } = useGuestLookup(!isFromReservation ? phone : '');
@@ -236,16 +238,22 @@ export default function CheckInSheet({ room, reservation, onClose }) {
     ? allReservations.find((r) => r.id !== reservation?.id && Number(r.room_id) === Number(reservation?.room_id || currentRoom?.id) && r.status === 'pending' && r.check_in_date < out && todayIso() < r.check_out_date)
     : null;
 
-  const { data: preBookingDocs = [] } = useReservationDocuments(isFromReservation ? reservation?.id : null);
+  const { data: preBookingDocs = EMPTY_ARRAY } = useReservationDocuments(isFromReservation ? reservation?.id : null);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [preBookingAssignments, setPreBookingAssignments] = useState({});
 
   useEffect(() => {
-    if (isFromReservation && preBookingDocs?.length > 0) {
+    if (isFromReservation && preBookingDocs.length > 0) {
       setPreBookingAssignments((prev) => {
+        let changed = false;
         const next = { ...prev };
-        for (const doc of preBookingDocs) if (next[doc.id] === undefined) next[doc.id] = occupants.length === 1 ? 0 : null;
-        return next;
+        for (const doc of preBookingDocs) {
+          if (next[doc.id] === undefined) {
+            next[doc.id] = occupants.length === 1 ? 0 : null;
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
       });
     }
   }, [isFromReservation, preBookingDocs, occupants.length]);
@@ -324,10 +332,21 @@ export default function CheckInSheet({ room, reservation, onClose }) {
     }
   };
 
+  const isPending = directCheckIn.isPending || checkInFromReservation.isPending || recordAdvance.isPending;
+  const isSubmittingRef = useRef(false);
+
   const onSubmit = async () => {
+    if (isSubmittingRef.current || isPending) return;
+
     setAdvanceSubmitted(true);
     setPhoneTouched(true);
     setNameTouched(true);
+
+    if (lateArrivalConflict) {
+      const msg = `Late arrival conflict: Dates overlap with reservation ${lateArrivalConflict.booking_code}. Reception must resolve before check-in.`;
+      toast(msg);
+      return;
+    }
 
     if (isRoomOccupied || !isRoomReady) {
       const msg = roomReadinessError || 'Room is not ready for check-in.';
@@ -335,16 +354,20 @@ export default function CheckInSheet({ room, reservation, onClose }) {
       toast(msg);
       return;
     }
+
+    if (!isCapacityValid || isPersonsExceeded) {
+      const msg = `This room allows a maximum of ${roomMaxPersons} persons.`;
+      setServerPersonsError(msg);
+      toast(msg);
+      return;
+    }
+
     if (!isFromReservation && !/^[6-9]\d{9}$/.test(phone || '')) {
       toast('Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.');
       return;
     }
     if (!isFromReservation && !name.trim()) {
       toast('Enter guest name.');
-      return;
-    }
-    if (isPersonsExceeded) {
-      toast(`This room allows a maximum of ${roomMaxPersons} persons.`);
       return;
     }
 
@@ -362,12 +385,23 @@ export default function CheckInSheet({ room, reservation, onClose }) {
       toast('Please enter required details (Name, Gender, 10-digit Phone) for all occupants.');
       return;
     }
-    if (!allOccupantsHaveIdProof || !allDocumentsAssigned) {
-      toast('Every occupant must have an ID proof document attached.');
+
+    if (!allOccupantsHaveIdProof) {
+      toast('Every occupant must have at least one ID proof document attached before check-in can be confirmed.');
       return;
     }
 
-    const occPayload = occupants.map((occ, i) => ({ occupant_number: i + 1, name: (occ.name || '').trim(), gender: (occ.gender || '').trim(), phone: (occ.phone || '').trim() }));
+    if (!allDocumentsAssigned) {
+      toast('Please assign all uploaded ID proof documents to an occupant.');
+      return;
+    }
+
+    const occPayload = occupants.map((occ, i) => ({
+      occupant_number: i + 1,
+      name: (occ.name || '').trim(),
+      gender: (occ.gender || '').trim(),
+      phone: (occ.phone || '').trim(),
+    }));
 
     if (isFromReservation) {
       if (confirmedAdvance <= 0) {
@@ -394,91 +428,149 @@ export default function CheckInSheet({ room, reservation, onClose }) {
       }
     }
 
+    isSubmittingRef.current = true;
+
     try {
       if (isFromReservation) {
         if (selectedFiles.length > 0) {
           const form = new FormData();
-          form.append('id', reservation.id);
-          form.append('persons', occupants.length);
+          form.append('id', String(reservation.id));
+          form.append('persons', String(occupants.length));
           form.append('occupants', JSON.stringify(occPayload));
           form.append('verifyDocuments', 'true');
-          if (Object.keys(preBookingAssignments).length > 0) form.append('preBookingDocAssignments', JSON.stringify(preBookingAssignments));
+          if (Object.keys(preBookingAssignments).length > 0) {
+            form.append('preBookingDocAssignments', JSON.stringify(preBookingAssignments));
+          }
           selectedFiles.forEach((item) => {
             form.append('documents[]', { uri: item.uri, name: item.name, type: item.type });
-            form.append('occupantTargets[]', item.occupantTarget ?? '');
+            form.append('occupantTargets[]', String(item.occupantTarget ?? ''));
           });
-          await checkInFromReservation.mutateAsync(form);
+          await checkInFromReservation.mutateAsync({ id: reservation.id, formData: form });
         } else {
-          await checkInFromReservation.mutateAsync({ id: reservation.id, persons: occupants.length, occupants: occPayload, verifyDocuments: true, preBookingDocAssignments: preBookingAssignments });
+          await checkInFromReservation.mutateAsync({
+            id: reservation.id,
+            persons: occupants.length,
+            occupants: occPayload,
+            verifyDocuments: true,
+            preBookingDocAssignments: preBookingAssignments,
+          });
         }
         toast(`${reservation.guest_name.split(' ')[0]} checked in to Room ${reservation.room_no}.`);
       } else {
         const advVal = advance === '' ? 0 : Number(advance);
         if (selectedFiles.length > 0) {
           const form = new FormData();
-          form.append('roomId', room.id);
-          form.append('phone', phone);
-          form.append('name', name);
+          form.append('roomId', String(room.id));
+          form.append('phone', phone.replace(/\D/g, ''));
+          form.append('name', name.trim());
           form.append('idProofType', idType);
-          form.append('idProofNumber', idNo);
-          if (city) form.append('city', city);
+          form.append('idProofNumber', idNo ? idNo.trim() : '');
+          if (city) form.append('city', city.trim());
           form.append('bookingSource', bookingSource);
-          if (bookingSource === 'Reference – Existing Member' && referredByGuestId) form.append('referredByGuestId', referredByGuestId);
-          if (bookingSource === 'Other' && otherSource) form.append('otherSource', otherSource.trim());
-          form.append('persons', occupants.length);
+          if (bookingSource === 'Reference – Existing Member' && referredByGuestId) {
+            form.append('referredByGuestId', String(referredByGuestId));
+          }
+          if (bookingSource === 'Other' && otherSource) {
+            form.append('otherSource', otherSource.trim());
+          }
+          form.append('persons', String(occupants.length));
           form.append('occupants', JSON.stringify(occPayload));
           form.append('verifyDocuments', 'true');
-          form.append('days', Number(days));
-          form.append('rate', Number(rate));
-          form.append('advanceAmount', advVal);
+          form.append('days', String(Number(days) || 1));
+          form.append('rate', String(Number(rate) || 0));
+          form.append('advanceAmount', String(advVal));
           form.append('advanceMethod', pay);
           selectedFiles.forEach((item) => {
             form.append('documents[]', { uri: item.uri, name: item.name, type: item.type });
-            form.append('occupantTargets[]', item.occupantTarget ?? '');
+            form.append('occupantTargets[]', String(item.occupantTarget ?? ''));
           });
           await directCheckIn.mutateAsync(form);
         } else {
           await directCheckIn.mutateAsync({
-            roomId: room.id, phone, name, idProofType: idType, idProofNumber: idNo, city, bookingSource,
+            roomId: room.id,
+            phone: phone.replace(/\D/g, ''),
+            name: name.trim(),
+            idProofType: idType,
+            idProofNumber: idNo ? idNo.trim() : '',
+            city: city ? city.trim() : null,
+            bookingSource,
             referredByGuestId: bookingSource === 'Reference – Existing Member' ? referredByGuestId : null,
             otherSource: bookingSource === 'Other' ? otherSource.trim() : null,
-            persons: occupants.length, occupants: occPayload, verifyDocuments: true,
-            days: Number(days), rate: Number(rate), advanceAmount: advVal, advanceMethod: pay,
+            persons: occupants.length,
+            occupants: occPayload,
+            verifyDocuments: true,
+            days: Number(days) || 1,
+            rate: Number(rate) || 0,
+            advanceAmount: advVal,
+            advanceMethod: pay,
           });
         }
         toast(`${name} checked in to Room ${room.roomNo}.`);
       }
       onClose();
     } catch (err) {
-      if (err.fields?.room || err.message?.includes('not ready') || err.message?.includes('maintenance') || err.message?.includes('already occupied')) {
-        setServerRoomError(err.fields?.room || err.message);
-        toast(err.fields?.room || err.message);
+      if (err.fields?.room || err.fields?.housekeepingStatus || err.message?.includes('not ready') || err.message?.includes('maintenance') || err.message?.includes('already occupied') || err.message?.includes('Complete the previous checkout')) {
+        const msg = err.fields?.room || err.fields?.housekeepingStatus || err.message;
+        setServerRoomError(msg);
+        toast(msg);
         return;
       }
-      if (err.fields?.advanceAmount || err.message?.includes('advance')) {
+      if (err.fields?.advanceAmount || err.message?.includes('advance amount before check-in') || err.message?.includes('Advance payment is required') || err.message?.includes('advance')) {
         setServerAdvanceError(ADVANCE_REQUIRED_MSG);
         toast(ADVANCE_REQUIRED_MSG);
         return;
       }
-      if (err.fields?.persons || err.message?.includes('allows a maximum of')) {
-        setServerPersonsError(err.fields?.persons || err.message);
-        toast(err.fields?.persons || err.message);
+      if (err.fields?.persons || err.message?.includes('allows a maximum of') || err.message?.includes('positive whole number')) {
+        const msg = err.fields?.persons || err.message;
+        setServerPersonsError(msg);
+        toast(msg);
+        return;
+      }
+      if (err.fields?.occupants || err.message?.includes('Occupant') || err.message?.includes('occupant')) {
+        toast(err.fields?.occupants || err.message);
+        return;
+      }
+      if (err.fields?.documents || err.message?.includes('document') || err.message?.includes('Document')) {
+        toast(err.fields?.documents || err.message);
         return;
       }
       toast(err.message || 'Check-in failed. Please verify the details.');
+    } finally {
+      isSubmittingRef.current = false;
     }
   };
 
-  const isPending = directCheckIn.isPending || checkInFromReservation.isPending || recordAdvance.isPending;
+  const buttonTitle = isPending
+    ? 'Confirming Check-In…'
+    : isRoomOccupied
+      ? `Room ${roomNo} is occupied`
+      : !isRoomReady
+        ? `Room ${roomNo} not ready for check-in`
+        : lateArrivalConflict
+          ? 'Check-In Blocked · Date Conflict'
+          : !isCapacityValid
+            ? 'Check-In Blocked · Room Capacity Exceeded'
+            : !allOccupantsValid
+              ? 'Confirm Check-In · Complete Occupant Details'
+              : !allOccupantsHaveIdProof
+                ? 'Confirm Check-In · Upload ID Proofs'
+                : !allDocumentsAssigned
+                  ? 'Confirm Check-In · Assign All Documents'
+                  : !isAdvanceValid
+                    ? 'Confirm Check-In · Advance Required'
+                    : `Confirm Check-In · Room ${roomNo}`;
+
+  const isFormDirty = Boolean(!isFromReservation && (phone.trim() || name.trim() || idNo.trim() || otherSource.trim()));
 
   return (
-    <Sheet onClose={onClose}>
+    <Sheet onClose={onClose} hasUnsavedChanges={isFormDirty}>
       <SheetHeader
         status={isFromReservation ? 'booked' : 'free'}
         badge={roomNo}
         title={isFromReservation ? 'Pre-Check-In Verification' : 'Direct Check-In'}
         subtitle={isFromReservation ? `${roomTypeName ? roomTypeName + ' · ' : ''}Booking ${reservation.booking_code}` : roomTypeName}
         onClose={onClose}
+        hasUnsavedChanges={isFormDirty}
       />
       <View style={styles.body}>
         {lateArrivalConflict && (
@@ -715,8 +807,12 @@ export default function CheckInSheet({ room, reservation, onClose }) {
         </View>
 
         <Button
-          title={isPending ? 'Confirming Check-In…' : `Confirm Check-In · Room ${roomNo}`}
-          variant="success" size="lg" loading={isPending} onPress={onSubmit}
+          title={buttonTitle}
+          variant="success"
+          size="lg"
+          loading={isPending}
+          disabled={isPending || !allMandatoryChecksPassed}
+          onPress={onSubmit}
         />
         {!allMandatoryChecksPassed && (
           <Text style={styles.hint}>
