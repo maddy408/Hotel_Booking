@@ -140,10 +140,15 @@ final class GuestRepository
         );
 
         $occStmt = $this->db->prepare(
-            "SELECT id, occupant_number, name, gender, phone, is_primary
-             FROM occupants
-             WHERE stay_id = :stay_id AND hotel_id = :hotel_id
-             ORDER BY occupant_number ASC, id ASC"
+            "SELECT o.id, o.occupant_number,
+                    COALESCE(NULLIF(TRIM(o.name), ''), og.name) AS name,
+                    o.gender,
+                    COALESCE(NULLIF(TRIM(o.phone), ''), og.phone) AS phone,
+                    o.is_primary, o.guest_id
+             FROM occupants o
+             LEFT JOIN guests og ON og.id = o.guest_id
+             WHERE o.stay_id = :stay_id AND o.hotel_id = :hotel_id
+             ORDER BY o.occupant_number ASC, o.id ASC"
         );
 
         $refStmt = $this->db->prepare("SELECT id, name FROM guests WHERE id = :id LIMIT 1");

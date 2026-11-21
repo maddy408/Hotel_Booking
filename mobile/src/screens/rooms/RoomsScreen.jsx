@@ -15,11 +15,13 @@ import RoomCalendar from '../../components/RoomCalendar.jsx';
 import { useRooms } from '../../api/rooms';
 import { useReservations } from '../../api/reservations';
 import { useDoneStays } from '../../api/stays';
+import { useSettings } from '../../api/settings';
+import { isRoomOverdue } from '../../lib/overdue';
 import { todayIso, fdWithYear } from '../../lib/format';
 import { colors, fonts, radii } from '../../theme/theme';
 
-const STATUS_ORDER = ['free', 'booked', 'occupied', 'cleaning', 'repair'];
-const STATUS_LABEL = { free: 'Free', booked: 'Booked', occupied: 'Occupied', cleaning: 'Cleaning', repair: 'Repair' };
+const STATUS_ORDER = ['free', 'booked', 'occupied', 'cleaning', 'repair', 'overdue'];
+const STATUS_LABEL = { free: 'Free', booked: 'Booked', occupied: 'Occupied', cleaning: 'Cleaning', repair: 'Repair', overdue: 'Overdue' };
 
 function toIsoString(date) {
   if (!date) return todayIso();
@@ -33,6 +35,7 @@ function toIsoString(date) {
 function roomMatchesFilter(r, f) {
   if (!f) return true;
   if (f === 'booked') return r.status === 'booked' || r.hasPendingBooking === true;
+  if (f === 'overdue') return Boolean(r.isOverdue);
   return r.status === f;
 }
 
@@ -42,6 +45,7 @@ export default function RoomsScreen({ navigation }) {
   const { data, isLoading, isError, error, refetch, isRefetching } = useRooms();
   const { data: reservations = EMPTY_ARRAY } = useReservations();
   const { data: doneStays = EMPTY_ARRAY } = useDoneStays();
+  const { data: settingsData } = useSettings();
 
   const [selectedDateObj, setSelectedDateObj] = useState(() => new Date());
   const [filter, setFilter] = useState(null);
@@ -55,11 +59,11 @@ export default function RoomsScreen({ navigation }) {
   // Compute room status & tile metadata dynamically for selectedDateIso
   const rooms = useMemo(() => {
     if (!baseRooms.length) return [];
+    let computedRooms;
     if (isTodaySelected) {
-      return baseRooms;
-    }
-
-    const isPast = selectedDateIso < today;
+      computedRooms = baseRooms;
+    } else {
+      const isPast = selectedDateIso < today;
 
     return baseRooms.map((room) => {
       const roomId = Number(room.id);
@@ -195,13 +199,20 @@ export default function RoomsScreen({ navigation }) {
         pendingBooking: null,
       };
     });
-  }, [baseRooms, reservations, doneStays, selectedDateIso, today, isTodaySelected]);
+    }
+
+    return computedRooms.map((room) => ({
+      ...room,
+      isOverdue: isRoomOverdue(room, settingsData),
+    }));
+  }, [baseRooms, reservations, doneStays, selectedDateIso, today, isTodaySelected, settingsData]);
 
   const counts = useMemo(() => {
-    const c = { free: 0, booked: 0, occupied: 0, cleaning: 0, repair: 0 };
-    const leaving = rooms.filter((r) => r.status === 'occupied' && r.checkoutPlanned === selectedDateIso).length;
+    const c = { free: 0, booked: 0, occupied: 0, cleaning: 0, repair: 0, overdue: 0 };
+    const leaving = rooms.filter((r) => r.status === 'occupied' && (r.checkoutPlanned ? r.checkoutPlanned.slice(0, 10) === selectedDateIso : false)).length;
     rooms.forEach((r) => {
       if (c[r.status] !== undefined) c[r.status]++;
+      if (r.isOverdue) c.overdue++;
     });
     return { ...c, leaving };
   }, [rooms, selectedDateIso]);
@@ -273,18 +284,35 @@ export default function RoomsScreen({ navigation }) {
       <View style={styles.countGrid}>
         {STATUS_ORDER.map((s) => {
           const active = filter === s;
+          const isOverdueCard = s === 'overdue';
+          const isOccupiedCard = s === 'occupied';
           return (
             <Pressable
               key={s}
-              style={[styles.countCard, active && { borderColor: colors.primary, borderWidth: 2 }]}
+              style={[
+                styles.countCard,
+                isOverdueCard && styles.countCardOverdue,
+                active && (isOverdueCard ? styles.countCardOverdueActive : styles.countCardActive),
+              ]}
               onPress={() => setFilter(active ? null : s)}
+              accessibilityRole="button"
+              accessibilityLabel={`${STATUS_LABEL[s]} rooms filter, count ${counts[s]}`}
             >
-              <Text style={styles.countNum}>{counts[s]}</Text>
-              <Text style={styles.countLabel}>{STATUS_LABEL[s]}</Text>
-              {s === 'occupied' && counts.leaving > 0 ? (
-                <Text style={styles.countSub}>
-                  {counts.leaving} leaving {isTodaySelected ? 'today' : 'on date'}
+              <Text style={[styles.countNum, isOverdueCard && counts.overdue > 0 && styles.countNumOverdue]}>
+                {counts[s]}
+              </Text>
+              <Text style={[styles.countLabel, isOverdueCard && counts.overdue > 0 && styles.countLabelOverdue]}>
+                {STATUS_LABEL[s]}
+              </Text>
+              {isOccupiedCard && (counts.overdue > 0 || counts.leaving > 0) ? (
+                <Text style={[styles.countSub, counts.overdue > 0 ? styles.countSubOverdue : styles.countSubWarning]}>
+                  {counts.overdue > 0
+                    ? `${counts.overdue} overdue${counts.leaving > 0 ? ` · ${counts.leaving} leaving` : ''}`
+                    : `${counts.leaving} leaving ${isTodaySelected ? 'today' : 'on date'}`}
                 </Text>
+              ) : null}
+              {isOverdueCard && counts.overdue > 0 ? (
+                <Text style={[styles.countSub, styles.countSubOverdue]}>Action needed</Text>
               ) : null}
             </Pressable>
           );
@@ -292,12 +320,14 @@ export default function RoomsScreen({ navigation }) {
       </View>
 
       {filter && (
-        <View style={styles.filterBanner}>
-          <Text style={styles.filterText}>
+        <View style={[styles.filterBanner, filter === 'overdue' && styles.filterBannerOverdue]}>
+          <Text style={[styles.filterText, filter === 'overdue' && styles.filterTextOverdue]}>
             Showing {STATUS_LABEL[filter]} rooms ({rooms.filter((r) => roomMatchesFilter(r, filter)).length})
           </Text>
           <Pressable onPress={() => setFilter(null)} style={styles.clearFilterBtn} hitSlop={8}>
-            <Text style={styles.clearFilterText}>Show all {rooms.length} rooms</Text>
+            <Text style={[styles.clearFilterText, filter === 'overdue' && styles.clearFilterTextOverdue]}>
+              Show all {rooms.length} rooms
+            </Text>
           </Pressable>
         </View>
       )}
@@ -310,6 +340,7 @@ export default function RoomsScreen({ navigation }) {
               <RoomTile
                 key={r.id}
                 room={r}
+                settings={settingsData}
                 onPress={() => setSheet({ type: 'roomDetails', room: r })}
                 onOpenBooking={(bookingId) => setSheet({ type: 'booking', reservationId: bookingId })}
               />
@@ -320,7 +351,9 @@ export default function RoomsScreen({ navigation }) {
 
       {floors.length === 0 ? (
         <View style={{ paddingVertical: 24, alignItems: 'center' }}>
-          <Text style={{ fontFamily: fonts.body, color: colors.textSecondary }}>No rooms match this filter.</Text>
+          <Text style={{ fontFamily: fonts.body, color: colors.textSecondary }}>
+            No {filter ? (STATUS_LABEL[filter]?.toLowerCase() || filter) : ''} rooms.
+          </Text>
         </View>
       ) : null}
 
@@ -329,7 +362,7 @@ export default function RoomsScreen({ navigation }) {
           below are fully functional against the live backend. */}
 
       {sheet?.type === 'direct' && (
-        <DirectCheckInPicker rooms={rooms} onClose={() => setSheet(null)} onPick={(room) => setSheet({ type: 'checkin', room })} />
+        <DirectCheckInPicker rooms={baseRooms} onClose={() => setSheet(null)} onPick={(room) => setSheet({ type: 'checkin', room })} />
       )}
       {sheet?.type === 'roomDetails' && (
         <RoomDetailsSheet
@@ -363,9 +396,9 @@ export default function RoomsScreen({ navigation }) {
           onClose={() => setSheet(null)}
           onEarlyCheckout={(stayId) => setSheet({ type: 'checkout', stayId, initialMode: 'early' })}
           onCheckout={(stayId) => setSheet({ type: 'checkout', stayId })}
-          onPrintInvoice={(stayId) => {
+          onPrintInvoice={(stayId, stay) => {
             setSheet(null);
-            navigation.navigate('Bills', { screen: 'InvoicePrint', params: { stayId } });
+            navigation.navigate('Bills', { screen: 'InvoicePrint', params: { stayId, stay } });
           }}
         />
       )}
@@ -394,7 +427,7 @@ export default function RoomsScreen({ navigation }) {
       )}
       {sheet?.type === 'housekeeping' && <HousekeepingSheet room={sheet.room} onClose={() => setSheet(null)} />}
       {(sheet?.type === 'newBooking' || sheet?.type === 'editBooking') && (
-        <NewBookingSheet editReservation={sheet.editReservation} onClose={() => setSheet(null)} />
+        <NewBookingSheet preSelectedRoom={sheet.preSelectedRoom} editReservation={sheet.editReservation} onClose={() => setSheet(null)} />
       )}
     </Screen>
   );
@@ -426,12 +459,19 @@ const styles = StyleSheet.create({
   resetDateText: { fontFamily: fonts.bodySemibold, fontSize: 11, color: colors.primary },
   countGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
   countCard: {
-    flexGrow: 1, minWidth: '18%', backgroundColor: colors.card, borderRadius: radii.md, borderWidth: 1,
-    borderColor: colors.cardBorder, padding: 10, alignItems: 'center',
+    flexGrow: 1, minWidth: '29%', backgroundColor: colors.card, borderRadius: radii.md, borderWidth: 1,
+    borderColor: colors.cardBorder, padding: 9, alignItems: 'center',
   },
+  countCardActive: { borderColor: colors.primary, borderWidth: 2 },
+  countCardOverdue: { borderColor: colors.dangerBorder },
+  countCardOverdueActive: { borderColor: colors.danger, borderWidth: 2, backgroundColor: colors.dangerBg },
   countNum: { fontFamily: fonts.display, fontSize: 20, color: colors.heading },
+  countNumOverdue: { color: colors.danger },
   countLabel: { fontFamily: fonts.bodySemibold, fontSize: 11, color: colors.textSecondary },
+  countLabelOverdue: { color: colors.danger, fontFamily: fonts.bodyBold },
   countSub: { fontFamily: fonts.body, fontSize: 9.5, color: colors.warning, marginTop: 2 },
+  countSubOverdue: { fontFamily: fonts.bodySemibold, fontSize: 9.5, color: colors.danger, marginTop: 2 },
+  countSubWarning: { fontFamily: fonts.body, fontSize: 9.5, color: colors.warning, marginTop: 2 },
   filterBanner: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -442,9 +482,12 @@ const styles = StyleSheet.create({
     borderRadius: radii.sm,
     marginBottom: 10,
   },
+  filterBannerOverdue: { backgroundColor: colors.dangerBg },
   filterText: { fontFamily: fonts.bodySemibold, fontSize: 12.5, color: colors.primary },
+  filterTextOverdue: { color: colors.danger },
   clearFilterBtn: { paddingVertical: 2, paddingHorizontal: 6 },
   clearFilterText: { fontFamily: fonts.bodyBold, fontSize: 12, color: colors.primary, textDecorationLine: 'underline' },
+  clearFilterTextOverdue: { color: colors.danger },
   floorLabel: { fontFamily: fonts.bodySemibold, fontSize: 13, color: colors.textSecondary, marginBottom: 8, marginTop: 4 },
   tileGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
 });

@@ -43,7 +43,12 @@ class OccupantRepository
     public function findByStay(int $stayId, int $hotelId): array
     {
         $stmt = $this->db->prepare(
-            'SELECT o.*, g.name AS primary_guest_name, g.phone AS primary_guest_phone
+            'SELECT o.id, o.hotel_id, o.stay_id, o.occupant_number,
+                    COALESCE(NULLIF(TRIM(o.name), ""), g.name) AS name,
+                    o.gender,
+                    COALESCE(NULLIF(TRIM(o.phone), ""), g.phone) AS phone,
+                    o.is_primary, o.guest_id, o.created_at, o.updated_at,
+                    g.name AS primary_guest_name, g.phone AS primary_guest_phone
              FROM occupants o
              LEFT JOIN guests g ON g.id = o.guest_id
              WHERE o.stay_id = :stay_id AND o.hotel_id = :hotel_id

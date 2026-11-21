@@ -166,4 +166,45 @@ describe('Mobile Invoice Print & Calculation Parity with Web', () => {
     assert.ok(mockHtml.includes('996311'));
     assert.ok(mockHtml.includes('Balance Due: ₹3,600.00'));
   });
+
+  it('7. Synthesizes proforma invoice preview for active in-house stays when no finalized invoice exists', async () => {
+    const { buildProformaInvoiceData } = await import('../lib/proformaInvoice.js');
+    const mockContext = {
+      stay: {
+        id: 14,
+        hotel_id: 1,
+        room_no: '301',
+        room_type_name: 'Deluxe Suite',
+        guest_name: 'Ananya Raooo',
+        guest_phone: '9989015824',
+        check_in_date: '2026-11-09',
+        checkout_planned: '2026-11-14',
+        rate: 2200,
+        advance_paid: 2000,
+      },
+      guest: {
+        id: 1,
+        name: 'Ananya Raooo',
+        phone: '9989015824',
+        payments: [
+          { id: 1, stay_id: 14, type: 'advance', amount: 2000, status: 'successful' },
+        ],
+      },
+    };
+
+    const data = buildProformaInvoiceData({
+      stay: mockContext.stay,
+      guest: mockContext.guest,
+      stayId: 14,
+    });
+    assert.ok(data.invoice);
+    assert.equal(data.invoice.is_proforma, true);
+    assert.equal(data.invoice.invoice_number, 'TC-PROFORMA-0014');
+    assert.equal(data.stay.guest_name, 'Ananya Raooo');
+    assert.equal(data.stay.room_no, '301');
+    assert.equal(data.invoice.room_amount, 11000); // 5 nights * 2200
+    assert.equal(data.invoice.total_amount, 11550); // 11000 + 550 GST
+    assert.equal(data.paymentSummary.advancePaid, 2000);
+    assert.equal(data.paymentSummary.balance, 9550);
+  });
 });

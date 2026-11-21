@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
 import Screen, { ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
 import Button from '../../components/ui/Button.jsx';
+import SearchInput from '../../components/ui/SearchInput.jsx';
 import BookingDetailSheet from '../../components/sheets/BookingDetailSheet.jsx';
 import NewBookingSheet from '../../components/sheets/NewBookingSheet.jsx';
 import CheckInSheet from '../../components/sheets/CheckInSheet.jsx';
@@ -14,19 +15,31 @@ export default function BookingsScreen() {
   const { data: reservations, isLoading, isError, error, refetch, isRefetching } = useReservations();
   const { data: roomsData } = useRooms();
   const [sheet, setSheet] = useState(null);
+  const [search, setSearch] = useState('');
 
-  if (isLoading) return <Screen><LoadingState /></Screen>;
-  if (isError) return <Screen><ErrorState message={error?.message} onRetry={refetch} /></Screen>;
-
-  const today = reservations.find((s) => s.hotel_today)?.hotel_today || todayIso();
+  const today = reservations?.find((s) => s.hotel_today)?.hotel_today || todayIso();
   const tomorrow = addDaysIso(today, 1);
-  const all = [...reservations].sort((a, b) => a.check_in_date.localeCompare(b.check_in_date) || a.room_no - b.room_no);
+  const allReservations = reservations || [];
+  const all = allReservations;
+
+  const filteredReservations = useMemo(() => {
+    const sorted = [...allReservations].sort((a, b) => a.check_in_date.localeCompare(b.check_in_date) || a.room_no - b.room_no);
+    if (!search.trim()) return sorted;
+    const q = search.toLowerCase().trim();
+    return sorted.filter((s) => (
+      (s.booking_code && s.booking_code.toLowerCase().includes(q)) ||
+      (s.guest_name && s.guest_name.toLowerCase().includes(q)) ||
+      (s.guest_phone && s.guest_phone.includes(q)) ||
+      (s.room_no && String(s.room_no).includes(q))
+    ));
+  }, [allReservations, search]);
+
   const isOverdue = (s) => Boolean(s.is_overdue ?? s.check_in_overdue ?? (s.status === 'pending' && s.check_in_date < today));
   const groups = [
-    ['CHECK-IN OVERDUE', all.filter(isOverdue)],
-    ['Today', all.filter((s) => !isOverdue(s) && s.check_in_date === today)],
-    ['Tomorrow', all.filter((s) => !isOverdue(s) && s.check_in_date === tomorrow)],
-    ['Later', all.filter((s) => !isOverdue(s) && s.check_in_date > tomorrow)],
+    ['CHECK-IN OVERDUE', filteredReservations.filter(isOverdue)],
+    ['Today', filteredReservations.filter((s) => !isOverdue(s) && s.check_in_date === today)],
+    ['Tomorrow', filteredReservations.filter((s) => !isOverdue(s) && s.check_in_date === tomorrow)],
+    ['Later', filteredReservations.filter((s) => !isOverdue(s) && s.check_in_date > tomorrow)],
   ].filter(([, list]) => list.length);
 
   const sections = groups.map(([title, list]) => ({
@@ -37,12 +50,23 @@ export default function BookingsScreen() {
 
   const getRoom = (roomId) => roomsData?.rooms.find((r) => r.id === roomId);
 
-  const renderHeader = () => (
-    <View style={styles.header}>
-      <Text style={styles.title}>Bookings <Text style={styles.count}>{all.length}</Text></Text>
-      <Button title="+ New Booking" variant="primary" size="sm" onPress={() => setSheet({ type: 'new' })} />
+  const renderHeader = useMemo(() => (
+    <View style={styles.headerContainer}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Bookings <Text style={styles.count}>{filteredReservations.length}</Text></Text>
+        <Button title="+ New Booking" variant="primary" size="sm" onPress={() => setSheet({ type: 'new' })} />
+      </View>
+      <SearchInput
+        placeholder="Search booking, guest, phone or room…"
+        value={search}
+        onChangeText={setSearch}
+        style={{ marginTop: 6, marginBottom: 10 }}
+      />
     </View>
-  );
+  ), [filteredReservations.length, search]);
+
+  if (isLoading) return <Screen><LoadingState /></Screen>;
+  if (isError) return <Screen><ErrorState message={error?.message} onRetry={refetch} /></Screen>;
 
   const renderSectionHeader = ({ section: { title, isOverdueGroup, data } }) => (
     <View style={[styles.groupHeaderContainer, isOverdueGroup && styles.groupHeaderOverdue]}>
@@ -143,6 +167,7 @@ export default function BookingsScreen() {
 
 const styles = StyleSheet.create({
   listContent: { padding: 16, paddingBottom: 32 },
+  headerContainer: { marginBottom: 6 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
   title: { fontFamily: fonts.display, fontSize: 19, color: colors.heading },
   count: { fontFamily: fonts.mono, fontSize: 14, color: colors.textSecondary },

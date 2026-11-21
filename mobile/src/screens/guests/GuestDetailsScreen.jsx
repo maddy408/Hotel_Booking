@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { Image, Pressable, StyleSheet, Text, View, Alert } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import Screen, { ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
@@ -9,7 +9,8 @@ import BookingDetailSheet from '../../components/sheets/BookingDetailSheet.jsx';
 import CheckoutSheet from '../../components/sheets/CheckoutSheet.jsx';
 import { useGuest } from '../../api/guests';
 import { useUploadIdImage, fetchIdImageLocalUri } from '../../api/idImage';
-import { shareOccupantDocument, useDeleteOccupantDocument } from '../../api/occupantDocuments';
+import { viewOccupantDocument, useDeleteOccupantDocument } from '../../api/occupantDocuments';
+import DocumentViewerSheet from '../../components/sheets/DocumentViewerSheet.jsx';
 import { useToast } from '../../components/ToastContext.jsx';
 import { fd, inr } from '../../lib/format';
 import { colors, fonts, radii } from '../../theme/theme';
@@ -26,6 +27,8 @@ export default function GuestDetailsScreen({ route, navigation }) {
   const [loadingDocId, setLoadingDocId] = useState(null);
   const [idPhotoUri, setIdPhotoUri] = useState(null);
   const [loadingPhoto, setLoadingPhoto] = useState(false);
+  const [pendingPhoto, setPendingPhoto] = useState(null);
+  const isUploadingPhotoRef = useRef(false);
 
   const bookings = guest?.bookings || [];
   const stays = guest?.stays || [];
@@ -101,18 +104,68 @@ export default function GuestDetailsScreen({ route, navigation }) {
 
       if (!result.canceled && result.assets && result.assets[0]) {
         const asset = result.assets[0];
-        const file = {
+
+        // Size check (5 MB)
+        if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
+          const msg = 'Image must be 5 MB or smaller.';
+          toast(msg);
+          Alert.alert('File Too Large', msg);
+          return;
+        }
+
+        // Format check
+        const mime = asset.mimeType || 'image/jpeg';
+        if (!mime.includes('image/jpeg') && !mime.includes('image/png') && !mime.includes('image/webp') && !mime.includes('image/jpg')) {
+          const msg = 'Only JPEG, PNG, or WebP images are allowed.';
+          toast(msg);
+          Alert.alert('Unsupported Format', msg);
+          return;
+        }
+
+        setPendingPhoto({
           uri: asset.uri,
           name: asset.fileName || `guest-${guestId}-id.jpg`,
-          type: asset.mimeType || 'image/jpeg',
-        };
-        await uploadIdImage.mutateAsync({ guestId, file });
-        toast('Guest ID photo uploaded successfully.');
-        setIdPhotoUri(null);
-        refetch();
+          type: mime,
+          size: asset.fileSize,
+        });
       }
     } catch (e) {
-      toast(e.message || 'Photo upload failed.');
+      toast(e.message || 'Could not pick photo from gallery.');
+    }
+  };
+
+  const handleSaveUploadPhoto = async () => {
+    if (!pendingPhoto || !guestId) return;
+    if (isUploadingPhotoRef.current || uploadIdImage.isPending) return;
+
+    isUploadingPhotoRef.current = true;
+    try {
+      const file = {
+        uri: pendingPhoto.uri,
+        name: pendingPhoto.name || `guest-${guestId}-id.jpg`,
+        type: pendingPhoto.type || 'image/jpeg',
+      };
+      await uploadIdImage.mutateAsync({ guestId, file });
+      toast('Guest ID photo uploaded successfully.');
+      setPendingPhoto(null);
+
+      // Load and display the saved photo directly from backend
+      setLoadingPhoto(true);
+      try {
+        const loadedUri = await fetchIdImageLocalUri(guestId);
+        setIdPhotoUri(loadedUri);
+      } catch {
+        // Fallback to local URI
+        setIdPhotoUri(pendingPhoto.uri);
+      } finally {
+        setLoadingPhoto(false);
+      }
+
+      refetch();
+    } catch (e) {
+      toast(e.message || 'Photo upload failed. Check connection.');
+    } finally {
+      isUploadingPhotoRef.current = false;
     }
   };
 
@@ -128,15 +181,8 @@ export default function GuestDetailsScreen({ route, navigation }) {
     }
   };
 
-  const handleOpenDoc = async (doc) => {
-    try {
-      setLoadingDocId(doc.id);
-      await shareOccupantDocument(doc.id, doc.original_filename);
-    } catch (e) {
-      toast(e.message || 'Could not open document.');
-    } finally {
-      setLoadingDocId(null);
-    }
+  const handleOpenDoc = (doc) => {
+    setSheet({ type: 'document', doc });
   };
 
   const handleDeleteDoc = (docId) => {
@@ -403,30 +449,62 @@ export default function GuestDetailsScreen({ route, navigation }) {
           {/* Photo ID preview / upload */}
           <View style={styles.photoSection}>
             <Text style={styles.fieldLabel}>Photo ID Document</Text>
-            {idPhotoUri ? (
+
+            {/* Pending unuploaded photo preview */}
+            {pendingPhoto ? (
+              <View style={styles.pendingPreviewBox}>
+                <Text style={styles.pendingPreviewTitle}>Selected Photo Preview</Text>
+                <Image source={{ uri: pendingPhoto.uri }} style={styles.idPhotoImage} resizeMode="contain" />
+                <Text style={styles.previewMeta}>
+                  {pendingPhoto.name} {pendingPhoto.size ? `· ${(pendingPhoto.size / 1024).toFixed(1)} KB` : ''}
+                </Text>
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                  <Button
+                    title={uploadIdImage.isPending ? 'Uploading…' : 'Save / Upload'}
+                    variant="primary"
+                    size="sm"
+                    loading={uploadIdImage.isPending}
+                    disabled={uploadIdImage.isPending}
+                    onPress={handleSaveUploadPhoto}
+                  />
+                  <Button
+                    title="Cancel / Remove"
+                    variant="outline"
+                    size="sm"
+                    disabled={uploadIdImage.isPending}
+                    onPress={() => setPendingPhoto(null)}
+                  />
+                </View>
+              </View>
+            ) : null}
+
+            {/* Current saved photo preview */}
+            {!pendingPhoto && idPhotoUri ? (
               <View style={{ alignItems: 'center', gap: 8, marginVertical: 8 }}>
                 <Image source={{ uri: idPhotoUri }} style={styles.idPhotoImage} resizeMode="contain" />
                 <Button title="Hide Photo" variant="outline" size="sm" onPress={() => setIdPhotoUri(null)} />
               </View>
             ) : null}
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
-              {(guest.hasIdImage || guest.id_image_path) && (
+
+            {!pendingPhoto && (
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
+                {(guest.hasIdImage || guest.id_image_path) && (
+                  <Button
+                    title={loadingPhoto ? 'Loading…' : '👁️ View ID Photo'}
+                    variant="outline"
+                    size="sm"
+                    loading={loadingPhoto}
+                    onPress={handleViewIdPhoto}
+                  />
+                )}
                 <Button
-                  title={loadingPhoto ? 'Loading…' : '👁️ View ID Photo'}
+                  title="📷 Upload Photo"
                   variant="outline"
                   size="sm"
-                  loading={loadingPhoto}
-                  onPress={handleViewIdPhoto}
+                  onPress={handlePickIdPhoto}
                 />
-              )}
-              <Button
-                title={uploadIdImage.isPending ? 'Uploading…' : '📷 Upload ID Photo'}
-                variant="outline"
-                size="sm"
-                loading={uploadIdImage.isPending}
-                onPress={handlePickIdPhoto}
-              />
-            </View>
+              </View>
+            )}
           </View>
         </View>
       )}
@@ -521,7 +599,19 @@ export default function GuestDetailsScreen({ route, navigation }) {
                     title="View Invoice →"
                     variant="outline"
                     size="sm"
-                    onPress={() => navigation.navigate('Bills', { screen: 'InvoicePrint', params: { stayId: st.id } })}
+                    onPress={() => navigation.navigate('Bills', {
+                      screen: 'InvoicePrint',
+                      params: {
+                        stayId: st.id,
+                        stay: {
+                          ...st,
+                          guest_name: st.guest_name || guest.name,
+                          guest_phone: st.guest_phone || guest.phone,
+                          guest_gstin: st.guest_gstin || guest.id_proof_number || null,
+                        },
+                        guest,
+                      },
+                    })}
                   />
                   {st.status === 'in_house' && (
                     <Button
@@ -655,6 +745,12 @@ export default function GuestDetailsScreen({ route, navigation }) {
           onClose={() => setSheet(null)}
         />
       )}
+      {sheet?.type === 'document' && (
+        <DocumentViewerSheet
+          doc={sheet.doc}
+          onClose={() => setSheet(null)}
+        />
+      )}
     </Screen>
   );
 }
@@ -714,6 +810,9 @@ const styles = StyleSheet.create({
   fieldVal: { fontFamily: fonts.bodyMedium, fontSize: 12.5, color: colors.heading, maxWidth: '60%', textAlign: 'right' },
   fieldValMono: { fontFamily: fonts.monoBold, fontSize: 12.5, color: colors.heading },
   photoSection: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.borderSubtle },
+  pendingPreviewBox: { marginVertical: 8, padding: 10, backgroundColor: colors.surfaceSecondary, borderRadius: radii.md, borderWidth: 1, borderColor: colors.primary, alignItems: 'center', gap: 6 },
+  pendingPreviewTitle: { fontFamily: fonts.bodyBold, fontSize: 13, color: colors.primary, alignSelf: 'flex-start' },
+  previewMeta: { fontFamily: fonts.mono, fontSize: 11, color: colors.textSecondary },
   idPhotoImage: { width: '100%', height: 180, borderRadius: radii.sm, backgroundColor: '#000' },
   cardItem: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.sm, padding: 10, gap: 4 },
   cardItemTitle: { fontFamily: fonts.bodyBold, fontSize: 13.5, color: colors.heading },

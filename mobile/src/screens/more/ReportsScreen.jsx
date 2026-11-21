@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 import Screen from '../../components/ui/Screen.jsx';
 import Button from '../../components/ui/Button.jsx';
 import { Input } from '../../components/ui/Field.jsx';
-import { useTodayReport, useDayEndReport, useOccupancyReport, useRevenueReport, downloadInvoicesCsv } from '../../api/reports';
+import { useTodayReport, useDayEndReport, useOccupancyReport, useRevenueReport, downloadInvoicesCsv, openDownloadedCsv } from '../../api/reports';
 import { useToast } from '../../components/ToastContext.jsx';
 import { addDaysIso, fd, inr, todayIso } from '../../lib/format';
 import { colors, fonts, radii } from '../../theme/theme';
@@ -32,11 +32,38 @@ export default function ReportsScreen() {
   const [exporting, setExporting] = useState(false);
 
   const exportCsv = async () => {
+    // Prevent duplicate downloads from rapid repeated taps
+    if (exporting) return;
     setExporting(true);
     try {
-      await downloadInvoicesCsv(range.from, range.to);
+      const result = await downloadInvoicesCsv(range.from, range.to);
+      const filename = result?.filename || 'invoices.csv';
+      const fileToOpen = result?.localCacheUri || result?.uri;
+
+      // Show success message only after the file is actually saved
+      toast(`Saved ${filename} to Downloads.`);
+
+      Alert.alert(
+        'CSV Downloaded',
+        `Successfully saved ${filename} to your Downloads folder.`,
+        [
+          { text: 'Done', style: 'cancel' },
+          {
+            text: 'Open File',
+            onPress: async () => {
+              try {
+                if (fileToOpen) {
+                  await openDownloadedCsv(fileToOpen);
+                }
+              } catch (openErr) {
+                toast(openErr.message || 'Could not open CSV file.');
+              }
+            },
+          },
+        ]
+      );
     } catch (err) {
-      toast(err.message);
+      toast(err.message || 'Export failed.');
     } finally {
       setExporting(false);
     }
@@ -74,7 +101,14 @@ export default function ReportsScreen() {
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>Revenue (last 7 days)</Text>
-          <Button title={exporting ? 'Exporting…' : 'Export CSV'} variant="outline" size="sm" loading={exporting} onPress={exportCsv} />
+          <Button
+            title={exporting ? 'Exporting…' : 'Export CSV'}
+            variant="outline"
+            size="sm"
+            loading={exporting}
+            disabled={exporting}
+            onPress={exportCsv}
+          />
         </View>
         {revenue ? (
           <SummaryRow items={[

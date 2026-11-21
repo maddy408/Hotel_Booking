@@ -63,6 +63,13 @@ final class UserRepository
         return $stmt->fetch() !== false;
     }
 
+    public function usernameExistsExcept(string $username, int $excludeId): bool
+    {
+        $stmt = $this->db->prepare('SELECT 1 FROM users WHERE username = :username AND id != :exclude_id LIMIT 1');
+        $stmt->execute(['username' => $username, 'exclude_id' => $excludeId]);
+        return $stmt->fetch() !== false;
+    }
+
     public function create(int $hotelId, int $roleId, string $name, string $username, ?string $email, ?string $phone, string $passwordHash): int
     {
         $stmt = $this->db->prepare(
@@ -81,19 +88,34 @@ final class UserRepository
         return (int) $this->db->lastInsertId();
     }
 
-    public function update(int $id, string $name, ?string $email, ?string $phone, int $roleId, bool $isActive): void
+    public function update(int $id, string $name, ?string $email, ?string $phone, int $roleId, bool $isActive, ?string $username = null, ?string $passwordHash = null): void
     {
-        $stmt = $this->db->prepare(
-            'UPDATE users SET name = :name, email = :email, phone = :phone, role_id = :role_id, is_active = :is_active WHERE id = :id'
-        );
-        $stmt->execute([
+        $fields = [
+            'name = :name',
+            'email = :email',
+            'phone = :phone',
+            'role_id = :role_id',
+            'is_active = :is_active',
+        ];
+        $params = [
             'name' => $name,
             'email' => $email,
             'phone' => $phone,
             'role_id' => $roleId,
             'is_active' => $isActive ? 1 : 0,
             'id' => $id,
-        ]);
+        ];
+        if ($username !== null && $username !== '') {
+            $fields[] = 'username = :username';
+            $params['username'] = $username;
+        }
+        if ($passwordHash !== null && $passwordHash !== '') {
+            $fields[] = 'password_hash = :password_hash';
+            $params['password_hash'] = $passwordHash;
+        }
+        $sql = 'UPDATE users SET ' . implode(', ', $fields) . ' WHERE id = :id';
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
     }
 
     public function updatePassword(int $id, string $passwordHash): void

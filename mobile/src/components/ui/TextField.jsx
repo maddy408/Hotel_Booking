@@ -1,22 +1,27 @@
-import { useState } from 'react';
+import { forwardRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { colors, fonts, radii } from '../../theme/theme';
 import { EyeIcon, EyeOffIcon } from '../Icons.jsx';
 
-export default function TextField({
-  label,
-  error,
-  style,
-  required,
-  isPassword,
-  secureTextEntry,
-  ...inputProps
-}) {
+const TextField = forwardRef(function TextField(
+  {
+    label,
+    error,
+    style,
+    required,
+    isPassword,
+    secureTextEntry,
+    containerRef,
+    onLayout,
+    ...inputProps
+  },
+  ref
+) {
   const [showPassword, setShowPassword] = useState(false);
   const isSecure = isPassword ? !showPassword : secureTextEntry;
 
   return (
-    <View style={[styles.wrap, style]}>
+    <View ref={containerRef} onLayout={onLayout} style={[styles.wrap, style]}>
       {label ? (
         <Text style={styles.label}>
           {label}
@@ -25,6 +30,7 @@ export default function TextField({
       ) : null}
       <View style={styles.inputContainer}>
         <TextInput
+          ref={ref}
           placeholderTextColor={colors.textSecondary}
           style={[
             styles.input,
@@ -32,6 +38,7 @@ export default function TextField({
             isPassword ? { paddingRight: 42 } : null,
           ]}
           secureTextEntry={isSecure}
+          accessibilityInvalid={!!error}
           {...inputProps}
         />
         {isPassword ? (
@@ -49,10 +56,16 @@ export default function TextField({
           </Pressable>
         ) : null}
       </View>
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      {error ? (
+        <Text style={styles.error} accessibilityRole="alert">
+          {error}
+        </Text>
+      ) : null}
     </View>
   );
-}
+});
+
+export default TextField;
 
 const styles = StyleSheet.create({
   wrap: { gap: 5, marginBottom: 12 },
@@ -80,6 +93,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  inputError: { borderColor: colors.danger },
-  error: { fontFamily: fonts.body, fontSize: 12.5, color: colors.danger },
+  inputError: {
+    borderColor: colors.danger,
+    borderWidth: 1.5,
+    backgroundColor: '#FFF5F5',
+  },
+  error: {
+    fontFamily: fonts.bodySemibold,
+    fontSize: 12.5,
+    color: colors.danger,
+    marginTop: 2,
+    lineHeight: 16,
+  },
 });

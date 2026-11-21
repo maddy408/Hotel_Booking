@@ -104,6 +104,19 @@ export function buildInvoiceHtml(data) {
             color: #30223D;
             margin-bottom: 4px;
           }
+          .badge-proforma {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #EFF6FF;
+            color: #1D4ED8;
+            border: 1px solid #BFDBFE;
+            margin-left: 4px;
+            vertical-align: middle;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          }
           .inv-grid {
             display: flex;
             gap: 20px;
@@ -181,7 +194,7 @@ export function buildInvoiceHtml(data) {
               ${hotel.phone ? `<div class="muted">Phone: ${hotel.phone}</div>` : ''}
             </div>
             <div class="inv-meta">
-              <div class="inv-num">${invoice.invoice_number}</div>
+              <div class="inv-num">${invoice.invoice_number}${invoice.is_proforma ? ' <span class="badge-proforma">PROFORMA PREVIEW</span>' : ''}</div>
               <div>Date: ${invoice.created_at ? invoice.created_at.slice(0, 10) : ''}</div>
               ${invoice.financial_year ? `<div>FY: ${invoice.financial_year}</div>` : ''}
             </div>

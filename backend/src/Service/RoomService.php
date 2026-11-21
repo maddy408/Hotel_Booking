@@ -126,6 +126,8 @@ final class RoomService
             if ($status === 'occupied') {
                 $dto['guestName'] = $stay['guest_name'];
                 $dto['stayId'] = (int) $stay['stay_id'];
+                $dto['bookingId'] = isset($stay['reservation_id']) && $stay['reservation_id'] !== null ? (int) $stay['reservation_id'] : null;
+                $dto['bookingCode'] = $stay['booking_code'] ?? null;
                 $dto['checkoutPlanned'] = $stay['checkout_planned'];
                 $dto['checkoutTime'] = $stay['checkout_time'] ?? null;
                 $dto['dueToday'] = $stay['checkout_planned'] === $today;

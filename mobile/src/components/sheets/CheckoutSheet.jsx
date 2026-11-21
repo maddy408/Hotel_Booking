@@ -1,14 +1,14 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import Button from '../ui/Button.jsx';
-import { Input, Segmented } from '../ui/Field.jsx';
+import { FieldError, FormErrorBanner, Input, Segmented } from '../ui/Field.jsx';
 import {
   useStay, useStayBill, useAddExtra, useRemoveExtra, useExtendStay, useCheckout, useApplyDiscount,
 } from '../../api/stays';
-import { shareOccupantDocument, useUploadStayDocuments } from '../../api/occupantDocuments';
+import { viewOccupantDocument, useUploadStayDocuments } from '../../api/occupantDocuments';
 import { BASE_URL } from '../../lib/apiClient';
 import { useToast } from '../ToastContext.jsx';
 import { fd, inr, todayIso } from '../../lib/format';
@@ -47,10 +47,17 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
   const uploadDocs = useUploadStayDocuments();
   const [loadingDocId, setLoadingDocId] = useState(null);
 
+  const scrollRef = useRef(null);
+  const extraInputRef = useRef(null);
+  const discountInputRef = useRef(null);
+  const [extraError, setExtraError] = useState('');
+  const [discountError, setDiscountError] = useState('');
+  const [formError, setFormError] = useState('');
+
   const handleViewDocument = async (doc) => {
     try {
       setLoadingDocId(doc.id);
-      await shareOccupantDocument(doc.id, doc.original_filename);
+      await viewOccupantDocument(doc.id, doc.original_filename);
     } catch (e) {
       toast(e.message || 'Could not load document.');
     } finally {
@@ -100,22 +107,42 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
 
   const addExtraCharge = async () => {
     const amt = Number(xAmount);
-    if (!(amt > 0)) { toast('Enter the amount.'); return; }
-    await addExtra.mutateAsync({ stayId, label: xLabel, amount: amt, isTaxable: true });
-    setXAmount('');
+    if (isNaN(amt) || !(amt > 0)) {
+      setExtraError('Please enter a valid amount.');
+      extraInputRef.current?.focus?.();
+      return;
+    }
+    setExtraError('');
+    try {
+      await addExtra.mutateAsync({ stayId, label: xLabel, amount: amt, isTaxable: true });
+      setXAmount('');
+      toast(`Added ${xLabel} charge.`);
+    } catch (err) {
+      setExtraError(err.message || 'Failed to add charge.');
+      extraInputRef.current?.focus?.();
+    }
   };
 
   const handleApplyDiscount = async () => {
     const num = Number(discountVal);
-    if (isNaN(num) || num < 0) { toast('Please enter a valid discount amount.'); return; }
+    if (isNaN(num) || num < 0 || discountVal.trim() === '') {
+      setDiscountError('Please enter a valid discount amount.');
+      discountInputRef.current?.focus?.();
+      return;
+    }
+    setDiscountError('');
     try {
       await applyDiscount.mutateAsync({ stayId, amount: num, reason: discountReason || 'Discretionary discount' });
       toast(`Discount of ${inr(num)} applied.`);
       setShowDiscountInput(false);
-    } catch (err) { toast(err.message || 'Failed to apply discount.'); }
+    } catch (err) {
+      setDiscountError(err.message || 'Failed to apply discount.');
+      discountInputRef.current?.focus?.();
+    }
   };
 
   const doCheckout = async () => {
+    setFormError('');
     try {
       const result = await checkout.mutateAsync({
         stayId, paymentMethod: pay, amount: bal > 0 ? bal : 0, actualCheckoutDate,
@@ -126,12 +153,13 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
       setCompletedResult(result);
       toast(`${stay.guest_name.split(' ')[0]} checked out. Bill ${inr(result.bill.total)}. Room ${stay.room_no} sent for cleaning.`);
     } catch (err) {
+      setFormError(err.message || 'Checkout failed.');
       toast(err.message || 'Checkout failed.');
     }
   };
 
   return (
-    <Sheet onClose={onClose}>
+    <Sheet onClose={onClose} scrollRef={scrollRef}>
       <SheetHeader
         status="occupied" badge={stay.room_no}
         title={isCheckedOut ? 'Bill Details (Checked Out)' : isEarly ? 'Early Check out' : 'Check out'}
@@ -139,6 +167,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
         onClose={onClose}
       />
       <View style={styles.body}>
+        <FormErrorBanner message={formError} />
         <View style={styles.infoGrid}>
           <Text style={styles.infoLabel}>Guest</Text><Text style={styles.infoValue}>{stay.guest_name}</Text>
           <Text style={styles.infoLabel}>Mobile</Text><Text style={styles.infoValue}>{stay.guest_phone}</Text>
@@ -250,7 +279,19 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
 
         {showDiscountInput && !isCheckedOut && (
           <View style={styles.discountPanel}>
-            <Input placeholder="Amount (₹)" keyboardType="numeric" value={discountVal} onChangeText={setDiscountVal} style={{ marginBottom: 6 }} />
+            <Input
+              ref={discountInputRef}
+              placeholder="Amount (₹)"
+              keyboardType="numeric"
+              value={discountVal}
+              onChangeText={(v) => {
+                setDiscountVal(v);
+                if (discountError) setDiscountError('');
+              }}
+              error={discountError}
+              style={{ marginBottom: 4 }}
+            />
+            {discountError ? <FieldError style={{ marginBottom: 6 }}>{discountError}</FieldError> : null}
             <Input placeholder="Reason" value={discountReason} onChangeText={setDiscountReason} style={{ marginBottom: 6 }} />
             <Button title="Save Discount" variant="success" size="sm" loading={applyDiscount.isPending} onPress={handleApplyDiscount} />
           </View>
@@ -293,9 +334,21 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
               <Text style={styles.label}>Add extra stay charge</Text>
               <Segmented options={EXTRAS} value={xLabel} onChange={setXLabel} />
               <View style={{ flexDirection: 'row', gap: 8 }}>
-                <Input style={{ flex: 1 }} keyboardType="numeric" placeholder="₹ amount" value={xAmount} onChangeText={setXAmount} />
+                <Input
+                  ref={extraInputRef}
+                  style={{ flex: 1 }}
+                  keyboardType="numeric"
+                  placeholder="₹ amount"
+                  value={xAmount}
+                  onChangeText={(v) => {
+                    setXAmount(v);
+                    if (extraError) setExtraError('');
+                  }}
+                  error={extraError}
+                />
                 <Button title="Add" variant="outline" size="sm" loading={addExtra.isPending} onPress={addExtraCharge} />
               </View>
+              {extraError ? <FieldError>{extraError}</FieldError> : null}
             </View>
 
             {bal === 0 ? (

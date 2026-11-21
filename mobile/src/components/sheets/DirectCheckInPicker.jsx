@@ -4,7 +4,17 @@ import { inr, fd } from '../../lib/format';
 import { colors, fonts, radii } from '../../theme/theme';
 
 export default function DirectCheckInPicker({ rooms, onPick, onClose }) {
-  const free = rooms.filter((r) => r.status === 'free').sort((a, b) => a.roomNo - b.roomNo);
+  const free = (rooms || [])
+    .filter((r) =>
+      r.status === 'free' &&
+      (r.housekeepingStatus || r.housekeeping_status || 'ok') === 'ok' &&
+      !r.stayId &&
+      r.status !== 'occupied' &&
+      r.status !== 'booked' &&
+      r.status !== 'cleaning' &&
+      r.status !== 'repair'
+    )
+    .sort((a, b) => a.roomNo - b.roomNo);
   const byType = {};
   free.forEach((r) => {
     const typeId = r.roomType?.id ?? 'default';

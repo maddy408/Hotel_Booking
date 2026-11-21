@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -13,33 +13,72 @@ import Button from '../components/ui/Button.jsx';
 import { colors, fonts, radii, shadow } from '../theme/theme';
 
 const schema = z.object({
-  username: z.string().min(1, 'Enter your username.'),
-  password: z.string().min(1, 'Enter your password.'),
+  username: z.string().trim().min(1, 'Username is required.'),
+  password: z.string().min(1, 'Password is required.'),
 });
 
 export default function LoginScreen() {
   const { login } = useAuth();
   const [serverError, setServerError] = useState('');
+  const scrollRef = useRef(null);
+  const usernameRef = useRef(null);
+  const passwordRef = useRef(null);
+
   const {
     control,
     handleSubmit,
+    setError,
+    clearErrors,
     formState: { errors, isSubmitting },
-  } = useForm({ resolver: zodResolver(schema), defaultValues: { username: '', password: '' } });
+  } = useForm({
+    resolver: zodResolver(schema),
+    defaultValues: { username: '', password: '' },
+  });
+
+  const onInvalid = (formErrors) => {
+    setServerError('');
+    if (formErrors.username) {
+      usernameRef.current?.focus?.();
+    } else if (formErrors.password) {
+      passwordRef.current?.focus?.();
+    }
+  };
 
   const onSubmit = async (values) => {
     setServerError('');
     try {
-      await login(values.username, values.password);
-      // No explicit navigation call needed — the root navigator swaps to the
-      // authenticated stack automatically once AuthContext's status flips.
+      await login(values.username.trim(), values.password);
     } catch (err) {
-      setServerError(err instanceof ApiError ? err.message : 'Could not log in. Try again.');
+      if (err instanceof ApiError && err.fields && typeof err.fields === 'object') {
+        let focused = false;
+        if (err.fields.username) {
+          setError('username', { type: 'server', message: err.fields.username });
+          usernameRef.current?.focus?.();
+          focused = true;
+        }
+        if (err.fields.password) {
+          setError('password', { type: 'server', message: err.fields.password });
+          if (!focused) {
+            passwordRef.current?.focus?.();
+          }
+        }
+        if (!err.fields.username && !err.fields.password) {
+          setServerError(err.message || 'Could not log in. Try again.');
+        }
+      } else {
+        setServerError(err instanceof ApiError ? err.message : 'Could not log in. Try again.');
+      }
     }
   };
 
   return (
     <SafeAreaView style={styles.safe}>
-      <KeyboardAwareScrollView contentContainerStyle={styles.wrap} bottomOffset={40} keyboardShouldPersistTaps="handled">
+      <KeyboardAwareScrollView
+        ref={scrollRef}
+        contentContainerStyle={styles.wrap}
+        bottomOffset={40}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.card}>
           <View style={styles.crest}>
             <Svg width={28} height={28} viewBox="0 0 24 24" fill="none" stroke={colors.primary} strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
@@ -56,12 +95,18 @@ export default function LoginScreen() {
             name="username"
             render={({ field: { onChange, onBlur, value } }) => (
               <TextField
+                ref={usernameRef}
                 label="Username"
+                required
                 autoCapitalize="none"
                 autoCorrect={false}
                 autoFocus
                 value={value}
-                onChangeText={onChange}
+                onChangeText={(val) => {
+                  onChange(val);
+                  if (serverError) setServerError('');
+                  if (errors.username) clearErrors('username');
+                }}
                 onBlur={onBlur}
                 error={errors.username?.message}
               />
@@ -72,11 +117,17 @@ export default function LoginScreen() {
             name="password"
             render={({ field: { onChange, onBlur, value } }) => (
               <TextField
+                ref={passwordRef}
                 label="Password"
+                required
                 isPassword
                 autoCapitalize="none"
                 value={value}
-                onChangeText={onChange}
+                onChangeText={(val) => {
+                  onChange(val);
+                  if (serverError) setServerError('');
+                  if (errors.password) clearErrors('password');
+                }}
                 onBlur={onBlur}
                 error={errors.password?.message}
               />
@@ -84,7 +135,7 @@ export default function LoginScreen() {
           />
 
           {serverError ? (
-            <View style={styles.warn}>
+            <View style={styles.warn} accessibilityRole="alert">
               <Text style={styles.warnText}>{serverError}</Text>
             </View>
           ) : null}
@@ -94,7 +145,7 @@ export default function LoginScreen() {
             variant="primary"
             size="lg"
             loading={isSubmitting}
-            onPress={handleSubmit(onSubmit)}
+            onPress={handleSubmit(onSubmit, onInvalid)}
             style={{ marginTop: 6 }}
           />
         </View>
@@ -127,6 +178,6 @@ const styles = StyleSheet.create({
   },
   title: { fontFamily: fonts.display, fontSize: 22, color: colors.heading, textAlign: 'center' },
   subtitle: { fontFamily: fonts.body, fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginTop: -8, marginBottom: 4 },
-  warn: { backgroundColor: colors.warningBg, borderRadius: radii.md, padding: 10 },
+  warn: { backgroundColor: colors.warningBg, borderRadius: radii.md, padding: 10, borderWidth: 1, borderColor: colors.warningBorder },
   warnText: { fontFamily: fonts.bodySemibold, color: colors.warning, fontSize: 13 },
 });

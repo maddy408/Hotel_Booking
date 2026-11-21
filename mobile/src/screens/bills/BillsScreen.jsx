@@ -1,5 +1,7 @@
+import { useState, useMemo } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import Screen, { EmptyState, ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
+import SearchInput from '../../components/ui/SearchInput.jsx';
 import { useDoneStays } from '../../api/stays';
 import { useTodayReport } from '../../api/reports';
 import { fd, inr } from '../../lib/format';
@@ -8,13 +10,21 @@ import { colors, fonts, radii } from '../../theme/theme';
 export default function BillsScreen({ navigation }) {
   const { data: stays, isLoading, isError, error, refetch, isRefetching } = useDoneStays();
   const { data: today } = useTodayReport();
+  const [search, setSearch] = useState('');
 
-  if (isLoading) return <Screen><LoadingState /></Screen>;
-  if (isError) return <Screen><ErrorState message={error?.message} onRetry={refetch} /></Screen>;
+  const filteredDone = useMemo(() => {
+    const list = [...(stays || [])].sort((a, b) => (b.checkout_actual || '').localeCompare(a.checkout_actual || '') || b.id - a.id);
+    if (!search.trim()) return list;
+    const q = search.toLowerCase().trim();
+    return list.filter((s) => (
+      (s.invoice_number && s.invoice_number.toLowerCase().includes(q)) ||
+      (s.guest_name && s.guest_name.toLowerCase().includes(q)) ||
+      (s.room_no && String(s.room_no).includes(q)) ||
+      (s.guest_phone && s.guest_phone.includes(q))
+    ));
+  }, [stays, search]);
 
-  const done = [...stays].sort((a, b) => b.checkout_actual.localeCompare(a.checkout_actual) || b.id - a.id);
-
-  const renderHeader = () => (
+  const renderHeader = useMemo(() => (
     <View style={styles.headerContainer}>
       <View style={styles.summaryCard}>
         <View style={styles.summaryHeader}>
@@ -33,9 +43,19 @@ export default function BillsScreen({ navigation }) {
         </View>
       </View>
 
-      <Text style={styles.sectionTitle}>All Bills ({done.length})</Text>
+      <SearchInput
+        placeholder="Search invoice no, guest, or room…"
+        value={search}
+        onChangeText={setSearch}
+        style={{ marginBottom: 12 }}
+      />
+
+      <Text style={styles.sectionTitle}>All Bills ({filteredDone.length})</Text>
     </View>
-  );
+  ), [today, filteredDone.length, search]);
+
+  if (isLoading) return <Screen><LoadingState /></Screen>;
+  if (isError) return <Screen><ErrorState message={error?.message} onRetry={refetch} /></Screen>;
 
   const renderBillItem = ({ item: s }) => (
     <Pressable
@@ -57,11 +77,11 @@ export default function BillsScreen({ navigation }) {
   return (
     <Screen scroll={false} contentStyle={{ padding: 0 }}>
       <FlatList
-        data={done}
+        data={filteredDone}
         keyExtractor={(s) => String(s.id)}
         renderItem={renderBillItem}
         ListHeaderComponent={renderHeader}
-        ListEmptyComponent={<EmptyState title="No bills yet" />}
+        ListEmptyComponent={<EmptyState title="No bills found" />}
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl

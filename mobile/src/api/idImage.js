@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as FileSystem from 'expo-file-system/legacy';
-import { BASE_URL, getTokens } from '../lib/apiClient';
+import { api, BASE_URL, getTokens } from '../lib/apiClient';
 
 export function idImageUrl(guestId) {
   return `${BASE_URL}/guests/${guestId}/id-image`;
@@ -11,17 +11,9 @@ export function useUploadIdImage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ guestId, file }) => {
-      const tokens = getTokens();
       const form = new FormData();
       form.append('image', file);
-      const res = await fetch(idImageUrl(guestId), {
-        method: 'POST',
-        headers: tokens?.accessToken ? { Authorization: `Bearer ${tokens.accessToken}` } : {},
-        body: form,
-      });
-      const payload = await res.json();
-      if (!payload.success) throw new Error(payload.error?.message || 'Upload failed.');
-      return payload.data;
+      return api.post(`/guests/${guestId}/id-image`, form);
     },
     onSuccess: (_data, { guestId }) => {
       qc.invalidateQueries({ queryKey: ['guest', guestId] });

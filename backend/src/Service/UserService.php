@@ -37,7 +37,7 @@ final class UserService
         return $this->users->findById($id);
     }
 
-    public function update(int $id, int $hotelId, string $name, ?string $email, ?string $phone, string $roleCode, bool $isActive, ?int $actingUserId): array
+    public function update(int $id, int $hotelId, string $name, ?string $email, ?string $phone, string $roleCode, bool $isActive, ?int $actingUserId, ?string $username = null, ?string $password = null): array
     {
         $before = $this->users->findById($id);
         if ($before === null || (int) $before['hotel_id'] !== $hotelId) {
@@ -47,7 +47,13 @@ final class UserService
         if ($role === null) {
             throw ApiException::validation(['role' => 'Unknown role.']);
         }
-        $this->users->update($id, $name, $email, $phone, (int) $role['id'], $isActive);
+        if ($username !== null && $username !== '' && $username !== $before['username']) {
+            if ($this->users->usernameExistsExcept($username, $id)) {
+                throw ApiException::validation(['username' => 'This username is already taken.']);
+            }
+        }
+        $passwordHash = (!empty($password) && strlen($password) >= 8) ? password_hash($password, PASSWORD_BCRYPT) : null;
+        $this->users->update($id, $name, $email, $phone, (int) $role['id'], $isActive, $username, $passwordHash);
         $after = $this->users->findById($id);
         $this->audit->log($hotelId, $actingUserId, 'user_update', 'user', $id, $before, $after);
         return $after;

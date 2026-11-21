@@ -1,12 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/apiClient';
 
+export function normalizeStayId(stayId) {
+  if (stayId == null) return null;
+  if (typeof stayId === 'string' && stayId.startsWith('stay-')) {
+    const num = parseInt(stayId.slice(5), 10);
+    return !isNaN(num) && num > 0 ? num : null;
+  }
+  const num = Number(stayId);
+  return !isNaN(num) && num > 0 ? num : null;
+}
+
 export function useStay(stayId, options = {}) {
-  return useQuery({ queryKey: ['stay', stayId], queryFn: () => api.get(`/stays/${stayId}`), enabled: !!stayId, ...options });
+  const validId = normalizeStayId(stayId);
+  return useQuery({ queryKey: ['stay', validId], queryFn: () => api.get(`/stays/${validId}`), enabled: !!validId, ...options });
 }
 
 export function useStayBill(stayId) {
-  return useQuery({ queryKey: ['stay-bill', stayId], queryFn: () => api.get(`/stays/${stayId}/bill`), enabled: !!stayId });
+  const validId = normalizeStayId(stayId);
+  return useQuery({ queryKey: ['stay-bill', validId], queryFn: () => api.get(`/stays/${validId}/bill`), enabled: !!validId });
 }
 
 export function useEarlyCheckoutPreview(stayId, { checkoutDate, discount, earlyCheckoutFee } = {}) {

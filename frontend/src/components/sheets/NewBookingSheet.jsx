@@ -10,8 +10,9 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { addDaysIso, estimateGstRate, formatGstBreakup, fd, formatCheckoutHour, inr, nightsBetween, todayIso } from '../../lib/format';
 import { BADGE_THEME, getCardDisplay } from '../../lib/roomAvailability.js';
 
-export default function NewBookingSheet({ editReservation, presetGuest, onClose }) {
-  const isEdit = !!editReservation;
+export default function NewBookingSheet({ editReservation, presetGuest, preSelectedRoom, onClose }) {
+  const isEdit = Boolean(editReservation?.id || editReservation?.booking_code);
+  const initialRoomId = preSelectedRoom?.id || editReservation?.room_id || null;
   const { data: roomTypes } = useRoomTypes();
   const { data: roomsData } = useRooms();
   const { data: settings } = useSettings();
@@ -40,10 +41,10 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
           name: presetGuest?.name || '',
           checkIn: addDaysIso(todayIso(), 1),
           days: 1,
-          persons: 2,
+          persons: 1,
           typeFilter: 'all',
-          roomId: null,
-          rate: '',
+          roomId: initialRoomId,
+          rate: preSelectedRoom ? Number(preSelectedRoom.type_rate || preSelectedRoom.roomType?.rate || '') : '',
           advance: '',
           pay: 'cash',
           notes: '',
@@ -132,17 +133,19 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
 
   const selectedRoom = (freeRooms && freeRooms.find((r) => r.id === roomId))
     || (roomsData?.rooms && roomsData.rooms.find((r) => r.id === roomId))
+    || (preSelectedRoom && preSelectedRoom.id === roomId ? preSelectedRoom : null)
     || (isEdit && editReservation?.room_id === roomId ? editReservation : null);
 
   const roomMaxPersons = selectedRoom?.max_persons
     ?? selectedRoom?.roomType?.maxPersons
+    ?? (preSelectedRoom && preSelectedRoom.id === roomId ? preSelectedRoom?.max_persons : null)
     ?? (isEdit && editReservation?.room_id === roomId ? editReservation?.max_persons : null)
-    ?? 2;
+    ?? (selectedRoom || roomId ? 2 : null);
 
   const [serverPersonsError, setServerPersonsError] = useState('');
   const personCount = Number(persons) || 1;
   const isPersonsExceeded = roomMaxPersons != null && personCount > Number(roomMaxPersons);
-  const maxPersonsMsg = roomMaxPersons != null ? `This room allows a maximum of ${roomMaxPersons} persons.` : '';
+  const maxPersonsMsg = roomMaxPersons != null ? `This room allows a maximum of ${roomMaxPersons} ${Number(roomMaxPersons) === 1 ? 'person' : 'persons'}.` : '';
   const personsError = isPersonsExceeded ? maxPersonsMsg : (serverPersonsError || '');
 
   useEffect(() => {
@@ -150,12 +153,6 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
       setServerPersonsError('');
     }
   }, [personCount, roomMaxPersons, serverPersonsError]);
-
-  useEffect(() => {
-    if (roomId && roomMaxPersons != null && personCount > Number(roomMaxPersons)) {
-      setValue('persons', Number(roomMaxPersons));
-    }
-  }, [roomId, roomMaxPersons, personCount, setValue]);
 
   const displayRoom = (inspectedRoomId && freeRooms?.find((r) => r.id === inspectedRoomId))
     || selectedRoom;
@@ -167,6 +164,7 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
       return;
     }
     if (isPersonsExceeded) {
+      toast(maxPersonsMsg || 'Maximum persons exceeded for selected room.');
       return;
     }
     const chosenRoom = freeRooms?.find((r) => r.id === values.roomId);
@@ -352,18 +350,27 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
               >
                 −
               </button>
-              <input type="number" readOnly {...register('persons')} />
+              <input
+                type="number"
+                min="1"
+                {...register('persons', {
+                  min: 1,
+                  onChange: () => setServerPersonsError(''),
+                  onBlur: (e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (isNaN(val) || val < 1) {
+                      setValue('persons', 1);
+                    }
+                  },
+                })}
+              />
               <button
                 type="button"
                 onClick={() => {
                   setServerPersonsError('');
-                  if (roomMaxPersons == null || (Number(persons) || 1) < Number(roomMaxPersons)) {
-                    setValue('persons', (Number(persons) || 1) + 1);
-                  } else {
-                    setServerPersonsError(`This room allows a maximum of ${roomMaxPersons} persons.`);
-                  }
+                  setValue('persons', (Number(persons) || 1) + 1);
                 }}
-                disabled={roomMaxPersons != null && (Number(persons) || 1) >= Number(roomMaxPersons)}
+                disabled={(Number(persons) || 1) >= 20}
                 aria-label="Increase persons count"
               >
                 +

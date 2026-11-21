@@ -1,21 +1,37 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Path } from 'react-native-svg';
+import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { fd, todayIso } from '../lib/format';
 import { colors, fonts, radii, statusColors } from '../theme/theme';
+import { getOverdueDetails } from '../lib/overdue';
 
 const LABEL = { free: 'FREE', booked: 'BOOKED', occupied: 'OCCUPIED', cleaning: 'CLEANING', repair: 'REPAIR' };
 
-/** Ported 1:1 from frontend/src/components/RoomTile.jsx's meta/persons logic. */
-export default function RoomTile({ room, onPress, onOpenBooking }) {
+export default function RoomTile({ room, settings, onPress, onOpenBooking }) {
   const today = todayIso();
   const guestName = room.guestName ? room.guestName.trim() : '';
   const pendingGuest = room.pendingBooking?.guestName ? room.pendingBooking.guestName.split(' ')[0] : 'Guest';
+
+  const overdueInfo = getOverdueDetails(room, settings);
+  const isOverdue = overdueInfo.isOverdue;
+  const overdueDays = overdueInfo.overdueDays;
+  const formattedCheckoutTime = overdueInfo.formattedTime;
+  const plannedIso = overdueInfo.plannedIso;
+
   let meta = '';
   let due = false;
 
   if (room.status === 'occupied') {
-    due = room.checkoutPlanned <= today;
-    meta = due ? 'Leaving today' : 'Till ' + fd(room.checkoutPlanned);
+    if (isOverdue) {
+      due = true;
+      meta = formattedCheckoutTime ? `Due was ${fd(plannedIso)}, ${formattedCheckoutTime}` : `Due was ${fd(plannedIso)}`;
+    } else if (plannedIso && plannedIso === today) {
+      due = true;
+      meta = formattedCheckoutTime ? `Leaving today · By ${formattedCheckoutTime}` : 'Leaving today';
+    } else if (plannedIso) {
+      meta = 'Till ' + fd(plannedIso);
+    } else {
+      meta = 'Ongoing stay';
+    }
   } else if (room.status === 'booked') {
     if (room.housekeepingStatus === 'repair') {
       meta = 'Maintenance · ' + (room.bookingCode || 'Booked');
@@ -50,7 +66,7 @@ export default function RoomTile({ room, onPress, onOpenBooking }) {
         style={styles.tileMain}
         hitSlop={{ top: 4, bottom: 4, left: 4, right: 4 }}
         accessibilityRole="button"
-        accessibilityLabel={`Room ${room.roomNo}, ${room.roomType?.name || 'Room'}, ${room.status}`}
+        accessibilityLabel={`Room ${room.roomNo}, ${room.roomType?.name || 'Room'}, ${room.status}${isOverdue ? ', Overdue' : ''}`}
       >
         <View pointerEvents="none" style={styles.topRow}>
           <Text style={[styles.roomNo, { color: c.fg }]}>{room.roomNo}</Text>
@@ -69,7 +85,35 @@ export default function RoomTile({ room, onPress, onOpenBooking }) {
           <Text pointerEvents="none" style={styles.guest} numberOfLines={1}>Guest: {guestName}</Text>
         ) : null}
 
-        <Text pointerEvents="none" style={[styles.meta, due && { color: colors.danger, fontWeight: '700' }]} numberOfLines={1}>{meta}</Text>
+        {room.bookingCode ? (
+          <Text pointerEvents="none" style={styles.bookingRef} numberOfLines={1}>
+            Booking: {room.bookingCode}
+          </Text>
+        ) : (room.status === 'occupied' && room.stayId ? (
+          <Text pointerEvents="none" style={styles.bookingRef} numberOfLines={1}>
+            Stay: #{room.stayId}
+          </Text>
+        ) : null)}
+
+        {isOverdue && (
+          <View pointerEvents="none" style={styles.overdueBadge}>
+            <View style={styles.overdueTagRow}>
+              <Svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke={colors.danger} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <Path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                <Line x1="12" y1="9" x2="12" y2="13" />
+                <Line x1="12" y1="17" x2="12.01" y2="17" />
+              </Svg>
+              <Text style={styles.overdueBadgeText}>
+                {overdueDays > 0 ? `${overdueDays}d overdue` : 'OVERDUE'}
+              </Text>
+            </View>
+            <Text style={styles.overdueDateText} numberOfLines={1}>
+              · Due {fd(plannedIso)}
+            </Text>
+          </View>
+        )}
+
+        <Text pointerEvents="none" style={[styles.meta, due && { color: isOverdue ? colors.danger : colors.warning, fontWeight: isOverdue ? '700' : '600' }]} numberOfLines={1}>{meta}</Text>
 
         <View pointerEvents="none" style={[styles.statusChip, { backgroundColor: c.fg }]}>
           <Text style={styles.statusChipText}>{LABEL[room.status] || room.status.toUpperCase()}</Text>
@@ -112,6 +156,37 @@ const styles = StyleSheet.create({
   personsRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
   personsText: { fontFamily: fonts.bodySemibold, fontSize: 11, color: colors.textSecondary },
   guest: { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.heading },
+  bookingRef: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.textSecondary, marginTop: 1 },
+  overdueBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: colors.dangerBg,
+    borderColor: colors.dangerBorder,
+    borderWidth: 1,
+    borderRadius: radii.xs,
+    paddingHorizontal: 5,
+    paddingVertical: 2.5,
+    marginTop: 2,
+    alignSelf: 'flex-start',
+    maxWidth: '100%',
+  },
+  overdueTagRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  overdueBadgeText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 9.5,
+    color: colors.danger,
+    letterSpacing: 0.2,
+  },
+  overdueDateText: {
+    fontFamily: fonts.bodySemibold,
+    fontSize: 9.5,
+    color: '#9F1239',
+  },
   meta: { fontFamily: fonts.body, fontSize: 11.5, color: colors.textSecondary, marginTop: 2 },
   conflict: {
     marginHorizontal: 10,

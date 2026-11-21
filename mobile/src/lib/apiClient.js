@@ -1,15 +1,27 @@
 import { loadTokens, saveTokens } from '../storage/secureStorage';
 
-// Expo inlines EXPO_PUBLIC_* vars into the bundle at build time (dev and prod both
-// read from mobile/.env — see .env.example for the dev-vs-prod split).
-export const BASE_URL = (process.env.EXPO_PUBLIC_API_URL || '').replace(/\/+$/, '');
+export function resolveBaseUrl() {
+  const envUrl = (process.env.EXPO_PUBLIC_API_URL || '').replace(/\/+$/, '');
+  if (envUrl && !envUrl.includes('ethiodeploy.app')) {
+    return envUrl;
+  }
+  return 'http://10.94.9.9:8080';
+}
+
+export const BASE_URL = resolveBaseUrl();
 
 export class ApiError extends Error {
   constructor(message, status, code, fields) {
-    const fieldMessages = fields ? Object.values(fields).filter(Boolean) : [];
-    // The backend's top-level message for a 422 is just "Validation failed" — the useful
-    // detail is in `fields`. Fold it into the displayed message so toasts/forms are helpful.
-    const combined = fieldMessages.length ? fieldMessages.join(' ') : message;
+    let combined = message;
+    if (fields && typeof fields === 'object') {
+      const entries = Object.entries(fields).filter(([, v]) => Boolean(v));
+      if (entries.length > 0) {
+        // Fold validation field details into a readable error message without repeating generic text
+        combined = entries
+          .map(([k, v]) => (k && !v.toLowerCase().includes(k.toLowerCase()) ? `${k}: ${v}` : v))
+          .join(' · ');
+      }
+    }
     super(combined);
     this.status = status;
     this.code = code;
@@ -48,21 +60,82 @@ export function onUnauthorized(handler) {
   unauthorizedHandler = handler;
 }
 
+function requestViaXHR(path, { method = 'POST', body, auth = true } = {}) {
+  return new Promise((resolve, reject) => {
+    const baseUrl = resolveBaseUrl() || BASE_URL;
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, `${baseUrl}${path}`);
+
+    if (auth && tokens?.accessToken) {
+      xhr.setRequestHeader('Authorization', `Bearer ${tokens.accessToken}`);
+    }
+
+    xhr.onload = () => {
+      let payload;
+      try {
+        payload = JSON.parse(xhr.responseText);
+      } catch {
+        return reject(new ApiError('The server sent back something unexpected.', xhr.status, 'bad_response'));
+      }
+
+      if (!payload.success) {
+        return reject(
+          new ApiError(
+            payload.error?.message || 'Something went wrong.',
+            xhr.status,
+            payload.error?.code,
+            payload.error?.fields
+          )
+        );
+      }
+      resolve(payload.data);
+    };
+
+    xhr.onerror = (e) => {
+      console.error(`XHR failure on ${method} ${path}:`, e);
+      reject(new ApiError('Could not reach the server. Check your internet connection.', 0, 'network_error'));
+    };
+
+    xhr.ontimeout = () => {
+      reject(new ApiError('Request timed out. Check your internet connection.', 0, 'timeout'));
+    };
+
+    xhr.send(body);
+  });
+}
+
 async function rawRequest(path, { method = 'GET', body, auth = true } = {}) {
+  const isFormData = Boolean(
+    body && (
+      (typeof FormData !== 'undefined' && body instanceof FormData) ||
+      typeof body.append === 'function' ||
+      Array.isArray(body._parts)
+    )
+  );
+
+  // In React Native / Expo, global fetch uses WinterCG convertFormData which rejects
+  // legacy RN FormData parts ({ uri, name, type }) with "Unsupported FormDataPart implementation".
+  // XMLHttpRequest delegates directly to native Android OkHttp NetworkingModule with full file support.
+  if (isFormData) {
+    return requestViaXHR(path, { method, body, auth });
+  }
+
   const headers = {};
-  const isFormData = typeof FormData !== 'undefined' && body instanceof FormData;
-  if (body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
+  if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (auth && tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
 
+  const baseUrl = resolveBaseUrl() || BASE_URL;
   let res;
   try {
-    res = await fetch(`${BASE_URL}${path}`, {
+    res = await fetch(`${baseUrl}${path}`, {
       method,
       headers,
-      body: body !== undefined ? (isFormData ? body : JSON.stringify(body)) : undefined,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
-  } catch {
-    throw new ApiError('Could not reach the server. Check your internet connection.', 0, 'network_error');
+  } catch (err) {
+    console.error(`Fetch failure on ${method} ${path}:`, err);
+    const detail = err?.message ? `: ${err.message}` : '';
+    throw new ApiError(`Could not reach the server${detail}. Check your internet connection.`, 0, 'network_error');
   }
 
   let payload;

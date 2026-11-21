@@ -3,6 +3,7 @@ import { Alert, BackHandler, KeyboardAvoidingView, Modal, Platform, Pressable, S
 import { SafeAreaProvider, SafeAreaView, initialWindowMetrics } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import BackButton from './ui/BackButton.jsx';
+import { ToastProvider } from './ToastContext.jsx';
 import { colors, fonts, radii, shadow, statusColors } from '../theme/theme';
 
 /**
@@ -20,6 +21,7 @@ export default function Sheet({
   unsavedChangesTitle = 'Discard unsaved changes?',
   unsavedChangesMessage = 'You have unsaved changes. Are you sure you want to discard them and close?',
   compact = false,
+  scrollRef,
 }) {
   const handleDismiss = useCallback(() => {
     if (hasUnsavedChanges) {
@@ -48,6 +50,7 @@ export default function Sheet({
 
   const inner = scroll ? (
     <ScrollView
+      ref={scrollRef}
       style={compact ? undefined : styles.scroll}
       contentContainerStyle={compact ? styles.compactScrollBody : styles.scrollBody}
       keyboardShouldPersistTaps="handled"
@@ -68,14 +71,17 @@ export default function Sheet({
         statusBarTranslucent={true}
       >
         <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-          <View style={styles.compactOverlay}>
-            <Pressable style={styles.scrim} onPress={handleDismiss} />
-            <View style={styles.sheetWrap} pointerEvents="box-none">
-              <View style={styles.compactCard} pointerEvents="auto">
-                {inner}
-              </View>
+          <ToastProvider>
+            <View style={styles.compactOverlay}>
+              <Pressable style={styles.scrim} onPress={handleDismiss} accessibilityLabel="Close dialog" />
+              <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.compactWrap} pointerEvents="box-none">
+                <Pressable style={StyleSheet.absoluteFill} onPress={handleDismiss} />
+                <View style={styles.compactCard} pointerEvents="auto">
+                  {inner}
+                </View>
+              </SafeAreaView>
             </View>
-          </View>
+          </ToastProvider>
         </SafeAreaProvider>
       </Modal>
     );
@@ -91,19 +97,21 @@ export default function Sheet({
       statusBarTranslucent={false}
     >
       <SafeAreaProvider initialMetrics={initialWindowMetrics}>
-        <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.fullScreenSafe}>
-          <StatusBar style="dark" backgroundColor={colors.surface} />
-          <KeyboardAvoidingView
-            style={styles.keyboardAvoid}
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          >
-            <View style={styles.fullScreenContainer} pointerEvents="auto">
-              <View style={styles.sheet} pointerEvents="auto">
-                {inner}
+        <ToastProvider>
+          <SafeAreaView edges={['top', 'bottom', 'left', 'right']} style={styles.fullScreenSafe}>
+            <StatusBar style="dark" backgroundColor={colors.surface} />
+            <KeyboardAvoidingView
+              style={styles.keyboardAvoid}
+              behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            >
+              <View style={styles.fullScreenContainer} pointerEvents="auto">
+                <View style={styles.sheet} pointerEvents="auto">
+                  {inner}
+                </View>
               </View>
-            </View>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
+        </ToastProvider>
       </SafeAreaProvider>
     </Modal>
   );
@@ -117,9 +125,10 @@ export function SheetHeader({
   onClose,
   onBack,
   hasUnsavedChanges = false,
+  showBack = true,
 }) {
   const c = status ? statusColors[status] : null;
-  const handleBackAction = onBack || onClose;
+  const handleBackAction = showBack ? (onBack || onClose) : null;
 
   const handleClosePress = () => {
     if (hasUnsavedChanges) {
@@ -214,15 +223,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 100,
   },
+  compactWrap: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 16,
+    zIndex: 2,
+  },
   compactCard: {
     backgroundColor: colors.surface,
     borderRadius: radii.xl,
     overflow: 'hidden',
     width: '90%',
     maxWidth: 420,
+    maxHeight: '85%',
     alignSelf: 'center',
-    marginBottom: 'auto',
-    marginTop: 'auto',
     zIndex: 10,
     elevation: 24,
     ...shadow.pop,

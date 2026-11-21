@@ -61,7 +61,7 @@ function OverlayHost({ manager }) {
 }
 
 /** Shared screen shell: safe area + optional scroll + keyboard avoidance, matching web's <main class="gut"><div class="inner">. */
-export default function Screen({ children, scroll = true, refreshing, onRefresh, contentStyle }) {
+export default function Screen({ children, scroll = true, refreshing, onRefresh, contentStyle, scrollRef }) {
   const manager = useMemo(() => new OverlayManager(), []);
   const contextValue = useMemo(() => ({
     registerOverlay: (id, element) => manager.registerOverlay(id, element),
@@ -70,6 +70,7 @@ export default function Screen({ children, scroll = true, refreshing, onRefresh,
 
   const inner = scroll ? (
     <ScrollView
+      ref={scrollRef}
       contentContainerStyle={[styles.content, contentStyle]}
       refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} colors={[colors.primary]} /> : undefined}
       keyboardShouldPersistTaps="handled"

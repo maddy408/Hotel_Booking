@@ -1,9 +1,11 @@
 import { useEffect, useState, useRef } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import Button from '../ui/Button.jsx';
-import { Input, Segmented, Stepper } from '../ui/Field.jsx';
+import { FieldError, FormErrorBanner, FormField, Input, Segmented, Stepper } from '../ui/Field.jsx';
 import ReferredBySelect from '../ReferredBySelect.jsx';
 import { useGuestLookup } from '../../api/guests';
 import { useDirectCheckIn } from '../../api/stays';
@@ -12,10 +14,45 @@ import { useRooms, useHousekeepingAction } from '../../api/rooms';
 import { useSettings } from '../../api/settings';
 import { useToast } from '../ToastContext.jsx';
 import { addDaysIso, estimateGstRate, formatGstBreakup, fd, formatCheckoutHour, inr, todayIso } from '../../lib/format';
+import { useFormValidation } from '../../lib/validation';
 import { colors, fonts, radii } from '../../theme/theme';
 
 const IDS = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport'];
 const ADVANCE_REQUIRED_MSG = 'Please enter and collect the advance amount before check-in.';
+
+const cleanPhone10 = (raw) => {
+  const digits = String(raw || '').replace(/\D/g, '');
+  return digits.length > 10 ? digits.slice(-10) : digits;
+};
+
+const MIME_EXT_MAP = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  pdf: 'application/pdf',
+};
+
+const getMimeType = (filename, fallback) => {
+  const ext = (filename || '').split('.').pop().toLowerCase();
+  return MIME_EXT_MAP[ext] || fallback || 'image/jpeg';
+};
+
+const sanitizeFileName = (name) => {
+  return (name || 'document.jpg').replace(/[^a-zA-Z0-9._-]/g, '_');
+};
+
+const formatFileUri = (rawUri) => {
+  let uri = rawUri || '';
+  if (Platform.OS === 'android') {
+    if (uri.startsWith('file:/') && !uri.startsWith('file:///')) {
+      uri = `file:///${uri.replace(/^file:\/*/, '')}`;
+    } else if (!uri.startsWith('file://') && !uri.startsWith('content://')) {
+      uri = `file://${uri}`;
+    }
+  }
+  return uri;
+};
 
 /**
  * Handles both "free room tapped" direct check-in and "guest came" from a pending
@@ -33,13 +70,42 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
   const checkInFromReservation = useCheckInReservation();
   const recordAdvance = useRecordAdvancePayment();
 
+  const scrollRef = useRef(null);
+  const {
+    errors,
+    formError,
+    setFormError,
+    setErrors,
+    setError,
+    clearError,
+    registerInput,
+    registerContainer,
+    registerLayout,
+    scrollToFirstError,
+  } = useFormValidation({
+    scrollRef,
+    fieldOrder: [
+      'room',
+      'persons',
+      'phone',
+      'name',
+      'idNo',
+      'source',
+      'occupants',
+      'documents',
+      'days',
+      'rate',
+      'advance',
+    ],
+  });
+
   const initialPaid = Number(reservation?.advance_paid ?? 0);
   const [confirmedAdvance, setConfirmedAdvance] = useState(initialPaid);
 
   const { data: roomsData } = useRooms();
   const { data: allReservations = [] } = useReservations();
   const hkAction = useHousekeepingAction();
-  const currentRoom = room || roomsData?.rooms.find((r) => r.id === reservation?.room_id);
+  const currentRoom = room || roomsData?.rooms.find((r) => Number(r.id) === Number(reservation?.room_id));
   const isRoomOccupied = currentRoom?.status === 'occupied';
   const hkStatus = currentRoom?.housekeepingStatus || currentRoom?.housekeeping_status || reservation?.housekeeping_status || 'ok';
   const isRoomReady = hkStatus === 'ok';
@@ -70,7 +136,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
     ?? reservation?.max_persons
     ?? (reservation?.persons ? Math.max(2, Number(reservation.persons)) : 2);
 
-  const [phone, setPhone] = useState(isFromReservation ? reservation.guest_phone : '');
+  const [phone, setPhone] = useState(isFromReservation ? cleanPhone10(reservation.guest_phone) : '');
   const [name, setName] = useState(isFromReservation ? reservation.guest_name : '');
   const [idType, setIdType] = useState('Aadhaar');
   const [idNo, setIdNo] = useState('');
@@ -95,7 +161,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
         list.push({
           name: isFromReservation ? (reservation.guest_name || '') : '',
           gender: 'Male',
-          phone: isFromReservation ? (reservation.guest_phone || '') : '',
+          phone: isFromReservation ? cleanPhone10(reservation.guest_phone) : '',
         });
       } else {
         list.push({ name: '', gender: 'Male', phone: '' });
@@ -197,7 +263,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
   const isAdvanceEmptyOrZero = isNaN(advNum) || advNum <= 0;
 
   const advanceError = isFromReservation
-    ? (confirmedAdvance <= 0 && (advanceSubmitted || serverAdvanceError || triggerAdvanceError) ? ADVANCE_REQUIRED_MSG : '')
+    ? (confirmedAdvance <= 0 && isAdvanceEmptyOrZero && (advanceSubmitted || serverAdvanceError || triggerAdvanceError) ? ADVANCE_REQUIRED_MSG : '')
     : ((advanceSubmitted && isAdvanceEmptyOrZero) || serverAdvanceError ? ADVANCE_REQUIRED_MSG : '');
 
   const { data: lookup } = useGuestLookup(!isFromReservation ? phone : '');
@@ -247,12 +313,12 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
       setPreBookingAssignments((prev) => {
         let changed = false;
         const next = { ...prev };
-        for (const doc of preBookingDocs) {
+        preBookingDocs.forEach((doc, idx) => {
           if (next[doc.id] === undefined) {
-            next[doc.id] = occupants.length === 1 ? 0 : null;
+            next[doc.id] = idx < occupants.length ? idx : 0;
             changed = true;
           }
-        }
+        });
         return changed ? next : prev;
       });
     }
@@ -275,11 +341,14 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
   const allOccupantsValid = occupants.length > 0 && occupants.every((occ) => {
     const nameOk = !!(occ.name && occ.name.trim());
     const genderOk = !!(occ.gender && ['Male', 'Female', 'Other'].includes(occ.gender));
-    const phoneOk = (occ.phone || '').replace(/\D/g, '').length === 10;
+    const phoneClean = cleanPhone10(occ.phone);
+    const phoneOk = phoneClean.length === 10;
     return nameOk && genderOk && phoneOk;
   });
 
-  const isAdvanceValid = isFromReservation ? confirmedAdvance > 0 : Number(advance) > 0 && !!pay;
+  const isAdvanceValid = isFromReservation
+    ? (confirmedAdvance > 0 || !isAdvanceEmptyOrZero)
+    : (!isAdvanceEmptyOrZero && !!pay);
   const isCapacityValid = !isPersonsExceeded && occupants.length >= 1 && (roomMaxPersons == null || occupants.length <= Number(roomMaxPersons));
   const isSourceValid = isFromReservation || (
     (bookingSource !== 'Reference – Existing Member' || (referredByGuestId && referredByGuestId > 0)) &&
@@ -297,17 +366,68 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
         copyToCacheDirectory: true,
       });
       if (result.canceled) return;
-      const valid = (result.assets || []).map((f) => ({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        uri: f.uri,
-        name: f.name || 'document',
-        type: f.mimeType || 'application/octet-stream',
-        size: f.size,
-        occupantTarget: occupantTarget != null ? occupantTarget : (occupants.length === 1 ? 0 : null),
-      }));
+
+      const assets = result.assets || [];
+      const overSized = assets.filter((f) => f.size && f.size > 10 * 1024 * 1024);
+      if (overSized.length > 0) {
+        const msg = 'Document must be 10 MB or smaller.';
+        toast(msg);
+        Alert.alert('File Too Large', msg);
+      }
+
+      const validAssets = assets.filter((f) => !f.size || f.size <= 10 * 1024 * 1024);
+      const valid = validAssets.map((f) => {
+        const cleanName = sanitizeFileName(f.name);
+        const type = getMimeType(cleanName, f.mimeType);
+        const uri = formatFileUri(f.uri);
+
+        return {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+          uri,
+          name: cleanName,
+          type,
+          size: f.size,
+          occupantTarget: occupantTarget != null ? occupantTarget : (occupants.length === 1 ? 0 : null),
+        };
+      });
+
       setSelectedFiles((prev) => [...prev, ...valid]);
     } catch (e) {
       toast('Could not pick file: ' + e.message);
+    }
+  };
+
+  const pickPhoto = async (occupantTarget) => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: true,
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets || !result.assets[0]) return;
+      const asset = result.assets[0];
+      if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
+        const msg = 'Photo must be 10 MB or smaller.';
+        toast(msg);
+        Alert.alert('File Too Large', msg);
+        return;
+      }
+      const cleanName = sanitizeFileName(asset.fileName || `id-photo-${Date.now()}.jpg`);
+      const type = asset.mimeType || 'image/jpeg';
+      const uri = formatFileUri(asset.uri);
+
+      const valid = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        uri,
+        name: cleanName,
+        type,
+        size: asset.fileSize,
+        isImage: true,
+        occupantTarget: occupantTarget != null ? occupantTarget : (occupants.length === 1 ? 0 : null),
+      };
+      setSelectedFiles((prev) => [...prev, valid]);
+    } catch (e) {
+      toast('Could not pick photo: ' + e.message);
     }
   };
 
@@ -342,33 +462,48 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
     setPhoneTouched(true);
     setNameTouched(true);
 
+    const validationErrs = {};
+
     if (lateArrivalConflict) {
       const msg = `Late arrival conflict: Dates overlap with reservation ${lateArrivalConflict.booking_code}. Reception must resolve before check-in.`;
-      toast(msg);
-      return;
-    }
-
-    if (isRoomOccupied || !isRoomReady) {
+      validationErrs.room = msg;
+    } else if (isRoomOccupied || !isRoomReady) {
       const msg = roomReadinessError || 'Room is not ready for check-in.';
-      setServerRoomError(msg);
-      toast(msg);
-      return;
+      validationErrs.room = msg;
     }
 
     if (!isCapacityValid || isPersonsExceeded) {
       const msg = `This room allows a maximum of ${roomMaxPersons} persons.`;
-      setServerPersonsError(msg);
-      toast(msg);
-      return;
+      validationErrs.persons = msg;
     }
 
-    if (!isFromReservation && !/^[6-9]\d{9}$/.test(phone || '')) {
-      toast('Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.');
-      return;
-    }
-    if (!isFromReservation && !name.trim()) {
-      toast('Enter guest name.');
-      return;
+    if (!isFromReservation) {
+      const cleanPh = (phone || '').replace(/\D/g, '');
+      if (!cleanPh) {
+        validationErrs.phone = 'Mobile number is required.';
+      } else if (!/^[6-9]\d{9}$/.test(cleanPh)) {
+        validationErrs.phone = 'Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.';
+      }
+      if (!name.trim()) {
+        validationErrs.name = 'Enter guest name.';
+      }
+      if (bookingSource === 'Reference – Existing Member' && (!referredByGuestId || referredByGuestId <= 0)) {
+        validationErrs.source = 'Please select an existing member as reference.';
+      }
+      if (bookingSource === 'Other' && !otherSource.trim()) {
+        validationErrs.source = 'Please enter person name for reference.';
+      }
+      const advVal = advance === '' ? 0 : Number(advance);
+      if (isNaN(advVal) || advVal <= 0) {
+        validationErrs.advance = ADVANCE_REQUIRED_MSG;
+      }
+    } else {
+      if (confirmedAdvance <= 0) {
+        const advVal = Number(advance) || 0;
+        if (advVal <= 0) {
+          validationErrs.advance = ADVANCE_REQUIRED_MSG;
+        }
+      }
     }
 
     let hasOccErrors = false;
@@ -377,22 +512,41 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
       const errs = {};
       if (!(occ.name || '').trim()) { errs.name = 'Name is required.'; hasOccErrors = true; }
       if (!['Male', 'Female', 'Other'].includes((occ.gender || '').trim())) { errs.gender = 'Gender is required.'; hasOccErrors = true; }
-      if ((occ.phone || '').replace(/\D/g, '').length !== 10) { errs.phone = '10-digit phone number is required.'; hasOccErrors = true; }
+      if (cleanPhone10(occ.phone).length !== 10) { errs.phone = '10-digit phone number is required.'; hasOccErrors = true; }
       if (Object.keys(errs).length > 0) occErrors[idx] = errs;
     });
     if (hasOccErrors) {
       setOccupantErrors(occErrors);
-      toast('Please enter required details (Name, Gender, 10-digit Phone) for all occupants.');
-      return;
+      validationErrs.occupants = 'Please enter required details (Name, Gender, 10-digit Phone) for all occupants.';
     }
 
     if (!allOccupantsHaveIdProof) {
-      toast('Every occupant must have at least one ID proof document attached before check-in can be confirmed.');
-      return;
+      validationErrs.documents = 'Every occupant must have at least one ID proof document attached before check-in can be confirmed.';
+    } else if (!allDocumentsAssigned) {
+      validationErrs.documents = 'Please assign all uploaded ID proof documents to an occupant.';
     }
 
-    if (!allDocumentsAssigned) {
-      toast('Please assign all uploaded ID proof documents to an occupant.');
+    if (Object.keys(validationErrs).length > 0) {
+      if (validationErrs.room) setServerRoomError(validationErrs.room);
+      if (validationErrs.persons) setServerPersonsError(validationErrs.persons);
+      if (validationErrs.source) setSourceError(validationErrs.source);
+      if (validationErrs.advance) setServerAdvanceError(validationErrs.advance);
+      setErrors(validationErrs);
+      scrollToFirstError(validationErrs);
+
+      const topMsg = validationErrs.room || validationErrs.persons || validationErrs.phone || validationErrs.name || validationErrs.occupants || validationErrs.documents || validationErrs.advance;
+      if (topMsg) toast(topMsg);
+
+      if (!hasOccErrors && !validationErrs.phone && !validationErrs.name && !validationErrs.advance && !validationErrs.room && !validationErrs.persons && !allOccupantsHaveIdProof) {
+        Alert.alert(
+          'ID Proof Required',
+          'Every occupant must have at least one ID proof document attached before check-in can be confirmed.',
+          [
+            { text: 'Upload ID Proof', onPress: () => pickDocument(0) },
+            { text: 'Cancel', style: 'cancel' },
+          ]
+        );
+      }
       return;
     }
 
@@ -400,39 +554,43 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
       occupant_number: i + 1,
       name: (occ.name || '').trim(),
       gender: (occ.gender || '').trim(),
-      phone: (occ.phone || '').trim(),
+      phone: cleanPhone10(occ.phone),
     }));
 
     if (isFromReservation) {
       if (confirmedAdvance <= 0) {
-        setServerAdvanceError(ADVANCE_REQUIRED_MSG);
-        toast(ADVANCE_REQUIRED_MSG);
-        return;
-      }
-    } else {
-      if (bookingSource === 'Reference – Existing Member' && (!referredByGuestId || referredByGuestId <= 0)) {
-        setSourceError('Please select an existing member as reference.');
-        toast('Please select an existing member as reference.');
-        return;
-      }
-      if (bookingSource === 'Other' && !otherSource.trim()) {
-        setSourceError('Please enter person name for reference.');
-        toast('Please enter person name for reference.');
-        return;
-      }
-      const advVal = advance === '' ? 0 : Number(advance);
-      if (isNaN(advVal) || advVal <= 0) {
-        setServerAdvanceError(ADVANCE_REQUIRED_MSG);
-        toast(ADVANCE_REQUIRED_MSG);
-        return;
+        const advVal = Number(advance) || 0;
+        if (advVal > 0) {
+          try {
+            const res = await recordAdvance.mutateAsync({ id: reservation.id, amount: advVal, method: pay });
+            setConfirmedAdvance(Number(res?.advance_paid ?? advVal));
+            setServerAdvanceError('');
+          } catch (err) {
+            setServerAdvanceError(ADVANCE_REQUIRED_MSG);
+            setErrors((p) => ({ ...p, advance: ADVANCE_REQUIRED_MSG }));
+            scrollToFirstError({ advance: ADVANCE_REQUIRED_MSG });
+            const msg = err.message || 'Failed to record advance payment.';
+            toast(msg);
+            Alert.alert('Advance Payment Failed', msg);
+            return;
+          }
+        }
       }
     }
 
     isSubmittingRef.current = true;
 
     try {
+      // Ensure all selected files have properly formatted URIs and MIME types
+      const readyFiles = selectedFiles.map((item) => {
+        const name = sanitizeFileName(item.name);
+        const type = getMimeType(name, item.type);
+        const uri = formatFileUri(item.uri);
+        return { ...item, uri, name, type };
+      });
+
       if (isFromReservation) {
-        if (selectedFiles.length > 0) {
+        if (readyFiles.length > 0) {
           const form = new FormData();
           form.append('id', String(reservation.id));
           form.append('persons', String(occupants.length));
@@ -441,9 +599,9 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
           if (Object.keys(preBookingAssignments).length > 0) {
             form.append('preBookingDocAssignments', JSON.stringify(preBookingAssignments));
           }
-          selectedFiles.forEach((item) => {
+          readyFiles.forEach((item) => {
             form.append('documents[]', { uri: item.uri, name: item.name, type: item.type });
-            form.append('occupantTargets[]', String(item.occupantTarget ?? ''));
+            form.append('occupantTargets[]', String(item.occupantTarget ?? '0'));
           });
           await checkInFromReservation.mutateAsync({ id: reservation.id, formData: form });
         } else {
@@ -458,7 +616,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
         toast(`${reservation.guest_name.split(' ')[0]} checked in to Room ${reservation.room_no}.`);
       } else {
         const advVal = advance === '' ? 0 : Number(advance);
-        if (selectedFiles.length > 0) {
+        if (readyFiles.length > 0) {
           const form = new FormData();
           form.append('roomId', String(room.id));
           form.append('phone', phone.replace(/\D/g, ''));
@@ -480,9 +638,9 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
           form.append('rate', String(Number(rate) || 0));
           form.append('advanceAmount', String(advVal));
           form.append('advanceMethod', pay);
-          selectedFiles.forEach((item) => {
+          readyFiles.forEach((item) => {
             form.append('documents[]', { uri: item.uri, name: item.name, type: item.type });
-            form.append('occupantTargets[]', String(item.occupantTarget ?? ''));
+            form.append('occupantTargets[]', String(item.occupantTarget ?? '0'));
           });
           await directCheckIn.mutateAsync(form);
         } else {
@@ -509,32 +667,40 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
       }
       onClose();
     } catch (err) {
+      const msg = err.fields?.room || err.fields?.housekeepingStatus || err.fields?.advanceAmount || err.fields?.persons || err.fields?.occupants || err.fields?.documents || err.message || 'Check-in failed. Please verify the details.';
+      const backendErrs = {};
       if (err.fields?.room || err.fields?.housekeepingStatus || err.message?.includes('not ready') || err.message?.includes('maintenance') || err.message?.includes('already occupied') || err.message?.includes('Complete the previous checkout')) {
-        const msg = err.fields?.room || err.fields?.housekeepingStatus || err.message;
         setServerRoomError(msg);
-        toast(msg);
-        return;
+        backendErrs.room = msg;
       }
       if (err.fields?.advanceAmount || err.message?.includes('advance amount before check-in') || err.message?.includes('Advance payment is required') || err.message?.includes('advance')) {
         setServerAdvanceError(ADVANCE_REQUIRED_MSG);
-        toast(ADVANCE_REQUIRED_MSG);
-        return;
+        backendErrs.advance = ADVANCE_REQUIRED_MSG;
       }
       if (err.fields?.persons || err.message?.includes('allows a maximum of') || err.message?.includes('positive whole number')) {
-        const msg = err.fields?.persons || err.message;
         setServerPersonsError(msg);
-        toast(msg);
-        return;
+        backendErrs.persons = msg;
       }
-      if (err.fields?.occupants || err.message?.includes('Occupant') || err.message?.includes('occupant')) {
-        toast(err.fields?.occupants || err.message);
-        return;
+      if (err.fields?.phone || err.fields?.mobile_number || err.fields?.guest_phone) {
+        backendErrs.phone = err.fields.phone || err.fields.mobile_number || err.fields.guest_phone;
       }
-      if (err.fields?.documents || err.message?.includes('document') || err.message?.includes('Document')) {
-        toast(err.fields?.documents || err.message);
-        return;
+      if (err.fields?.name || err.fields?.guest_name) {
+        backendErrs.name = err.fields.name || err.fields.guest_name;
       }
-      toast(err.message || 'Check-in failed. Please verify the details.');
+      if (err.fields?.documents) {
+        backendErrs.documents = err.fields.documents;
+      }
+      if (err.fields?.occupants) {
+        backendErrs.occupants = err.fields.occupants;
+      }
+      if (Object.keys(backendErrs).length > 0) {
+        setErrors(backendErrs);
+        scrollToFirstError(backendErrs);
+      } else {
+        setFormError(msg);
+      }
+      toast(msg);
+      Alert.alert('Check-In Failed', msg);
     } finally {
       isSubmittingRef.current = false;
     }
@@ -563,7 +729,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
   const isFormDirty = Boolean(!isFromReservation && (phone.trim() || name.trim() || idNo.trim() || otherSource.trim()));
 
   return (
-    <Sheet onClose={onClose} hasUnsavedChanges={isFormDirty}>
+    <Sheet onClose={onClose} hasUnsavedChanges={isFormDirty} scrollRef={scrollRef}>
       <SheetHeader
         status={isFromReservation ? 'booked' : 'free'}
         badge={roomNo}
@@ -573,8 +739,10 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
         hasUnsavedChanges={isFormDirty}
       />
       <View style={styles.body}>
+        <FormErrorBanner message={formError} />
+
         {lateArrivalConflict && (
-          <View style={[styles.warn, styles.warnDanger]}>
+          <View ref={registerContainer('room')} onLayout={registerLayout('room')} style={[styles.warn, styles.warnDanger]}>
             <Text style={styles.warnTitle}>⚠️ Late Arrival Booking Conflict</Text>
             <Text style={styles.warnText}>
               Checking in today until {fd(out)} conflicts with upcoming reservation {lateArrivalConflict.booking_code}. Check-in is blocked.
@@ -582,7 +750,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
           </View>
         )}
         {roomReadinessError ? (
-          <View style={[styles.warn, isRoomMaintenance && styles.warnDanger]}>
+          <View ref={registerContainer('room')} onLayout={registerLayout('room')} style={[styles.warn, isRoomMaintenance && styles.warnDanger]}>
             <Text style={styles.warnText}>Check-in blocked: {roomReadinessError}</Text>
             {isRoomNotReady && currentRoom ? (
               <Button
@@ -592,6 +760,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
                   try {
                     await hkAction.mutateAsync({ roomId: currentRoom.id, action: 'ready' });
                     setServerRoomError('');
+                    clearError('room');
                     toast(`Room ${roomNo} marked ready.`);
                   } catch (e) { toast(e.message); }
                 }}
@@ -609,51 +778,122 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
           </View>
         ) : (
           <>
-            <View>
-              <Text style={styles.label}>Mobile number *</Text>
-              <Input keyboardType="phone-pad" maxLength={10} placeholder="10 digits (6-9)" value={phone} onChangeText={setPhone} onBlur={() => setPhoneTouched(true)} />
-              {phoneTouched && !/^[6-9]\d{9}$/.test(phone || '') ? <Text style={styles.err}>Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.</Text> : null}
+            <FormField
+              ref={registerContainer('phone')}
+              onLayout={registerLayout('phone')}
+              label="Mobile number"
+              required
+              error={errors.phone || (phoneTouched && !/^[6-9]\d{9}$/.test(phone || '') ? 'Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.' : '')}
+            >
+              <Input
+                ref={registerInput('phone')}
+                keyboardType="phone-pad"
+                maxLength={10}
+                placeholder="10 digits (6-9)"
+                value={phone}
+                onChangeText={(v) => {
+                  setPhone(v);
+                  clearError('phone');
+                }}
+                onBlur={() => setPhoneTouched(true)}
+                error={Boolean(errors.phone || (phoneTouched && !/^[6-9]\d{9}$/.test(phone || '')))}
+              />
               {matchedGuestId ? <Text style={styles.found}>Old guest found. Details filled in.</Text> : null}
-            </View>
-            <View>
-              <Text style={styles.label}>Guest name *</Text>
-              <Input value={name} onChangeText={setName} onBlur={() => setNameTouched(true)} />
-              {nameTouched && !name.trim() ? <Text style={styles.err}>Enter guest name.</Text> : null}
-            </View>
-            <View>
+            </FormField>
+
+            <FormField
+              ref={registerContainer('name')}
+              onLayout={registerLayout('name')}
+              label="Guest name"
+              required
+              error={errors.name || (nameTouched && !name.trim() ? 'Enter guest name.' : '')}
+            >
+              <Input
+                ref={registerInput('name')}
+                value={name}
+                onChangeText={(v) => {
+                  setName(v);
+                  clearError('name');
+                }}
+                onBlur={() => setNameTouched(true)}
+                error={Boolean(errors.name || (nameTouched && !name.trim()))}
+              />
+            </FormField>
+
+            <View style={styles.fieldWrap}>
               <Text style={styles.label}>ID proof *</Text>
               <Segmented options={IDS} value={idType} onChange={setIdType} />
             </View>
-            <View>
-              <Text style={styles.label}>ID number {!matchedGuestId ? '*' : ''}</Text>
-              <Input value={idNo} onChangeText={setIdNo} placeholder={matchedGuestId ? 'Already saved' : ''} />
-            </View>
-            <View>
+
+            <FormField
+              ref={registerContainer('idNo')}
+              onLayout={registerLayout('idNo')}
+              label={`ID number ${!matchedGuestId ? '*' : ''}`}
+              error={errors.idNo}
+            >
+              <Input
+                ref={registerInput('idNo')}
+                value={idNo}
+                onChangeText={(v) => {
+                  setIdNo(v);
+                  clearError('idNo');
+                }}
+                placeholder={matchedGuestId ? 'Already saved' : ''}
+                error={errors.idNo}
+              />
+            </FormField>
+
+            <View style={styles.fieldWrap}>
               <Text style={styles.label}>From (city)</Text>
               <Input value={city} onChangeText={setCity} />
             </View>
-            <View>
+
+            <View ref={registerContainer('source')} onLayout={registerLayout('source')} style={styles.fieldWrap}>
               <Text style={styles.label}>Booking source</Text>
               <Segmented options={['Social Media', 'Reference – Existing Member', 'Other']} value={bookingSource} onChange={handleSourceChange} />
             </View>
+
             {bookingSource === 'Reference – Existing Member' && (
-              <View>
-                <Text style={styles.label}>Referred By *</Text>
-                <ReferredBySelect value={referredByGuestId} onChange={(id) => { setReferredByGuestId(id); setSourceError(''); }} excludeGuestId={matchedGuestId} hasError={!!sourceError} />
-                {sourceError ? <Text style={styles.err}>{sourceError}</Text> : null}
-              </View>
+              <FormField
+                label="Referred By"
+                required
+                error={sourceError || errors.source}
+              >
+                <ReferredBySelect
+                  value={referredByGuestId}
+                  onChange={(id) => {
+                    setReferredByGuestId(id);
+                    setSourceError('');
+                    clearError('source');
+                  }}
+                  excludeGuestId={matchedGuestId}
+                  hasError={Boolean(sourceError || errors.source)}
+                />
+              </FormField>
             )}
+
             {bookingSource === 'Other' && (
-              <View>
-                <Text style={styles.label}>Person Name *</Text>
-                <Input value={otherSource} onChangeText={(v) => { setOtherSource(v); setSourceError(''); }} />
-                {sourceError ? <Text style={styles.err}>{sourceError}</Text> : null}
-              </View>
+              <FormField
+                label="Person Name"
+                required
+                error={sourceError || errors.source}
+              >
+                <Input
+                  ref={registerInput('source')}
+                  value={otherSource}
+                  onChangeText={(v) => {
+                    setOtherSource(v);
+                    setSourceError('');
+                    clearError('source');
+                  }}
+                  error={sourceError || errors.source}
+                />
+              </FormField>
             )}
           </>
         )}
 
-        <View>
+        <View ref={registerContainer('persons')} onLayout={registerLayout('persons')}>
           <View style={styles.rowBetween}>
             <Text style={styles.label}>Actual Persons Count *</Text>
             <Text style={styles.hint}>Max {roomMaxPersons}</Text>
@@ -662,61 +902,104 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
           {personsError ? <Text style={styles.err}>{personsError}</Text> : null}
         </View>
 
-          <View style={{ gap: 8 }}>
-            <View style={styles.rowBetween}>
-              <Text style={[styles.label, { fontWeight: '700' }]}>Occupant Details</Text>
-              <View style={styles.pillBadge}><Text style={styles.pillBadgeText}>{occupants.length} {occupants.length === 1 ? 'Person' : 'Persons'}</Text></View>
-            </View>
-            {occupants.map((occ, idx) => {
-              const occErr = occupantErrors[idx] || {};
-              const docCount = getOccupantDocumentCount(idx);
-              const occFiles = selectedFiles.filter((f) => f.occupantTarget === idx);
+        <View ref={registerContainer('occupants')} onLayout={registerLayout('occupants')} style={{ gap: 8 }}>
+          <View style={styles.rowBetween}>
+            <Text style={[styles.label, { fontWeight: '700' }]}>Occupant Details</Text>
+            <View style={styles.pillBadge}><Text style={styles.pillBadgeText}>{occupants.length} {occupants.length === 1 ? 'Person' : 'Persons'}</Text></View>
+          </View>
+          {errors.occupants ? <FieldError>{errors.occupants}</FieldError> : null}
+          {occupants.map((occ, idx) => {
+            const occErr = occupantErrors[idx] || {};
+            const docCount = getOccupantDocumentCount(idx);
+            const occFiles = selectedFiles.filter((f) => f.occupantTarget === idx);
 
-              return (
-                <View key={idx} style={styles.occCard}>
-                  <Text style={styles.occHeader}>Person {idx + 1} {idx === 0 ? '(Primary Guest)' : ''}</Text>
-                  <Input placeholder="Full name *" value={occ.name} onChangeText={(v) => handleOccupantFieldChange(idx, 'name', v)} error={occErr.name} style={{ marginBottom: 6 }} />
-                  <Text style={[styles.subLabel, { marginBottom: 4 }]}>Gender *</Text>
-                  <Segmented options={['Male', 'Female', 'Other']} value={occ.gender} onChange={(v) => handleOccupantFieldChange(idx, 'gender', v)} style={{ marginBottom: 6 }} />
-                  {occErr.gender ? <Text style={styles.err}>{occErr.gender}</Text> : null}
-                  <Input placeholder="10-digit mobile *" keyboardType="phone-pad" maxLength={10} value={occ.phone} onChangeText={(v) => handleOccupantFieldChange(idx, 'phone', v.replace(/\D/g, '').slice(0, 10))} error={occErr.phone} style={{ marginBottom: 8 }} />
+            return (
+              <View key={idx} style={styles.occCard}>
+                <Text style={styles.occHeader}>Person {idx + 1} {idx === 0 ? '(Primary Guest)' : ''}</Text>
+                <Input
+                  ref={registerInput('occ_name_' + idx)}
+                  placeholder="Full name *"
+                  value={occ.name}
+                  onChangeText={(v) => {
+                    handleOccupantFieldChange(idx, 'name', v);
+                    clearError('occupants');
+                  }}
+                  error={occErr.name}
+                  style={{ marginBottom: 6 }}
+                />
+                {occErr.name ? <FieldError style={{ marginBottom: 6 }}>{occErr.name}</FieldError> : null}
 
-                  {/* Dedicated Choose File Button and Upload Area */}
-                  <View style={styles.uploadSection}>
-                    <Text style={styles.subLabel}>ID Proof Document *</Text>
+                <Text style={[styles.subLabel, { marginBottom: 4 }]}>Gender *</Text>
+                <Segmented options={['Male', 'Female', 'Other']} value={occ.gender} onChange={(v) => { handleOccupantFieldChange(idx, 'gender', v); clearError('occupants'); }} style={{ marginBottom: 6 }} error={Boolean(occErr.gender)} />
+                {occErr.gender ? <FieldError style={{ marginBottom: 6 }}>{occErr.gender}</FieldError> : null}
+
+                <Input
+                  ref={registerInput('occ_phone_' + idx)}
+                  placeholder="10-digit mobile *"
+                  keyboardType="phone-pad"
+                  maxLength={10}
+                  value={occ.phone}
+                  onChangeText={(v) => {
+                    handleOccupantFieldChange(idx, 'phone', v.replace(/\D/g, '').slice(0, 10));
+                    clearError('occupants');
+                  }}
+                  error={occErr.phone}
+                  style={{ marginBottom: 8 }}
+                />
+                {occErr.phone ? <FieldError style={{ marginBottom: 8 }}>{occErr.phone}</FieldError> : null}
+
+                {/* Dedicated Choose File Button and Upload Area */}
+                <View ref={idx === 0 ? registerContainer('documents') : undefined} onLayout={idx === 0 ? registerLayout('documents') : undefined} style={styles.uploadSection}>
+                  <Text style={styles.subLabel}>ID Proof Document *</Text>
+                  <View style={{ flexDirection: 'row', gap: 6 }}>
                     <Pressable
-                      style={[styles.chooseFileBtn, docCount > 0 ? styles.chooseFileBtnSuccess : styles.chooseFileBtnActive]}
+                      style={[styles.chooseFileBtn, { flex: 1 }, docCount > 0 ? styles.chooseFileBtnSuccess : styles.chooseFileBtnActive]}
                       onPress={() => pickDocument(idx)}
                     >
                       <Text style={styles.chooseFileIcon}>📎</Text>
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.chooseFileTitle}>
-                          {docCount > 0 ? `Attach Another Document (P${idx + 1})` : `Choose File / Upload ID (P${idx + 1})`}
+                        <Text style={styles.chooseFileTitle} numberOfLines={1}>
+                          {docCount > 0 ? `Attach Doc (P${idx + 1})` : `Choose File / Upload ID (P${idx + 1})`}
                         </Text>
-                        <Text style={styles.chooseFileSubtitle}>PDF, PNG, JPG or WebP (Max 10MB)</Text>
+                        <Text style={styles.chooseFileSubtitle}>PDF or Doc</Text>
                       </View>
                     </Pressable>
-
-                    {/* Attached files list for this occupant */}
-                    {occFiles.map((file) => (
-                      <View key={file.id} style={styles.occFilePill}>
-                        <Text style={styles.occFileName} numberOfLines={1}>📄 {file.name}</Text>
-                        <Pressable onPress={() => removeFile(file.id)} hitSlop={8} style={styles.occFileDelete}>
-                          <Text style={styles.occFileDeleteText}>✕</Text>
-                        </Pressable>
+                    <Pressable
+                      style={[styles.chooseFileBtn, { flex: 1 }, docCount > 0 ? styles.chooseFileBtnSuccess : styles.chooseFileBtnActive]}
+                      onPress={() => pickPhoto(idx)}
+                    >
+                      <Text style={styles.chooseFileIcon}>📷</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.chooseFileTitle} numberOfLines={1}>
+                          Upload Photo (P{idx + 1})
+                        </Text>
+                        <Text style={styles.chooseFileSubtitle}>Gallery / Photo</Text>
                       </View>
-                    ))}
+                    </Pressable>
+                  </View>
 
-                    <View style={styles.rowBetween}>
-                      <Text style={docCount > 0 ? styles.docOk : styles.docMissing}>
-                        {docCount > 0 ? `✓ ${docCount} ID document(s) uploaded` : '⚠️ Please upload ID proof document'}
-                      </Text>
+                  {/* Attached files list for this occupant */}
+                  {occFiles.map((file) => (
+                    <View key={file.id} style={styles.occFilePill}>
+                      <Text style={styles.occFileName} numberOfLines={1}>📄 {file.name}</Text>
+                      <Pressable onPress={() => removeFile(file.id)} hitSlop={8} style={styles.occFileDelete}>
+                        <Text style={styles.occFileDeleteText}>✕</Text>
+                      </Pressable>
                     </View>
+                  ))}
+
+                  <View style={styles.rowBetween}>
+                    <Text style={docCount > 0 ? styles.docOk : styles.docMissing}>
+                      {docCount > 0 ? `✓ ${docCount} ID document(s) uploaded` : '⚠️ Please upload ID proof document'}
+                    </Text>
                   </View>
                 </View>
-              );
-            })}
-          </View>
+              </View>
+            );
+          })}
+        </View>
+
+        {errors.documents ? <FieldError style={{ marginTop: 4 }}>{errors.documents}</FieldError> : null}
 
         {isFromReservation && preBookingDocs?.length > 0 && (
           <View style={{ gap: 6 }}>
@@ -751,14 +1034,29 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
           </View>
         )}
 
-        <View>
+        <View ref={registerContainer('days')} onLayout={registerLayout('days')}>
           <Text style={styles.label}>Days *</Text>
           <Stepper value={Number(days) || 1} min={1} onChange={(v) => setDays(v)} />
         </View>
-        <View>
-          <Text style={styles.label}>Rate per day (₹) *</Text>
-          <Input keyboardType="numeric" value={String(rate)} onChangeText={setRate} editable={!isFromReservation} />
-        </View>
+        <FormField
+          ref={registerContainer('rate')}
+          onLayout={registerLayout('rate')}
+          label="Rate per day (₹)"
+          required
+          error={errors.rate}
+        >
+          <Input
+            ref={registerInput('rate')}
+            keyboardType="numeric"
+            value={String(rate)}
+            onChangeText={(v) => {
+              setRate(v);
+              clearError('rate');
+            }}
+            editable={!isFromReservation}
+            error={errors.rate}
+          />
+        </FormField>
 
         {isFromReservation && confirmedAdvance > 0 ? (
           <View style={styles.advanceOk}>
@@ -766,17 +1064,38 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
           </View>
         ) : (
           <>
-            <View>
-              <Text style={styles.label}>Advance amount (₹) *</Text>
+            <FormField
+              ref={registerContainer('advance')}
+              onLayout={registerLayout('advance')}
+              label="Advance amount (₹)"
+              required
+              error={advanceError || errors.advance}
+            >
               <View style={{ flexDirection: 'row', gap: 8 }}>
-                <Input style={{ flex: 1 }} keyboardType="numeric" placeholder="0" value={advance} onChangeText={setAdvance} error={!!advanceError} />
+                <Input
+                  ref={registerInput('advance')}
+                  style={{ flex: 1 }}
+                  keyboardType="numeric"
+                  placeholder="0"
+                  value={advance}
+                  onChangeText={(v) => {
+                    setAdvance(v);
+                    setServerAdvanceError('');
+                    clearError('advance');
+                  }}
+                  error={Boolean(advanceError || errors.advance)}
+                />
                 {isFromReservation ? (
-                  <Button title={recordAdvance.isPending ? 'Collecting…' : 'Collect'} variant="success" loading={recordAdvance.isPending} onPress={handleCollectAdvance} />
+                  <Button
+                    title={recordAdvance.isPending ? 'Collecting…' : 'Collect'}
+                    variant="success"
+                    loading={recordAdvance.isPending}
+                    onPress={handleCollectAdvance}
+                  />
                 ) : null}
               </View>
-              {advanceError ? <Text style={styles.err}>{advanceError}</Text> : null}
-            </View>
-            <View>
+            </FormField>
+            <View style={styles.fieldWrap}>
               <Text style={styles.label}>Advance paid by</Text>
               <Segmented options={['cash', 'upi', 'card']} value={pay} onChange={setPay} />
             </View>
@@ -811,7 +1130,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
           variant="success"
           size="lg"
           loading={isPending}
-          disabled={isPending || !allMandatoryChecksPassed}
+          disabled={isPending}
           onPress={onSubmit}
         />
         {!allMandatoryChecksPassed && (

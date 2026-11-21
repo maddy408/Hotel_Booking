@@ -142,4 +142,22 @@ describe('Mobile Bookings Screen - Check-in Overdue Synchronization', () => {
     const canInB = res.check_in_date <= today && !isOccupiedB && !isMaintenanceB && isReadyB;
     assert.equal(canInB, true, 'Check in enabled when free and ready');
   });
+
+  it('7. Correctly calculates late arrival date conflict against all reservations without ReferenceError', () => {
+    const today = '2026-11-20';
+    const all = [
+      { id: 1, room_id: 101, status: 'pending', check_in_date: '2026-11-18', check_out_date: '2026-11-22', booking_code: 'BK-1' },
+      { id: 2, room_id: 101, status: 'pending', check_in_date: '2026-11-21', check_out_date: '2026-11-25', booking_code: 'BK-2' },
+    ];
+    const s = all[0];
+    const nights = nightsBetween(s.check_in_date, s.check_out_date);
+    const out = addDaysIso(today, nights);
+    const isLateArrival = s.status === 'pending' && (s.check_in_date < today || s.check_out_date <= today);
+    assert.equal(isLateArrival, true);
+    const lateArrivalConflict = isLateArrival
+      ? all.find((o) => o.id !== s.id && Number(o.room_id) === Number(s.room_id) && o.status === 'pending' && o.check_in_date < out && today < o.check_out_date)
+      : null;
+    assert.ok(lateArrivalConflict, 'Conflict detected with BK-2');
+    assert.equal(lateArrivalConflict.booking_code, 'BK-2');
+  });
 });

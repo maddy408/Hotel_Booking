@@ -1,25 +1,39 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import Screen, { EmptyState, ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
-import { Input } from '../../components/ui/Field.jsx';
+import SearchInput from '../../components/ui/SearchInput.jsx';
 import Button from '../../components/ui/Button.jsx';
 import GuestEditSheet from '../../components/sheets/GuestEditSheet.jsx';
 import { useGuests } from '../../api/guests';
+import { useDebounce } from '../../lib/useDebounce';
 import { colors, fonts, radii } from '../../theme/theme';
 
 export default function GuestsScreen({ navigation }) {
   const [q, setQ] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [editGuestId, setEditGuestId] = useState(null);
-  const [expandedOccupantsGuestId, setExpandedOccupantsGuestId] = useState(null);
 
-  const { data: guests, isLoading, isError, error, refetch, isRefetching } = useGuests(q);
+  const debouncedQ = useDebounce(q, 350);
+  const { data: guests, isLoading, isError, error, refetch, isRefetching } = useGuests(debouncedQ);
 
-  const filteredGuests = (guests || []).filter((g) => {
-    if (statusFilter === 'all') return true;
-    const key = g.statusKey || g.status_key || (g.status || '').toLowerCase().replace(/[\s-]/g, '_');
-    return key === statusFilter;
-  });
+  const filteredGuests = useMemo(() => {
+    return (guests || []).filter((g) => {
+      if (statusFilter !== 'all') {
+        const key = g.statusKey || g.status_key || (g.status || '').toLowerCase().replace(/[\s-]/g, '_');
+        if (key !== statusFilter) return false;
+      }
+      if (q.trim()) {
+        const term = q.toLowerCase().trim();
+        const matches =
+          (g.name && g.name.toLowerCase().includes(term)) ||
+          (g.phone && g.phone.includes(term)) ||
+          (g.room && String(g.room).includes(term)) ||
+          (g.email && g.email.toLowerCase().includes(term));
+        if (!matches) return false;
+      }
+      return true;
+    });
+  }, [guests, statusFilter, q]);
 
   const renderStatusBadge = (status, statusKey) => {
     const key = statusKey || (status || '').toLowerCase().replace(/[\s-]/g, '_');
@@ -76,36 +90,44 @@ export default function GuestsScreen({ navigation }) {
       return <Text style={styles.occupantsMuted}>—</Text>;
     }
 
-    const isExpanded = expandedOccupantsGuestId === g.id;
-    const visibleOccupants = isExpanded ? occupants : occupants.slice(0, 2);
-    const hiddenCount = occupants.length - 2;
+    // Deduplicate occupants by name to prevent duplicate occupant rows
+    const seenNames = new Set();
+    const uniqueOccupants = [];
+    for (const occ of occupants) {
+      const nameKey = (occ.name || '').trim().toLowerCase();
+      if (nameKey && seenNames.has(nameKey)) {
+        continue;
+      }
+      if (nameKey) {
+        seenNames.add(nameKey);
+      }
+      uniqueOccupants.push(occ);
+    }
 
     return (
       <View style={{ gap: 3 }}>
-        {visibleOccupants.map((occ, idx) => (
-          <View key={idx} style={styles.occupantRow}>
-            <Text style={styles.occupantName} numberOfLines={1}>
-              {occ.name || 'Occupant'}
-            </Text>
-            <Text style={occ.isPrimary || occ.is_primary ? styles.occupantLeadRole : styles.occupantRole}>
-              ({occ.role || (occ.isPrimary || occ.is_primary ? 'Primary Guest' : 'Additional Occupant')})
-            </Text>
-          </View>
-        ))}
-
-        {hiddenCount > 0 && (
-          <Pressable
-            style={styles.expandOccupantsBtn}
-            hitSlop={8}
-            onPress={() => {
-              setExpandedOccupantsGuestId(isExpanded ? null : g.id);
-            }}
-          >
-            <Text style={styles.expandOccupantsText}>
-              {isExpanded ? 'Show less ▲' : `+${hiddenCount} more ▼`}
-            </Text>
-          </Pressable>
-        )}
+        {uniqueOccupants.map((occ, idx) => {
+          const isPrimary = Boolean(occ.isPrimary || occ.is_primary || (occ.role && occ.role.toLowerCase().includes('primary')));
+          return (
+            <View key={idx} style={styles.occupantRow}>
+              <Text style={styles.occupantBullet}>•</Text>
+              <Text style={styles.occupantName}>
+                {occ.name || `Occupant ${idx + 1}`}
+              </Text>
+              {isPrimary ? (
+                <Text style={styles.occupantLeadRole}>
+                  (Primary Guest)
+                </Text>
+              ) : (
+                occ.role && occ.role !== 'Additional Occupant' && occ.role !== 'Primary Guest' ? (
+                  <Text style={styles.occupantRole}>
+                    ({occ.role})
+                  </Text>
+                ) : null
+              )}
+            </View>
+          );
+        })}
       </View>
     );
   };
@@ -132,7 +154,7 @@ export default function GuestsScreen({ navigation }) {
     );
   };
 
-  const renderHeader = () => (
+  const renderHeader = useMemo(() => (
     <View style={styles.headerContainer}>
       {/* Header */}
       <View style={styles.header}>
@@ -155,8 +177,8 @@ export default function GuestsScreen({ navigation }) {
         />
       </View>
 
-      {/* Search Input */}
-      <Input
+      {/* Search Input with Clear Button */}
+      <SearchInput
         placeholder="Search name, mobile or room…"
         value={q}
         onChangeText={setQ}
@@ -185,7 +207,7 @@ export default function GuestsScreen({ navigation }) {
         ))}
       </View>
     </View>
-  );
+  ), [guests?.length, q, statusFilter, navigation]);
 
   const renderEmpty = () => {
     if (isLoading) return <LoadingState />;
@@ -407,21 +429,11 @@ const styles = StyleSheet.create({
   addRoomBadge: { backgroundColor: colors.infoBg, borderRadius: 3, paddingHorizontal: 4, paddingVertical: 1 },
   addRoomText: { fontFamily: fonts.monoBold, fontSize: 10, color: colors.info },
   occupantsMuted: { fontFamily: fonts.body, fontStyle: 'italic', fontSize: 11.5, color: colors.textSecondary, marginTop: 2 },
-  occupantRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  occupantName: { fontFamily: fonts.bodySemibold, fontSize: 12, color: colors.heading, maxWidth: 140 },
+  occupantRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4, marginTop: 2 },
+  occupantBullet: { fontFamily: fonts.body, fontSize: 12, color: colors.textSecondary },
+  occupantName: { fontFamily: fonts.bodySemibold, fontSize: 12, color: colors.heading },
   occupantRole: { fontFamily: fonts.body, fontSize: 11, color: colors.textSecondary },
   occupantLeadRole: { fontFamily: fonts.bodyBold, fontSize: 11, color: colors.primary },
-  expandOccupantsBtn: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginTop: 3,
-  },
-  expandOccupantsText: { fontFamily: fonts.bodySemibold, fontSize: 10.5, color: colors.primary },
   cardActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',

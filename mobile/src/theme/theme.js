@@ -68,6 +68,7 @@ export const statusColors = {
   cleaning: { fg: colors.cleaning, bg: colors.cleaningBg, border: colors.cleaningBorder },
   repair: { fg: colors.danger, bg: colors.dangerBg, border: colors.dangerBorder },
   booked: { fg: colors.warning, bg: colors.warningBg, border: colors.warningBorder },
+  overdue: { fg: colors.danger, bg: colors.dangerBg, border: colors.dangerBorder },
 };
 
 export const radii = {

@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
+import { File } from 'expo-file-system';
 import Screen, { ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
 import Button from '../../components/ui/Button.jsx';
 import { useInvoiceData } from '../../api/invoices';
@@ -112,6 +114,19 @@ export function buildInvoiceHtml(data) {
             color: #30223D;
             margin-bottom: 4px;
           }
+          .badge-proforma {
+            display: inline-block;
+            font-size: 10px;
+            font-weight: 600;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: #EFF6FF;
+            color: #1D4ED8;
+            border: 1px solid #BFDBFE;
+            margin-left: 4px;
+            vertical-align: middle;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+          }
           .inv-grid {
             display: flex;
             gap: 20px;
@@ -189,7 +204,7 @@ export function buildInvoiceHtml(data) {
               ${hotel.phone ? `<div class="muted">Phone: ${hotel.phone}</div>` : ''}
             </div>
             <div class="inv-meta">
-              <div class="inv-num">${invoice.invoice_number}</div>
+              <div class="inv-num">${invoice.invoice_number}${invoice.is_proforma ? ' <span class="badge-proforma">PROFORMA PREVIEW</span>' : ''}</div>
               <div>Date: ${invoice.created_at ? invoice.created_at.slice(0, 10) : ''}</div>
               ${invoice.financial_year ? `<div>FY: ${invoice.financial_year}</div>` : ''}
             </div>
@@ -262,8 +277,8 @@ export function buildInvoiceHtml(data) {
 }
 
 export default function InvoicePrintScreen({ route, navigation }) {
-  const { stayId, invoiceId, id } = route?.params || {};
-  const { data, isLoading, isError, error, refetch, isRefetching } = useInvoiceData({ stayId, invoiceId, id });
+  const { stayId, invoiceId, id, stay: initialStay, guest: initialGuest } = route?.params || {};
+  const { data, isLoading, isError, error, refetch, isRefetching } = useInvoiceData({ stayId, invoiceId, id, stay: initialStay, guest: initialGuest });
   const toast = useToast();
   const [printing, setPrinting] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -312,15 +327,65 @@ export default function InvoicePrintScreen({ route, navigation }) {
     try {
       setSharing(true);
       const html = buildInvoiceHtml(data);
-      const { uri } = await Print.printToFileAsync({ html });
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(uri, {
-          mimeType: 'application/pdf',
-          dialogTitle: `Invoice ${invoice.invoice_number}`,
-          UTI: 'com.adobe.pdf',
+      const { uri, base64 } = await Print.printToFileAsync({ html, base64: true });
+
+      const cleanInvoiceNumber = (invoice.invoice_number || 'invoice').replace(/[^a-zA-Z0-9._-]/g, '_');
+      const targetUri = `${FileSystem.cacheDirectory}Invoice_${cleanInvoiceNumber}.pdf`;
+
+      // Remove prior cached file if present to guarantee clean export
+      try {
+        const existing = await FileSystem.getInfoAsync(targetUri);
+        if (existing.exists) {
+          await FileSystem.deleteAsync(targetUri, { idempotent: true });
+        }
+      } catch {}
+
+      if (base64) {
+        // Write the PDF directly into the scoped cache directory from base64 string.
+        // This avoids Android/Expo Go permission rejection on Print's internal temp URI.
+        await FileSystem.writeAsStringAsync(targetUri, base64, {
+          encoding: FileSystem.EncodingType?.Base64 || 'base64',
         });
       } else {
-        toast('PDF generated: ' + uri);
+        await FileSystem.copyAsync({
+          from: uri,
+          to: targetUri,
+        });
+      }
+
+      let shared = false;
+      if (await Sharing.isAvailableAsync()) {
+        try {
+          await Sharing.shareAsync(targetUri, {
+            mimeType: 'application/pdf',
+            dialogTitle: `Invoice ${invoice.invoice_number}`,
+            UTI: 'com.adobe.pdf',
+          });
+          shared = true;
+        } catch (shareErr) {
+          console.warn('ExpoSharing.shareAsync rejected, falling back to File.preview:', shareErr);
+        }
+      }
+
+      if (!shared) {
+        try {
+          const file = new File(targetUri);
+          await File.preview(file, { mimeType: 'application/pdf' });
+          shared = true;
+        } catch (previewErr) {
+          console.warn('File.preview fallback failed, attempting temp URI preview:', previewErr);
+          try {
+            const rawFile = new File(uri);
+            await File.preview(rawFile, { mimeType: 'application/pdf' });
+            shared = true;
+          } catch (rawErr) {
+            console.warn('Temp URI preview also failed:', rawErr);
+          }
+        }
+      }
+
+      if (!shared) {
+        toast('PDF saved: ' + targetUri);
       }
     } catch (e) {
       toast(e.message || 'PDF export error.');
@@ -376,6 +441,11 @@ export default function InvoicePrintScreen({ route, navigation }) {
           </View>
           <View style={styles.invoiceMeta}>
             <Text style={styles.invoiceNumber}>{invoice.invoice_number}</Text>
+            {Boolean(invoice.is_proforma) && (
+              <View style={styles.proformaBadge}>
+                <Text style={styles.proformaBadgeText}>PROFORMA / PREVIEW</Text>
+              </View>
+            )}
             <Text style={styles.invoiceDate}>Date: {invoice.created_at ? invoice.created_at.slice(0, 10) : ''}</Text>
             {invoice.financial_year ? <Text style={styles.invoiceDate}>FY: {invoice.financial_year}</Text> : null}
           </View>
@@ -542,6 +612,22 @@ const styles = StyleSheet.create({
   hotelMuted: { fontFamily: fonts.body, fontSize: 11.5, color: colors.textSecondary, marginTop: 1 },
   invoiceMeta: { alignItems: 'flex-end' },
   invoiceNumber: { fontFamily: fonts.monoBold, fontSize: 14, color: colors.heading },
+  proformaBadge: {
+    backgroundColor: '#EFF6FF',
+    borderColor: '#BFDBFE',
+    borderWidth: 1,
+    borderRadius: radii.xs,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    marginVertical: 2,
+    alignSelf: 'flex-end',
+  },
+  proformaBadgeText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 9.5,
+    color: '#1D4ED8',
+    letterSpacing: 0.3,
+  },
   invoiceDate: { fontFamily: fonts.body, fontSize: 11.5, color: colors.textSecondary, marginTop: 1 },
   gridBox: {
     backgroundColor: colors.surfaceSecondary,

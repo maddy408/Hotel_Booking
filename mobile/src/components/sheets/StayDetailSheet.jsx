@@ -1,19 +1,24 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import Button from '../ui/Button.jsx';
-import { Input, Segmented } from '../ui/Field.jsx';
+import { FieldError, Input, Segmented } from '../ui/Field.jsx';
 import { useStay, useStayBill, useAddExtra, useRemoveExtra } from '../../api/stays';
-import { shareOccupantDocument } from '../../api/occupantDocuments';
+import { viewOccupantDocument } from '../../api/occupantDocuments';
 import { useToast } from '../ToastContext.jsx';
-import { fd, inr } from '../../lib/format';
+import { fd, inr, todayIso } from '../../lib/format';
 import { colors, fonts, radii } from '../../theme/theme';
 
 const EXTRAS = ['Food', 'Laundry', 'Extra bed', 'Taxi', 'Other'];
 
 export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCheckout, onPrintInvoice }) {
-  const { data: stay, isLoading: isStayLoading } = useStay(stayId);
-  const { data: rawBill } = useStayBill(stayId);
+  const normalizedStayId = typeof stayId === 'string' && stayId.startsWith('stay-')
+    ? parseInt(stayId.slice(5), 10)
+    : Number(stayId);
+  const validStayId = !isNaN(normalizedStayId) && normalizedStayId > 0 ? normalizedStayId : null;
+
+  const { data: stay, isLoading: isStayLoading, isError: isStayError, error: stayError, refetch } = useStay(validStayId);
+  const { data: rawBill } = useStayBill(validStayId);
 
   const addExtra = useAddExtra();
   const removeExtra = useRemoveExtra();
@@ -22,13 +27,25 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
   const [xLabel, setXLabel] = useState('Food');
   const [xAmount, setXAmount] = useState('');
   const [loadingDocId, setLoadingDocId] = useState(null);
+  const extraInputRef = useRef(null);
+  const [extraError, setExtraError] = useState('');
 
   const bill = stay?.bill || rawBill;
+  const plannedCheckoutDate = stay?.checkout_planned ? stay.checkout_planned.slice(0, 10) : null;
+  const today = todayIso();
+  const isLate = Boolean(
+    (plannedCheckoutDate && today > plannedCheckoutDate) ||
+    bill?.isLateCheckout ||
+    bill?.checkoutType === 'late'
+  );
+  const isEarlyEligible = Boolean(
+    plannedCheckoutDate && today < plannedCheckoutDate && !isLate
+  );
 
   const handleViewDocument = async (doc) => {
     try {
       setLoadingDocId(doc.id);
-      await shareOccupantDocument(doc.id, doc.original_filename);
+      await viewOccupantDocument(doc.id, doc.original_filename);
     } catch (e) {
       toast(e.message || 'Could not load document.');
     } finally {
@@ -38,18 +55,39 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
 
   const handleAddExtra = async () => {
     const amt = Number(xAmount);
-    if (!(amt > 0)) {
-      toast('Enter extra charge amount.');
+    if (isNaN(amt) || !(amt > 0)) {
+      setExtraError('Please enter a valid amount.');
+      extraInputRef.current?.focus?.();
       return;
     }
+    setExtraError('');
     try {
-      await addExtra.mutateAsync({ stayId, label: xLabel, amount: amt, isTaxable: true });
+      await addExtra.mutateAsync({ stayId: validStayId, label: xLabel, amount: amt, isTaxable: true });
       setXAmount('');
       toast(`Added ${xLabel} charge.`);
     } catch (err) {
-      toast(err.message || 'Failed to add charge.');
+      setExtraError(err.message || 'Failed to add charge.');
+      extraInputRef.current?.focus?.();
     }
   };
+
+  if (!validStayId || isStayError) {
+    return (
+      <Sheet onClose={onClose}>
+        <SheetHeader status="occupied" title="Stay Details" onClose={onClose} />
+        <View style={styles.body}>
+          <Text style={[styles.meta, { color: colors.danger, marginBottom: 12 }]}>
+            {stayError?.message || (!validStayId ? 'Invalid or missing stay ID.' : 'Could not load stay details.')}
+          </Text>
+          {validStayId ? (
+            <Button title="Retry" variant="outline" size="sm" onPress={refetch} />
+          ) : (
+            <Button title="Close" variant="outline" size="sm" onPress={onClose} />
+          )}
+        </View>
+      </Sheet>
+    );
+  }
 
   if (isStayLoading || !stay) {
     return (
@@ -95,7 +133,19 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
           <View style={styles.infoRow}><Text style={styles.label}>Actual Check-in</Text><Text style={styles.value}>{fd(stay.check_in_date)}</Text></View>
           <View style={styles.infoRow}>
             <Text style={styles.label}>Planned Checkout</Text>
-            <Text style={styles.valueBold}>{fd(stay.checkout_planned)}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+              <Text style={styles.valueBold}>{fd(stay.checkout_planned)}</Text>
+              {stay.checkout_time ? (
+                <Text style={[styles.value, { color: colors.textSecondary, fontSize: 11 }]}>
+                  ({stay.checkout_time.slice(0, 5)})
+                </Text>
+              ) : null}
+              {isLate && (
+                <Text style={{ fontFamily: fonts.bodyBold, fontSize: 11, color: colors.danger, marginLeft: 2 }}>
+                  (Overdue)
+                </Text>
+              )}
+            </View>
           </View>
           <View style={styles.infoRow}><Text style={styles.label}>Nights Stayed</Text><Text style={styles.valueBold}>{nightsStayed} night{nightsStayed > 1 ? 's' : ''}</Text></View>
           <View style={styles.infoRow}><Text style={styles.label}>Daily Room Rate</Text><Text style={styles.value}>{inr(stay.rate)} / day</Text></View>
@@ -124,11 +174,16 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
           <Segmented options={EXTRAS} value={xLabel} onChange={setXLabel} style={{ marginBottom: 8 }} />
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Input
+              ref={extraInputRef}
               style={{ flex: 1 }}
               placeholder="Amount (₹)"
               keyboardType="numeric"
               value={xAmount}
-              onChangeText={setXAmount}
+              onChangeText={(v) => {
+                setXAmount(v);
+                if (extraError) setExtraError('');
+              }}
+              error={extraError}
             />
             <Button
               title={addExtra.isPending ? 'Adding…' : 'Add Charge'}
@@ -138,6 +193,7 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
               onPress={handleAddExtra}
             />
           </View>
+          <FieldError error={extraError} />
 
           {/* List of extras if any */}
           {(stay.charges || []).filter((c) => c.type === 'extra').length > 0 && (
@@ -190,21 +246,23 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
             size="sm"
             onPress={() => {
               onClose();
-              onPrintInvoice?.(stay.id);
+              onPrintInvoice?.(stay.id, stay);
             }}
             style={{ flex: 1 }}
           />
-          <Button
-            title="Early Checkout"
-            variant="outline"
-            size="sm"
-            onPress={() => {
-              onClose();
-              onEarlyCheckout?.(stay.id);
-            }}
-            style={{ flex: 1, borderColor: colors.warning }}
-            textStyle={{ color: colors.warning }}
-          />
+          {isEarlyEligible && (
+            <Button
+              title="Early Checkout"
+              variant="outline"
+              size="sm"
+              onPress={() => {
+                onClose();
+                onEarlyCheckout?.(stay.id);
+              }}
+              style={{ flex: 1, borderColor: colors.warning }}
+              textStyle={{ color: colors.warning }}
+            />
+          )}
           <Button
             title="Check Out"
             variant="info"

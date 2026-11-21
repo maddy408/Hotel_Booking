@@ -69,8 +69,10 @@ class RoomRepository
     public function inHouseStaysByRoom(int $hotelId): array
     {
         $stmt = $this->db->prepare(
-            "SELECT s.room_id, s.id AS stay_id, s.check_in_date, s.checkout_planned, s.checkout_time, s.guest_id, s.persons, g.name AS guest_name
-             FROM stays s JOIN guests g ON g.id = s.guest_id
+            "SELECT s.room_id, s.id AS stay_id, s.reservation_id, s.check_in_date, s.checkout_planned, s.checkout_time, s.guest_id, s.persons, g.name AS guest_name, res.booking_code
+             FROM stays s
+             JOIN guests g ON g.id = s.guest_id
+             LEFT JOIN reservations res ON res.id = s.reservation_id
              WHERE s.hotel_id = :hotel_id AND s.status = 'in_house'"
         );
         $stmt->execute(['hotel_id' => $hotelId]);

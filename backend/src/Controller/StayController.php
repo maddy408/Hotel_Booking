@@ -23,14 +23,23 @@ final class StayController
         );
     }
 
+    private function parseStayId(Request $request): int
+    {
+        $idParam = (string) ($request->routeParams['id'] ?? '');
+        if (str_starts_with($idParam, 'stay-')) {
+            return (int) substr($idParam, 5);
+        }
+        return (int) $idParam;
+    }
+
     public function show(Request $request): array
     {
-        return $this->stays->find((int) $request->routeParams['id'], (int) $request->attribute('hotelId'));
+        return $this->stays->find($this->parseStayId($request), (int) $request->attribute('hotelId'));
     }
 
     public function bill(Request $request): array
     {
-        return $this->stays->bill((int) $request->routeParams['id'], (int) $request->attribute('hotelId'));
+        return $this->stays->bill($this->parseStayId($request), (int) $request->attribute('hotelId'));
     }
 
     public function directCheckIn(Request $request): array
@@ -110,7 +119,7 @@ final class StayController
             'amount' => 'required|numeric|min:1',
         ]);
         return $this->stays->addExtra(
-            (int) $request->routeParams['id'],
+            $this->parseStayId($request),
             (int) $request->attribute('hotelId'),
             (string) $data['label'],
             (float) $data['amount'],
@@ -122,7 +131,7 @@ final class StayController
     public function removeExtra(Request $request): array
     {
         return $this->stays->removeExtra(
-            (int) $request->routeParams['id'],
+            $this->parseStayId($request),
             (int) $request->routeParams['chargeId'],
             (int) $request->attribute('hotelId'),
         );
@@ -131,7 +140,7 @@ final class StayController
     public function extend(Request $request): array
     {
         return $this->stays->extend(
-            (int) $request->routeParams['id'],
+            $this->parseStayId($request),
             (int) $request->attribute('hotelId'),
             (int) $request->attribute('userId'),
         );
@@ -144,7 +153,7 @@ final class StayController
             'checkoutPlanned' => 'required|date',
         ]);
         return $this->stays->updateStayCheckout(
-            (int) $request->routeParams['id'],
+            $this->parseStayId($request),
             (int) $request->attribute('hotelId'),
             (string) $data['checkoutPlanned'],
             (string) ($data['checkoutTime'] ?? '12:00:00'),
@@ -162,7 +171,7 @@ final class StayController
         }
 
         return $this->stays->earlyCheckoutPreview(
-            (int) $request->routeParams['id'],
+            $this->parseStayId($request),
             (int) $request->attribute('hotelId'),
             $checkoutDate,
             $request->input('discount') !== null ? (float) $request->input('discount') : null,
@@ -177,7 +186,7 @@ final class StayController
             'amount' => 'required|numeric|min:0',
         ]);
         return $this->stays->applyDiscount(
-            (int) $request->routeParams['id'],
+            $this->parseStayId($request),
             (int) $request->attribute('hotelId'),
             (float) $data['amount'],
             isset($data['reason']) ? (string) $data['reason'] : null,
@@ -188,7 +197,7 @@ final class StayController
     public function refundSummary(Request $request): array
     {
         return $this->stays->refundSummary(
-            (int) $request->routeParams['id'],
+            $this->parseStayId($request),
             (int) $request->attribute('hotelId')
         );
     }
@@ -201,7 +210,7 @@ final class StayController
             'method' => 'required|in:cash,upi,card',
         ]);
         return $this->stays->processRefund(
-            (int) $request->routeParams['id'],
+            $this->parseStayId($request),
             (int) $request->attribute('hotelId'),
             (float) $data['amount'],
             (string) $data['method'],
@@ -228,7 +237,7 @@ final class StayController
         Validator::assert($data, $rules);
 
         return $this->stays->checkout(
-            (int) $request->routeParams['id'],
+            $this->parseStayId($request),
             (int) $request->attribute('hotelId'),
             (string) $data['paymentMethod'],
             $data['guestGstin'] ?? null,

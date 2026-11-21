@@ -296,7 +296,13 @@ export default function Rooms() {
         />
       )}
       {sheet?.type === 'housekeeping' && <HousekeepingSheet room={sheet.room} onClose={() => setSheet(null)} />}
-      {sheet?.type === 'newBooking' && <NewBookingSheet editReservation={sheet.preSelectedRoom ? { room_id: sheet.preSelectedRoom.id } : null} onClose={() => setSheet(null)} />}
+      {sheet?.type === 'newBooking' && (
+        <NewBookingSheet
+          preSelectedRoom={sheet.preSelectedRoom}
+          editReservation={sheet.preSelectedRoom ? { room_id: sheet.preSelectedRoom.id, max_persons: sheet.preSelectedRoom.max_persons } : null}
+          onClose={() => setSheet(null)}
+        />
+      )}
       {sheet?.type === 'editBooking' && <NewBookingSheet editReservation={sheet.reservation} onClose={() => setSheet(null)} />}
     </div>
   );

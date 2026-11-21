@@ -120,12 +120,21 @@ export function useCheckInReservation() {
       let id;
       let body;
 
+      const isFormData = Boolean(
+        payload && (
+          (typeof FormData !== 'undefined' && payload instanceof FormData) ||
+          typeof payload.append === 'function' ||
+          Array.isArray(payload._parts)
+        )
+      );
+
       if (payload && typeof payload === 'object') {
         if (payload.formData) {
           id = payload.id;
           body = payload.formData;
-        } else if (typeof FormData !== 'undefined' && payload instanceof FormData) {
+        } else if (isFormData) {
           const idFromPart = (typeof payload.getAll === 'function' ? payload.getAll('id')?.[0] : null)
+            || (typeof payload.get === 'function' ? payload.get('id') : null)
             || payload._parts?.find?.((p) => p[0] === 'id' || p[0] === 'reservationId')?.[1];
           id = idFromPart;
           body = payload;

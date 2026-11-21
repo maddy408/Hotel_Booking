@@ -7,7 +7,7 @@ import { Input } from '../ui/Field.jsx';
 import { useStay, useStayBill } from '../../api/stays';
 import { useReservation } from '../../api/reservations';
 import { useHousekeepingAction } from '../../api/rooms';
-import { shareOccupantDocument } from '../../api/occupantDocuments';
+import { viewOccupantDocument } from '../../api/occupantDocuments';
 import { useToast } from '../ToastContext.jsx';
 import { fd, inr, todayIso } from '../../lib/format';
 import { colors, fonts, radii, statusColors } from '../../theme/theme';
@@ -73,7 +73,7 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvo
   const handleViewDocument = async (doc) => {
     try {
       setLoadingDocId(doc.id);
-      await shareOccupantDocument(doc.id, doc.original_filename);
+      await viewOccupantDocument(doc.id, doc.original_filename);
     } catch (e) {
       toast(e.message || 'Could not load document.');
     } finally {
@@ -144,6 +144,17 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvo
     const personsDisplay = `${actualPersonsCount} ${actualPersonsCount === 1 ? 'Person' : 'Persons'}`;
     const occupantsList = stay.occupants && stay.occupants.length > 0 ? stay.occupants : [];
 
+    const plannedCheckoutDate = stay?.checkout_planned ? stay.checkout_planned.slice(0, 10) : null;
+    const isLate = Boolean(
+      (plannedCheckoutDate && today > plannedCheckoutDate) ||
+      bill?.isLateCheckout ||
+      bill?.checkoutType === 'late' ||
+      room?.isOverdue
+    );
+    const isEarlyEligible = Boolean(
+      plannedCheckoutDate && today < plannedCheckoutDate && !isLate
+    );
+
     return (
       <Sheet onClose={onClose}>
         <View style={[styles.header, { backgroundColor: statusColors.occupied.bg, borderBottomColor: statusColors.occupied.border }]}>
@@ -170,7 +181,22 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvo
             <Field label="Original Check-in" value={fd(stay.original_check_in_date || stay.check_in_date)} />
             <Field label="Original Planned Checkout" value={fd(stay.original_checkout_date || stay.checkout_planned)} />
             <Field label="Actual Check-in" value={fd(stay.check_in_date)} />
-            <Field label="Current Planned Checkout" value={fd(stay.checkout_planned)} />
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>Current Planned Checkout</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={styles.fieldValue}>{fd(stay.checkout_planned)}</Text>
+                {stay.checkout_time ? (
+                  <Text style={[styles.fieldValue, { color: colors.textSecondary, fontSize: 11 }]}>
+                    ({stay.checkout_time.slice(0, 5)})
+                  </Text>
+                ) : null}
+                {isLate && (
+                  <Text style={{ fontFamily: fonts.bodyBold, fontSize: 11, color: colors.danger, marginLeft: 2 }}>
+                    (Overdue)
+                  </Text>
+                )}
+              </View>
+            </View>
             <Field label="Nights Stayed" value={`${nightsStayed} night${nightsStayed > 1 ? 's' : ''}`} bold />
             <Field label="Daily Room Rate" value={`${inr(stay.rate)} / day`} bold />
           </Card>
@@ -259,7 +285,9 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvo
             <Button title="Invoice" variant="outline" size="sm" onPress={() => { onClose(); onViewInvoice?.(stay.id); }} style={{ flex: 1 }} />
           </View>
           <View style={styles.footerRow}>
-            <Button title="Early Out" variant="outline" size="sm" onPress={() => { onClose(); onEarlyCheckout?.(stay.id); }} style={{ flex: 1, borderColor: colors.warning }} textStyle={{ color: colors.warning }} />
+            {isEarlyEligible && (
+              <Button title="Early Out" variant="outline" size="sm" onPress={() => { onClose(); onEarlyCheckout?.(stay.id); }} style={{ flex: 1, borderColor: colors.warning }} textStyle={{ color: colors.warning }} />
+            )}
             <Button title="Check Out" variant="info" size="sm" onPress={() => { onClose(); onCheckout?.(stay.id); }} style={{ flex: 1 }} />
           </View>
         </View>

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import Screen, { EmptyState, ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
-import { Input } from '../../components/ui/Field.jsx';
+import SearchInput from '../../components/ui/SearchInput.jsx';
 import Button from '../../components/ui/Button.jsx';
 import BookingDetailSheet from '../../components/sheets/BookingDetailSheet.jsx';
 import { useAllReferrals } from '../../api/guests';
@@ -108,7 +108,7 @@ export default function AllReferralsScreen({ navigation }) {
     }
   };
 
-  const renderHeader = () => (
+  const renderHeader = useMemo(() => (
     <View style={styles.headerContainer}>
       {/* Header */}
       <View style={styles.header}>
@@ -149,8 +149,8 @@ export default function AllReferralsScreen({ navigation }) {
         </View>
       </View>
 
-      {/* Search Input */}
-      <Input
+      {/* Search Input with Clear Button */}
+      <SearchInput
         placeholder="Search name, phone, booking ID, room…"
         value={search}
         onChangeText={setSearch}
@@ -181,7 +181,7 @@ export default function AllReferralsScreen({ navigation }) {
         ))}
       </View>
     </View>
-  );
+  ), [rawItems.length, summary, search, statusFilter]);
 
   const renderEmpty = () => {
     if (isLoading) return <LoadingState />;

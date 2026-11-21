@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import Button from '../ui/Button.jsx';
-import { Input, Segmented, Stepper } from '../ui/Field.jsx';
+import { FormErrorBanner, FormField, FieldError, Input, Segmented, Stepper } from '../ui/Field.jsx';
 import ReferredBySelect from '../ReferredBySelect.jsx';
 import { useFreeRooms, useCreateReservation, useUpdateReservation } from '../../api/reservations';
 import { useGuestLookup } from '../../api/guests';
@@ -10,31 +10,60 @@ import { useRoomTypes, useRooms } from '../../api/rooms';
 import { useSettings } from '../../api/settings';
 import { useToast } from '../ToastContext.jsx';
 import { addDaysIso, estimateGstRate, formatGstBreakup, fd, formatCheckoutHour, inr, nightsBetween, todayIso } from '../../lib/format';
-import { BADGE_THEME, getCardDisplay } from '../../lib/roomAvailability.js';
+import { BADGE_THEME, getCardDisplay, isRoomBookable } from '../../lib/roomAvailability.js';
+import { api } from '../../lib/apiClient';
+import { useFormValidation, isValidDate } from '../../lib/validation';
 import { colors, fonts, radii } from '../../theme/theme';
 
-export default function NewBookingSheet({ editReservation, presetGuest, onClose }) {
-  const isEdit = !!editReservation;
+export default function NewBookingSheet({ editReservation, presetGuest, preSelectedRoom, onClose }) {
+  const isEdit = Boolean(editReservation?.id || editReservation?.booking_code);
+  const initialRoomId = preSelectedRoom?.id || editReservation?.room_id || null;
   const { data: roomTypes } = useRoomTypes();
   const { data: roomsData } = useRooms();
   const { data: settings } = useSettings();
   const create = useCreateReservation();
   const update = useUpdateReservation();
   const toast = useToast();
+  const scrollRef = useRef(null);
+
+  const {
+    errors,
+    formError,
+    clearError,
+    registerInput,
+    registerContainer,
+    registerLayout,
+    handleBackendError,
+    validate,
+  } = useFormValidation({
+    scrollRef,
+    fieldOrder: [
+      'phone',
+      'name',
+      'sourceError',
+      'checkIn',
+      'days',
+      'persons',
+      'roomId',
+      'rate',
+      'advance',
+    ],
+  });
 
   const [phone, setPhone] = useState(isEdit ? editReservation.guest_phone || '' : presetGuest?.phone || '');
   const [name, setName] = useState(isEdit ? editReservation.guest_name || '' : presetGuest?.name || '');
   const [checkIn, setCheckIn] = useState(isEdit ? (editReservation.check_in_date < todayIso() ? todayIso() : editReservation.check_in_date) : addDaysIso(todayIso(), 1));
   const [days, setDays] = useState(isEdit ? nightsBetween(editReservation.check_in_date, editReservation.check_out_date) : 1);
-  const [persons, setPersons] = useState(isEdit ? Number(editReservation.persons) || 1 : 2);
+  const [persons, setPersons] = useState(isEdit ? Number(editReservation.persons) || 1 : 1);
   const [typeFilter, setTypeFilter] = useState('all');
-  const [roomId, setRoomId] = useState(isEdit ? editReservation.room_id : null);
-  const [rate, setRate] = useState(isEdit ? String(editReservation.rate) : '');
+  const [roomId, setRoomId] = useState(initialRoomId);
+  const [rate, setRate] = useState(isEdit ? String(editReservation.rate) : (preSelectedRoom ? String(preSelectedRoom.type_rate || preSelectedRoom.roomType?.rate || '') : ''));
   const [advance, setAdvance] = useState(isEdit ? String(editReservation.advance_amount ?? editReservation.advance_paid ?? 0) : '');
   const [pay, setPay] = useState(isEdit ? editReservation.advance_method || 'cash' : 'cash');
   const [notes, setNotes] = useState(isEdit ? editReservation.notes || '' : '');
   const [rateTouched, setRateTouched] = useState(isEdit);
   const [matchedGuestId, setMatchedGuestId] = useState(null);
+  const [inspectedRoomId, setInspectedRoomId] = useState(null);
 
   const [bookingSource, setBookingSource] = useState(
     editReservation?.booking_source
@@ -43,11 +72,10 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
   );
   const [referredByGuestId, setReferredByGuestId] = useState(editReservation?.referred_by_guest_id ? Number(editReservation.referred_by_guest_id) : null);
   const [otherSource, setOtherSource] = useState(editReservation?.other_source || '');
-  const [sourceError, setSourceError] = useState('');
 
   const handleSourceChange = (newSource) => {
     setBookingSource(newSource);
-    setSourceError('');
+    clearError('sourceError');
     if (newSource !== 'Reference – Existing Member') setReferredByGuestId(null);
     if (newSource !== 'Other') setOtherSource('');
   };
@@ -60,16 +88,30 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
     if (!isEdit && lookup?.guest) {
       setMatchedGuestId(lookup.guest.id);
       setName(lookup.guest.name);
+      clearError('name');
     } else if (!isEdit) {
       setMatchedGuestId(null);
     }
-  }, [lookup, isEdit]);
+  }, [lookup, isEdit, clearError]);
+
+  const selectableRooms = (freeRooms || []).filter(isRoomBookable);
+  const unavailableRooms = (freeRooms || []).filter((r) => !isRoomBookable(r));
+  const [showUnavailable, setShowUnavailable] = useState(false);
 
   useEffect(() => {
-    if (freeRooms && roomId && !freeRooms.some((r) => r.id === roomId && r.is_bookable !== false)) setRoomId(null);
-  }, [freeRooms, roomId]);
+    if (freeRooms && roomId && !selectableRooms.some((r) => r.id === roomId)) {
+      setRoomId(null);
+    }
+  }, [freeRooms, roomId, selectableRooms]);
 
-  const totalBookable = freeRooms?.filter((r) => r.is_bookable !== false).length || 0;
+  const readyCount = (freeRooms || []).filter((r) => (r.card_badge || (r.booking_status === 'available_ready' ? 'Ready' : '')) === 'Ready').length;
+  const occupiedCount = (freeRooms || []).filter((r) => (r.card_badge || '') === 'Occupied').length;
+  const cleaningCount = (freeRooms || []).filter((r) => (r.card_badge || (r.booking_status === 'available_not_ready' ? 'Cleaning' : '')) === 'Cleaning').length;
+  const bookedCount = (freeRooms || []).filter((r) => (r.card_badge || (r.booking_status === 'unavailable' ? 'Booked' : '')) === 'Booked').length;
+  const repairCount = (freeRooms || []).filter((r) => (r.card_badge || (r.booking_status === 'maintenance' ? 'Repair' : '')) === 'Repair').length;
+  const overdueCount = (freeRooms || []).filter((r) => (r.card_badge || '') === 'Overdue').length;
+
+  const totalBookable = selectableRooms.length;
   const rateNum = Number(rate) || 0;
   const gstRate = estimateGstRate(rateNum, settings?.settings);
   const roomAmt = (Number(days) || 1) * rateNum;
@@ -82,62 +124,152 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
   const origTotal = isEdit ? origDays * origRate * (1 + origGstRate) : 0;
   const deltaTotal = isEdit ? total - origTotal : 0;
 
-  const selectedRoom = (freeRooms && freeRooms.find((r) => r.id === roomId)) || (roomsData?.rooms && roomsData.rooms.find((r) => r.id === roomId));
-  const roomMaxPersons = selectedRoom?.max_persons ?? selectedRoom?.roomType?.maxPersons ?? 2;
-  const [serverPersonsError, setServerPersonsError] = useState('');
+  const selectedRoom = (freeRooms && freeRooms.find((r) => r.id === roomId))
+    || (roomsData?.rooms && roomsData.rooms.find((r) => r.id === roomId))
+    || (preSelectedRoom && preSelectedRoom.id === roomId ? preSelectedRoom : null)
+    || (isEdit && editReservation?.room_id === roomId ? editReservation : null);
+
+  const displayRoom = (inspectedRoomId && freeRooms?.find((r) => r.id === inspectedRoomId))
+    || selectedRoom;
+  const displayRoomCardData = displayRoom ? getCardDisplay(displayRoom, checkIn, checkOut) : null;
+  const roomMaxPersons = selectedRoom?.max_persons
+    ?? selectedRoom?.roomType?.maxPersons
+    ?? (preSelectedRoom && preSelectedRoom.id === roomId ? preSelectedRoom?.max_persons : null)
+    ?? (isEdit && editReservation?.room_id === roomId ? editReservation?.max_persons : null)
+    ?? (selectedRoom || roomId ? 2 : null);
+
   const isPersonsExceeded = roomMaxPersons != null && Number(persons) > Number(roomMaxPersons);
-  const personsError = isPersonsExceeded ? `This room allows a maximum of ${roomMaxPersons} persons.` : serverPersonsError;
+  const maxPersonsMsg = roomMaxPersons != null
+    ? `This room allows a maximum of ${roomMaxPersons} ${Number(roomMaxPersons) === 1 ? 'person' : 'persons'}.`
+    : '';
+
+  useEffect(() => {
+    if (errors.persons && roomMaxPersons != null && Number(persons) <= Number(roomMaxPersons)) {
+      clearError('persons');
+    }
+  }, [persons, roomMaxPersons, errors.persons, clearError]);
 
   const onSubmit = async () => {
-    if (!roomId) { toast('Pick a room.'); return; }
-    if (isPersonsExceeded) return;
-    const chosenRoom = freeRooms?.find((r) => r.id === roomId);
-    if (freeRooms && (!chosenRoom || chosenRoom.is_bookable === false)) {
-      toast(chosenRoom?.selection_blocked_reason || `Room ${chosenRoom?.room_no} is not available for these dates.`);
-      return;
-    }
-    if (!/^[6-9]\d{9}$/.test(phone || '')) { toast('Enter a valid 10-digit mobile number.'); return; }
-    if (!name.trim()) { toast('Guest name is required.'); return; }
-    if (!(Number(rate) >= 1)) { toast('Enter the rate per day.'); return; }
-    if (bookingSource === 'Reference – Existing Member' && (!referredByGuestId || referredByGuestId <= 0)) {
-      setSourceError('Please select an existing member as reference.');
-      return;
-    }
-    if (bookingSource === 'Other' && !otherSource.trim()) {
-      setSourceError('Please enter person name for reference.');
-      return;
-    }
+    const isValid = validate(() => {
+      const errs = {};
+      const cleanPh = (phone || '').replace(/\D/g, '');
+
+      if (!cleanPh) {
+        errs.phone = 'Mobile number is required.';
+      } else if (!/^[6-9]\d{9}$/.test(cleanPh)) {
+        errs.phone = 'Please enter a valid 10-digit mobile number.';
+      }
+
+      if (!name.trim()) {
+        errs.name = 'Guest name is required.';
+      }
+
+      if (bookingSource === 'Reference – Existing Member' && (!referredByGuestId || referredByGuestId <= 0)) {
+        errs.sourceError = 'Please select an existing member as reference.';
+      }
+      if (bookingSource === 'Other' && !otherSource.trim()) {
+        errs.sourceError = 'Please enter person name for reference.';
+      }
+
+      if (!checkIn || !isValidDate(checkIn)) {
+        errs.checkIn = 'Check-in date is required.';
+      }
+
+      if (Number(days) < 1) {
+        errs.days = 'Number of days must be at least 1.';
+      }
+
+      if (isPersonsExceeded) {
+        errs.persons = maxPersonsMsg || 'Maximum persons exceeded for selected room.';
+      }
+
+      if (!roomId) {
+        errs.roomId = 'Please select a room.';
+      } else {
+        const chosenRoom = freeRooms?.find((r) => r.id === roomId);
+        if (freeRooms && (!chosenRoom || !isRoomBookable(chosenRoom))) {
+          errs.roomId = chosenRoom?.selection_blocked_reason || `Room ${chosenRoom?.room_no || ''} is not available for these dates.`;
+        }
+      }
+
+      if (!(Number(rate) >= 1)) {
+        errs.rate = 'Daily rate is required.';
+      }
+
+      if (advance !== '' && (isNaN(Number(advance)) || Number(advance) < 0)) {
+        errs.advance = 'Please enter a valid payment amount.';
+      }
+
+      return errs;
+    });
+
+    if (!isValid) return;
+
     try {
       const checkOutDate = addDaysIso(checkIn, Number(days));
+
+      // Revalidate room availability directly against authoritative live backend before submitting
+      const params = new URLSearchParams({
+        checkIn,
+        checkOut: checkOutDate,
+        ...(typeFilter && typeFilter !== 'all' ? { roomTypeId: typeFilter } : {}),
+        ...(isEdit && editReservation?.id ? { excludeReservationId: editReservation.id } : {}),
+      }).toString();
+
+      try {
+        const freshRooms = await api.get(`/reservations/free-rooms?${params}`);
+        const freshChosen = (freshRooms || []).find((r) => r.id === roomId);
+        if (!freshChosen || !isRoomBookable(freshChosen)) {
+          const reason = freshChosen?.selection_blocked_reason || `Room ${freshChosen?.room_no || ''} is no longer available for these dates. Please choose another room.`;
+          toast(reason);
+          setRoomId(null);
+          return;
+        }
+      } catch (freshErr) {
+        // If pre-check fails due to network, backend mutation will enforce authoritative validation
+      }
+
       const sourcePayload = {
         bookingSource,
         referredByGuestId: bookingSource === 'Reference – Existing Member' ? referredByGuestId : null,
         otherSource: bookingSource === 'Other' ? otherSource.trim() : null,
       };
+
       if (isEdit) {
         await update.mutateAsync({
-          id: editReservation.id, roomId, checkIn, checkOut: checkOutDate,
-          persons: Number(persons) || Number(editReservation?.persons) || 1, rate: Number(rate),
-          advanceAmount: Number(advance) || 0, advanceMethod: pay,
-          name: name.trim(), phone: phone.replace(/\D/g, ''), notes: notes ? notes.trim() : null,
+          id: editReservation.id,
+          roomId,
+          checkIn,
+          checkOut: checkOutDate,
+          persons: Number(persons) || Number(editReservation?.persons) || 1,
+          rate: Number(rate),
+          advanceAmount: Number(advance) || 0,
+          advanceMethod: pay,
+          name: name.trim(),
+          phone: phone.replace(/\D/g, ''),
+          notes: notes ? notes.trim() : null,
           ...sourcePayload,
         });
         toast(`Booking ${editReservation.booking_code} updated.`);
       } else {
         const result = await create.mutateAsync({
-          roomId, phone: phone.replace(/\D/g, ''), name: name.trim(), checkIn, checkOut: checkOutDate,
-          persons: Number(persons) || 1, rate: Number(rate), advanceAmount: Number(advance) || 0,
-          advanceMethod: pay, notes: notes ? notes.trim() : null, ...sourcePayload,
+          roomId,
+          phone: phone.replace(/\D/g, ''),
+          name: name.trim(),
+          checkIn,
+          checkOut: checkOutDate,
+          persons: Number(persons) || 1,
+          rate: Number(rate),
+          advanceAmount: Number(advance) || 0,
+          advanceMethod: pay,
+          notes: notes ? notes.trim() : null,
+          ...sourcePayload,
         });
         toast(`Booking ${result.booking_code} saved. Room ${result.room_no} on ${fd(result.check_in_date)}.`);
       }
       onClose();
     } catch (err) {
-      if (err.fields?.persons || err.message?.includes('allows a maximum of')) {
-        setServerPersonsError(err.fields?.persons || err.message);
-        return;
-      }
-      toast(err.message);
+      handleBackendError(err);
     }
   };
 
@@ -147,7 +279,7 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
     : Boolean(phone.trim() || name.trim() || Number(advance) > 0);
 
   return (
-    <Sheet onClose={onClose} hasUnsavedChanges={isFormDirty}>
+    <Sheet onClose={onClose} hasUnsavedChanges={isFormDirty} scrollRef={scrollRef}>
       <SheetHeader
         status="booked"
         badge={isEdit ? editReservation.booking_code : 'NEW'}
@@ -157,107 +289,499 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
         hasUnsavedChanges={isFormDirty}
       />
       <View style={styles.body}>
-        <View>
-          <Text style={styles.label}>Mobile number *</Text>
-          <Input keyboardType="phone-pad" maxLength={10} value={phone} onChangeText={setPhone} />
+        <FormErrorBanner message={formError} />
+
+        {/* Mobile Number */}
+        <FormField
+          ref={registerContainer('phone')}
+          onLayout={registerLayout('phone')}
+          label="Mobile number"
+          required
+          error={errors.phone}
+        >
+          <Input
+            ref={registerInput('phone')}
+            keyboardType="phone-pad"
+            maxLength={10}
+            value={phone}
+            onChangeText={(v) => {
+              setPhone(v);
+              clearError('phone');
+            }}
+            error={errors.phone}
+            placeholder="10-digit mobile"
+          />
           {matchedGuestId && !isEdit ? <Text style={styles.found}>Old guest found. Name filled in.</Text> : null}
-        </View>
-        <View>
-          <Text style={styles.label}>Guest name *</Text>
-          <Input value={name} onChangeText={setName} />
-        </View>
-        <View>
+        </FormField>
+
+        {/* Guest Name */}
+        <FormField
+          ref={registerContainer('name')}
+          onLayout={registerLayout('name')}
+          label="Guest name"
+          required
+          error={errors.name}
+        >
+          <Input
+            ref={registerInput('name')}
+            value={name}
+            onChangeText={(v) => {
+              setName(v);
+              clearError('name');
+            }}
+            error={errors.name}
+            placeholder="Guest name"
+          />
+        </FormField>
+
+        {/* Booking Source */}
+        <View style={styles.fieldWrap}>
           <Text style={styles.label}>Booking source</Text>
-          <Segmented options={['Social Media', 'Reference – Existing Member', 'Other']} value={bookingSource} onChange={handleSourceChange} />
-        </View>
-        {bookingSource === 'Reference – Existing Member' && (
-          <View>
-            <Text style={styles.label}>Referred By *</Text>
-            <ReferredBySelect value={referredByGuestId} onChange={(id) => { setReferredByGuestId(id); setSourceError(''); }} excludeGuestId={matchedGuestId || editReservation?.guest_id} hasError={!!sourceError} />
-            {sourceError ? <Text style={styles.err}>{sourceError}</Text> : null}
-          </View>
-        )}
-        {bookingSource === 'Other' && (
-          <View>
-            <Text style={styles.label}>Person Name *</Text>
-            <Input value={otherSource} onChangeText={(v) => { setOtherSource(v); setSourceError(''); }} />
-            {sourceError ? <Text style={styles.err}>{sourceError}</Text> : null}
-          </View>
-        )}
-        <View>
-          <Text style={styles.label}>Booking notes</Text>
-          <Input placeholder="e.g. Late check-in, ground floor preferred" value={notes} onChangeText={setNotes} />
-        </View>
-        <View>
-          <Text style={styles.label}>Coming on *</Text>
-          <Input value={checkIn} onChangeText={setCheckIn} placeholder="YYYY-MM-DD" />
-        </View>
-        <View>
-          <Text style={styles.label}>Days *</Text>
-          <Stepper value={Number(days) || 1} min={1} onChange={setDays} />
-        </View>
-        <View>
-          <Text style={styles.label}>Persons *</Text>
-          <Stepper value={Number(persons) || 1} min={1} max={roomMaxPersons} onChange={(v) => { setServerPersonsError(''); setPersons(v); }} />
-          {personsError ? <Text style={styles.err}>{personsError}</Text> : null}
-        </View>
-        <View>
-          <Text style={styles.label}>Leaves on</Text>
-          <Text style={styles.value}>{fd(checkOut)}, {formatCheckoutHour(settings?.settings?.checkout_hour)}</Text>
-        </View>
-        <View>
-          <Text style={styles.label}>Room type</Text>
           <Segmented
-            options={[{ value: 'all', label: 'Any' }, ...(roomTypes || []).map((t) => ({ value: String(t.id), label: t.name }))]}
-            value={typeFilter} onChange={setTypeFilter}
+            options={['Social Media', 'Reference – Existing Member', 'Other']}
+            value={bookingSource}
+            onChange={handleSourceChange}
           />
         </View>
-        <View>
-          <Text style={styles.label}>Pick a room * · {totalBookable} available</Text>
+
+        {bookingSource === 'Reference – Existing Member' && (
+          <FormField
+            ref={registerContainer('sourceError')}
+            onLayout={registerLayout('sourceError')}
+            label="Referred By"
+            required
+            error={errors.sourceError}
+          >
+            <ReferredBySelect
+              value={referredByGuestId}
+              onChange={(id) => {
+                setReferredByGuestId(id);
+                clearError('sourceError');
+              }}
+              excludeGuestId={matchedGuestId || editReservation?.guest_id}
+              hasError={Boolean(errors.sourceError)}
+            />
+          </FormField>
+        )}
+
+        {bookingSource === 'Other' && (
+          <FormField
+            ref={registerContainer('sourceError')}
+            onLayout={registerLayout('sourceError')}
+            label="Person Name"
+            required
+            error={errors.sourceError}
+          >
+            <Input
+              ref={registerInput('sourceError')}
+              value={otherSource}
+              onChangeText={(v) => {
+                setOtherSource(v);
+                clearError('sourceError');
+              }}
+              error={errors.sourceError}
+              placeholder="Referral contact name"
+            />
+          </FormField>
+        )}
+
+        {/* Booking Notes */}
+        <View style={styles.fieldWrap}>
+          <Text style={styles.label}>Booking notes</Text>
+          <Input
+            placeholder="e.g. Late check-in, ground floor preferred"
+            value={notes}
+            onChangeText={setNotes}
+          />
+        </View>
+
+        {/* Coming On (Check-in Date) */}
+        <FormField
+          ref={registerContainer('checkIn')}
+          onLayout={registerLayout('checkIn')}
+          label="Coming on"
+          required
+          error={errors.checkIn}
+        >
+          <Input
+            ref={registerInput('checkIn')}
+            value={checkIn}
+            onChangeText={(v) => {
+              setCheckIn(v);
+              clearError('checkIn');
+            }}
+            placeholder="YYYY-MM-DD"
+            error={errors.checkIn}
+          />
+        </FormField>
+
+        {/* Days */}
+        <FormField
+          ref={registerContainer('days')}
+          onLayout={registerLayout('days')}
+          label="Days"
+          required
+          error={errors.days}
+        >
+          <Stepper
+            value={Number(days) || 1}
+            min={1}
+            onChange={(v) => {
+              setDays(v);
+              clearError('days');
+            }}
+          />
+        </FormField>
+
+        {/* Persons */}
+        <FormField
+          ref={registerContainer('persons')}
+          onLayout={registerLayout('persons')}
+          label="Persons"
+          required
+          error={errors.persons}
+        >
+          <Stepper
+            value={Number(persons) || 1}
+            min={1}
+            max={20}
+            onChange={(v) => {
+              clearError('persons');
+              setPersons(v);
+            }}
+          />
+        </FormField>
+
+        {/* Leaves on */}
+        <View style={styles.fieldWrap}>
+          <Text style={styles.label}>Leaves on</Text>
+          <Text style={styles.value}>
+            {fd(checkOut)}, {formatCheckoutHour(settings?.settings?.checkout_hour)}
+          </Text>
+        </View>
+
+        {/* Room Type Filter */}
+        <View style={styles.fieldWrap}>
+          <Text style={styles.label}>Room type</Text>
+          <Segmented
+            options={[
+              { value: 'all', label: 'Any' },
+              ...(roomTypes || []).map((t) => ({ value: String(t.id), label: t.name })),
+            ]}
+            value={typeFilter}
+            onChange={setTypeFilter}
+          />
+        </View>
+
+        {/* Room Picker */}
+        <View
+          ref={registerContainer('roomId')}
+          onLayout={registerLayout('roomId')}
+          style={[styles.fieldWrap, errors.roomId && styles.roomPickerErrorWrap]}
+        >
+          <Text style={styles.label}>
+            Pick a room * · {totalBookable} available
+          </Text>
+
+          {/* Status Breakdown Pills */}
+          <View style={styles.badgeCountsRow}>
+            <View style={styles.badgeCountItem}>
+              <View style={[styles.badgeDot, { backgroundColor: BADGE_THEME.Ready.color }]} />
+              <Text style={[styles.badgeCountText, { color: BADGE_THEME.Ready.color }]}>Ready ({readyCount})</Text>
+            </View>
+            <View style={styles.badgeCountItem}>
+              <View style={[styles.badgeDot, { backgroundColor: BADGE_THEME.Occupied.color }]} />
+              <Text style={[styles.badgeCountText, { color: BADGE_THEME.Occupied.color }]}>Occupied ({occupiedCount})</Text>
+            </View>
+            <View style={styles.badgeCountItem}>
+              <View style={[styles.badgeDot, { backgroundColor: BADGE_THEME.Cleaning.color }]} />
+              <Text style={[styles.badgeCountText, { color: BADGE_THEME.Cleaning.color }]}>Cleaning ({cleaningCount})</Text>
+            </View>
+            <View style={styles.badgeCountItem}>
+              <View style={[styles.badgeDot, { backgroundColor: BADGE_THEME.Booked.color }]} />
+              <Text style={[styles.badgeCountText, { color: BADGE_THEME.Booked.color }]}>Booked ({bookedCount})</Text>
+            </View>
+            <View style={styles.badgeCountItem}>
+              <View style={[styles.badgeDot, { backgroundColor: BADGE_THEME.Repair.color }]} />
+              <Text style={[styles.badgeCountText, { color: BADGE_THEME.Repair.color }]}>Repair ({repairCount})</Text>
+            </View>
+            {overdueCount > 0 && (
+              <View style={styles.badgeCountItem}>
+                <View style={[styles.badgeDot, { backgroundColor: BADGE_THEME.Overdue.color }]} />
+                <Text style={[styles.badgeCountText, { color: BADGE_THEME.Overdue.color }]}>Overdue ({overdueCount})</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Selectable Room Grid - ONLY genuinely bookable rooms */}
           <View style={styles.roomGrid}>
-            {(freeRooms || []).map((r) => {
+            {selectableRooms.map((r) => {
               const cardData = getCardDisplay(r, checkIn, checkOut);
               const theme = BADGE_THEME[cardData.badge] || BADGE_THEME.Ready;
               const isSelected = roomId === r.id;
-              const isBookable = r.is_bookable !== false;
+              const isInspected = inspectedRoomId === r.id;
               return (
                 <Pressable
                   key={r.id}
-                  disabled={!isBookable}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Room ${r.room_no}, ${cardData.badge}, ${cardData.detail}. Tap to select.`}
                   style={[
                     styles.roomCard,
-                    { borderColor: isSelected ? colors.primary : theme.border, opacity: isBookable ? 1 : 0.5 },
+                    {
+                      borderColor: isSelected
+                        ? colors.primary
+                        : isInspected
+                        ? colors.primary
+                        : theme.border,
+                      borderWidth: isSelected || isInspected ? 2 : 1.5,
+                    },
                     isSelected && { backgroundColor: colors.primary },
                   ]}
                   onPress={() => {
+                    setInspectedRoomId(r.id);
                     setRoomId(r.id);
-                    if (!rateTouched) setRate(String(Number(r.type_rate)));
+                    clearError('roomId');
+                    if (!rateTouched) setRate(String(Number(r.type_rate || r.roomType?.rate || 0)));
                   }}
                 >
                   <Text style={[styles.roomCardNo, isSelected && { color: '#fff' }]}>{r.room_no}</Text>
                   <View style={[styles.roomCardBadge, { backgroundColor: isSelected ? 'rgba(255,255,255,0.25)' : theme.bg }]}>
-                    <Text style={[styles.roomCardBadgeText, { color: isSelected ? '#fff' : theme.color }]}>{cardData.badge}</Text>
+                    <Text style={[styles.roomCardBadgeText, { color: isSelected ? '#fff' : theme.color }]}>
+                      {cardData.badge}
+                    </Text>
                   </View>
-                  <Text style={[styles.roomCardDetail, isSelected && { color: '#fff' }]} numberOfLines={1}>{cardData.detail}</Text>
+                  <Text style={[styles.roomCardDetail, isSelected && { color: '#fff' }]} numberOfLines={1}>
+                    {cardData.detail}
+                  </Text>
                 </Pressable>
               );
             })}
           </View>
-          {!freeRooms?.length ? <Text style={styles.err}>No room free for these dates. Change the date or days.</Text> : null}
+
+          {freeRooms && selectableRooms.length === 0 ? (
+            <Text style={styles.err}>No room free for these dates. Change the date or days.</Text>
+          ) : null}
+
+          {/* Separate Unavailable Rooms Section */}
+          {unavailableRooms.length > 0 && (
+            <View style={styles.unavailableSection}>
+              <Pressable
+                onPress={() => setShowUnavailable((prev) => !prev)}
+                style={styles.unavailableToggle}
+                accessibilityRole="button"
+                accessibilityLabel={`Toggle unavailable rooms, ${unavailableRooms.length} unavailable for selected dates`}
+              >
+                <Text style={styles.unavailableToggleText}>
+                  {showUnavailable ? 'Hide' : 'View'} unavailable rooms ({unavailableRooms.length})
+                </Text>
+                <Text style={styles.unavailableToggleIcon}>{showUnavailable ? '▲' : '▼'}</Text>
+              </Pressable>
+
+              {showUnavailable && (
+                <View style={styles.unavailableGrid}>
+                  {unavailableRooms.map((r) => {
+                    const cardData = getCardDisplay(r, checkIn, checkOut);
+                    const theme = BADGE_THEME[cardData.badge] || BADGE_THEME.Repair;
+                    const isInspected = inspectedRoomId === r.id;
+                    return (
+                      <Pressable
+                        key={r.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Unavailable Room ${r.room_no}, ${cardData.badge}, ${cardData.detail}. Tap to view why unavailable.`}
+                        style={[
+                          styles.roomCard,
+                          styles.roomCardUnavailable,
+                          {
+                            borderColor: isInspected ? colors.primary : theme.border,
+                            borderWidth: isInspected ? 2 : 1.5,
+                          },
+                        ]}
+                        onPress={() => {
+                          setInspectedRoomId(r.id);
+                          toast(`Room ${r.room_no}: ${cardData.blockedReason || 'Not available for these dates.'}`);
+                        }}
+                      >
+                        <Text style={[styles.roomCardNo, styles.roomCardNoUnavailable]}>{r.room_no}</Text>
+                        <View style={[styles.roomCardBadge, { backgroundColor: theme.bg }]}>
+                          <Text style={[styles.roomCardBadgeText, { color: theme.color }]}>
+                            {cardData.badge}
+                          </Text>
+                        </View>
+                        <Text style={styles.roomCardDetail} numberOfLines={1}>
+                          {cardData.detail}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Room Details & Explanation Panel */}
+          {displayRoom && (
+            <View
+              style={[
+                styles.detailsPanel,
+                { borderColor: displayRoom.is_bookable !== false ? colors.border : colors.warningBorder },
+              ]}
+            >
+              <View style={styles.detailsHeader}>
+                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                  <Text style={styles.detailsRoomNo}>Room {displayRoom.room_no}</Text>
+                  <Text style={styles.detailsMeta}>
+                    {displayRoom.type_name || displayRoom.roomType?.name || 'Standard'} · ₹{Math.round(displayRoom.type_rate || displayRoom.roomType?.rate || 0).toLocaleString('en-IN')}/day · Max {displayRoom.max_persons || displayRoom.roomType?.maxPersons || 2} persons
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <View style={[styles.detailsBadge, { backgroundColor: BADGE_THEME[displayRoomCardData?.badge]?.bg || colors.cardSecondary, borderColor: BADGE_THEME[displayRoomCardData?.badge]?.border || colors.border }]}>
+                    <Text style={[styles.detailsBadgeText, { color: BADGE_THEME[displayRoomCardData?.badge]?.color || colors.text }]}>
+                      {displayRoomCardData?.badge} · {displayRoomCardData?.detail}
+                    </Text>
+                  </View>
+                  {inspectedRoomId && inspectedRoomId !== roomId && (
+                    <Pressable onPress={() => setInspectedRoomId(null)} hitSlop={8}>
+                      <Text style={styles.closeDetailsBtn}>✕</Text>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.detailsGrid}>
+                <View style={styles.detailsGridItem}>
+                  <Text style={styles.detailsGridLabel}>Current Guest: </Text>
+                  <Text style={styles.detailsGridValue}>{displayRoom.current_stay?.guest_name || 'None (Vacant)'}</Text>
+                </View>
+                <View style={styles.detailsGridItem}>
+                  <Text style={styles.detailsGridLabel}>Expected Checkout: </Text>
+                  <Text style={styles.detailsGridValue}>
+                    {displayRoom.current_stay
+                      ? `${fd(displayRoom.current_stay.checkout_planned)}${displayRoom.current_stay.checkout_time ? ' (' + formatCheckoutHour(displayRoom.current_stay.checkout_time.split(':')[0]) + ')' : ''}`
+                      : '—'}
+                  </Text>
+                </View>
+                <View style={styles.detailsGridItem}>
+                  <Text style={styles.detailsGridLabel}>Housekeeping: </Text>
+                  <Text
+                    style={[
+                      styles.detailsGridValue,
+                      {
+                        color:
+                          displayRoom.housekeeping_status === 'ok'
+                            ? colors.success
+                            : displayRoom.housekeeping_status === 'repair'
+                            ? colors.danger
+                            : colors.cleaning,
+                      },
+                    ]}
+                  >
+                    {displayRoom.housekeeping_status === 'ok'
+                      ? 'Ready (Clean)'
+                      : displayRoom.housekeeping_status === 'repair'
+                      ? 'Repair (Maintenance)'
+                      : 'Cleaning in progress'}
+                  </Text>
+                </View>
+                <View style={styles.detailsGridItem}>
+                  <Text style={styles.detailsGridLabel}>Requested Dates: </Text>
+                  <Text style={[styles.detailsGridValue, { color: displayRoom.is_bookable !== false ? colors.success : colors.danger }]}>
+                    {displayRoom.is_bookable !== false ? `Available (${fd(checkIn)} – ${fd(checkOut)})` : 'Unavailable for dates'}
+                  </Text>
+                </View>
+                {displayRoom.next_reservation && (
+                  <View style={[styles.detailsGridItem, { width: '100%' }]}>
+                    <Text style={styles.detailsGridLabel}>Existing Booking: </Text>
+                    <Text style={styles.detailsGridValue}>
+                      {displayRoom.next_reservation.booking_code} · {displayRoom.next_reservation.guest_name} ({fd(displayRoom.next_reservation.check_in_date)} – {fd(displayRoom.next_reservation.check_out_date)})
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {displayRoom.is_bookable === false ? (
+                <View style={styles.blockedBanner}>
+                  <Text style={styles.bannerIcon}>🚫</Text>
+                  <Text style={styles.blockedBannerText}>
+                    {displayRoomCardData?.blockedReason || displayRoom.selection_blocked_reason || `Room ${displayRoom.room_no} cannot be selected for these dates.`}
+                  </Text>
+                </View>
+              ) : (displayRoom.turnover_notice || displayRoomCardData?.turnoverNotice) ? (
+                <View style={styles.turnoverBanner}>
+                  <Text style={styles.bannerIcon}>ℹ️</Text>
+                  <Text style={styles.turnoverBannerText}>
+                    {displayRoom.turnover_notice || displayRoomCardData?.turnoverNotice}
+                  </Text>
+                </View>
+              ) : displayRoom.housekeeping_status === 'cleaning' ? (
+                <View style={styles.cleaningBanner}>
+                  <Text style={styles.bannerIcon}>⚠️</Text>
+                  <Text style={styles.cleaningBannerText}>
+                    Room is currently being cleaned. Housekeeping must mark the room Ready before check-in.
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.readyBanner}>
+                  <Text style={styles.bannerIcon}>✓</Text>
+                  <Text style={styles.readyBannerText}>
+                    Room is Available + Ready for check-in on arrival.
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {errors.roomId ? <FieldError>{errors.roomId}</FieldError> : null}
         </View>
-        <View>
-          <Text style={styles.label}>Rate per day (₹) *</Text>
-          <Input keyboardType="numeric" value={rate} onChangeText={(v) => { setRate(v); setRateTouched(true); }} placeholder="Pick a room" />
-        </View>
-        <View>
-          <Text style={styles.label}>Advance paid (₹)</Text>
-          <Input keyboardType="numeric" value={advance} onChangeText={setAdvance} placeholder="0" />
-        </View>
-        <View>
+
+        {/* Rate per day */}
+        <FormField
+          ref={registerContainer('rate')}
+          onLayout={registerLayout('rate')}
+          label="Rate per day (₹)"
+          required
+          error={errors.rate}
+        >
+          <Input
+            ref={registerInput('rate')}
+            keyboardType="numeric"
+            value={rate}
+            onChangeText={(v) => {
+              setRate(v);
+              setRateTouched(true);
+              clearError('rate');
+            }}
+            placeholder="Pick a room"
+            error={errors.rate}
+          />
+        </FormField>
+
+        {/* Advance paid */}
+        <FormField
+          ref={registerContainer('advance')}
+          onLayout={registerLayout('advance')}
+          label="Advance paid (₹)"
+          error={errors.advance}
+        >
+          <Input
+            ref={registerInput('advance')}
+            keyboardType="numeric"
+            value={advance}
+            onChangeText={(v) => {
+              setAdvance(v);
+              clearError('advance');
+            }}
+            placeholder="0"
+            error={errors.advance}
+          />
+        </FormField>
+
+        {/* Advance paid by */}
+        <View style={styles.fieldWrap}>
           <Text style={styles.label}>Advance paid by</Text>
           <Segmented options={['cash', 'upi', 'card']} value={pay} onChange={setPay} />
         </View>
 
+        {/* Bill summary table */}
         <View style={styles.billTable}>
           {isEdit && (
             <>
@@ -277,7 +801,13 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
           <View style={styles.billRow}><Text style={styles.billLabelTot}>Balance due on arrival</Text><Text style={styles.billValueTot}>{inr(Math.max(0, total - (Number(advance) || 0)))}</Text></View>
         </View>
 
-        <Button title={isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Confirm booking'} variant="primary" size="lg" loading={isPending} onPress={onSubmit} />
+        <Button
+          title={isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Confirm booking'}
+          variant="primary"
+          size="lg"
+          loading={isPending}
+          onPress={onSubmit}
+        />
       </View>
     </Sheet>
   );
@@ -285,9 +815,17 @@ export default function NewBookingSheet({ editReservation, presetGuest, onClose 
 
 const styles = StyleSheet.create({
   body: { padding: 16, gap: 14 },
+  fieldWrap: { gap: 4, marginBottom: 2 },
+  roomPickerErrorWrap: {
+    borderWidth: 1.5,
+    borderColor: colors.danger,
+    borderRadius: radii.md,
+    padding: 8,
+    backgroundColor: '#FFF5F5',
+  },
   label: { fontFamily: fonts.bodySemibold, fontSize: 13, color: colors.heading, marginBottom: 5 },
   value: { fontFamily: fonts.bodyMedium, fontSize: 13.5, color: colors.text },
-  err: { fontFamily: fonts.body, fontSize: 12, color: colors.danger, marginTop: 4 },
+  err: { fontFamily: fonts.bodySemibold, fontSize: 12, color: colors.danger, marginTop: 4 },
   found: { fontFamily: fonts.bodyMedium, fontSize: 12.5, color: colors.success, marginTop: 4 },
   roomGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
   roomCard: { width: 92, borderWidth: 1.5, borderRadius: radii.md, padding: 8, alignItems: 'center', gap: 3, backgroundColor: colors.surface },
@@ -295,6 +833,42 @@ const styles = StyleSheet.create({
   roomCardBadge: { borderRadius: radii.xs, paddingHorizontal: 5, paddingVertical: 1 },
   roomCardBadgeText: { fontFamily: fonts.bodyBold, fontSize: 9.5 },
   roomCardDetail: { fontFamily: fonts.body, fontSize: 9.5, color: colors.textSecondary },
+  roomCardUnavailable: {
+    opacity: 0.65,
+    borderStyle: 'dashed',
+    backgroundColor: colors.cardSecondary,
+  },
+  roomCardNoUnavailable: {
+    color: colors.textSecondary,
+  },
+  unavailableSection: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+  },
+  unavailableToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  unavailableToggleText: {
+    fontFamily: fonts.bodySemibold,
+    fontSize: 12.5,
+    color: colors.textSecondary,
+  },
+  unavailableToggleIcon: {
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  unavailableGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
   billTable: { backgroundColor: colors.cardSecondary, borderRadius: radii.md, padding: 10, gap: 4 },
   billRow: { flexDirection: 'row', justifyContent: 'space-between' },
   billLabel: { fontFamily: fonts.body, fontSize: 12.5, color: colors.text },
@@ -303,4 +877,28 @@ const styles = StyleSheet.create({
   billValueSub: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.textSecondary },
   billLabelTot: { fontFamily: fonts.bodyBold, fontSize: 13, color: colors.heading },
   billValueTot: { fontFamily: fonts.monoBold, fontSize: 13, color: colors.heading },
+  badgeCountsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginVertical: 6 },
+  badgeCountItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  badgeDot: { width: 8, height: 8, borderRadius: radii.full },
+  badgeCountText: { fontFamily: fonts.bodySemibold, fontSize: 12 },
+  detailsPanel: { marginTop: 10, padding: 12, backgroundColor: colors.surface, borderWidth: 1.5, borderRadius: radii.md },
+  detailsHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  detailsRoomNo: { fontFamily: fonts.bodyBold, fontSize: 14.5, color: colors.heading },
+  detailsMeta: { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.textSecondary },
+  detailsBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: radii.xs, borderWidth: 1 },
+  detailsBadgeText: { fontFamily: fonts.bodyBold, fontSize: 10.5 },
+  closeDetailsBtn: { fontFamily: fonts.bodyBold, fontSize: 14, color: colors.textSecondary, paddingHorizontal: 4 },
+  detailsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 6 },
+  detailsGridItem: { width: '48%', flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap' },
+  detailsGridLabel: { fontFamily: fonts.bodySemibold, fontSize: 11.5, color: colors.textSecondary },
+  detailsGridValue: { fontFamily: fonts.bodyBold, fontSize: 11.5, color: colors.text },
+  blockedBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder, borderWidth: 1, borderRadius: radii.sm, padding: 8, marginTop: 8 },
+  blockedBannerText: { flex: 1, fontFamily: fonts.bodySemibold, fontSize: 11.5, color: colors.danger },
+  turnoverBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.infoBg, borderColor: colors.infoBorder, borderWidth: 1, borderRadius: radii.sm, padding: 8, marginTop: 8 },
+  turnoverBannerText: { flex: 1, fontFamily: fonts.bodySemibold, fontSize: 11.5, color: colors.info },
+  cleaningBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.warningBg, borderColor: colors.warningBorder, borderWidth: 1, borderRadius: radii.sm, padding: 8, marginTop: 8 },
+  cleaningBannerText: { flex: 1, fontFamily: fonts.bodySemibold, fontSize: 11.5, color: colors.warning },
+  readyBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.successBg, borderColor: colors.successBorder, borderWidth: 1, borderRadius: radii.sm, padding: 8, marginTop: 8 },
+  readyBannerText: { flex: 1, fontFamily: fonts.bodySemibold, fontSize: 11.5, color: colors.success },
+  bannerIcon: { fontSize: 14 },
 });

@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
-import { Input } from '../ui/Field.jsx';
+import { FormErrorBanner, FormField, Input } from '../ui/Field.jsx';
 import Button from '../ui/Button.jsx';
 import { useGuest, useUpdateGuest } from '../../api/guests';
 import { useToast } from '../ToastContext.jsx';
+import { useFormValidation, isValidEmail } from '../../lib/validation';
 import { colors, fonts, radii } from '../../theme/theme';
 
 const ID_TYPES = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport', 'Other'];
@@ -13,6 +14,30 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
   const { data: guest, isLoading } = useGuest(guestId);
   const updateGuest = useUpdateGuest();
   const toast = useToast();
+  const scrollRef = useRef(null);
+
+  const {
+    errors,
+    formError,
+    clearError,
+    registerInput,
+    registerContainer,
+    registerLayout,
+    handleBackendError,
+    validate,
+  } = useFormValidation({
+    scrollRef,
+    fieldOrder: [
+      'name',
+      'phone',
+      'email',
+      'idProofNumber',
+      'city',
+      'address',
+      'nationality',
+      'visaExpiry',
+    ],
+  });
 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
@@ -24,7 +49,6 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
   const [isForeign, setIsForeign] = useState(false);
   const [nationality, setNationality] = useState('');
   const [visaExpiry, setVisaExpiry] = useState('');
-  const [formErrors, setFormErrors] = useState({});
 
   useEffect(() => {
     if (guest) {
@@ -41,27 +65,32 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
     }
   }, [guest]);
 
-  const validate = () => {
-    const errs = {};
-    if (!name.trim()) {
-      errs.name = 'Guest name is required.';
-    }
-    const cleanPhone = phone.replace(/\D/g, '');
-    if (!/^\d{10}$/.test(cleanPhone)) {
-      errs.phone = 'Enter a valid 10-digit mobile number.';
-    }
-    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
-      errs.email = 'Enter a valid email address.';
-    }
-    if (idProofNumber.trim() && idProofNumber.trim().length < 4) {
-      errs.idProofNumber = 'ID number must be at least 4 characters.';
-    }
-    setFormErrors(errs);
-    return Object.keys(errs).length === 0;
-  };
-
   const handleSave = async () => {
-    if (!validate()) return;
+    const isValid = validate(() => {
+      const errs = {};
+      if (!name.trim()) {
+        errs.name = 'Guest name is required.';
+      }
+      const cleanPhone = phone.replace(/\D/g, '');
+      if (!cleanPhone) {
+        errs.phone = 'Mobile number is required.';
+      } else if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
+        errs.phone = 'Please enter a valid 10-digit mobile number.';
+      }
+      if (email.trim() && !isValidEmail(email)) {
+        errs.email = 'Please enter a valid email address.';
+      }
+      if (idProofNumber.trim() && idProofNumber.trim().length < 4) {
+        errs.idProofNumber = 'ID number must be at least 4 characters.';
+      }
+      if (isForeign && !nationality.trim()) {
+        errs.nationality = 'Nationality is required for foreign guests.';
+      }
+      return errs;
+    });
+
+    if (!isValid) return;
+
     try {
       const payload = {
         id: guestId,
@@ -84,7 +113,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
       onSaved?.();
       onClose();
     } catch (err) {
-      toast(err.message || 'Failed to update guest profile.');
+      handleBackendError(err);
     }
   };
 
@@ -98,7 +127,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
   );
 
   return (
-    <Sheet onClose={onClose} hasUnsavedChanges={isFormDirty}>
+    <Sheet onClose={onClose} hasUnsavedChanges={isFormDirty} scrollRef={scrollRef}>
       <SheetHeader
         title={guest ? `Edit ${guest.name}` : 'Edit Guest Profile'}
         subtitle={guest?.phone ? `Mobile: ${guest.phone}` : 'Update personal details and identity'}
@@ -106,6 +135,8 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
         hasUnsavedChanges={isFormDirty}
       />
       <View style={styles.body}>
+        <FormErrorBanner message={formError} />
+
         <View style={styles.notice}>
           <Text style={styles.noticeText}>
             ℹ️ Updating contact and identity details saves to the guest master record. Historical bookings and stays are preserved.
@@ -113,53 +144,70 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
         </View>
 
         {/* Full Name */}
-        <View>
-          <Text style={styles.label}>Full Name *</Text>
+        <FormField
+          ref={registerContainer('name')}
+          onLayout={registerLayout('name')}
+          label="Full Name"
+          required
+          error={errors.name}
+        >
           <Input
+            ref={registerInput('name')}
             value={name}
             onChangeText={(text) => {
               setName(text);
-              if (formErrors.name) setFormErrors((p) => ({ ...p, name: null }));
+              clearError('name');
             }}
             placeholder="Full Name"
+            error={errors.name}
           />
-          {formErrors.name && <Text style={styles.err}>{formErrors.name}</Text>}
-        </View>
+        </FormField>
 
         {/* Mobile Phone */}
-        <View>
-          <Text style={styles.label}>Mobile Number *</Text>
+        <FormField
+          ref={registerContainer('phone')}
+          onLayout={registerLayout('phone')}
+          label="Mobile Number"
+          required
+          error={errors.phone}
+        >
           <Input
+            ref={registerInput('phone')}
             value={phone}
             onChangeText={(text) => {
               setPhone(text);
-              if (formErrors.phone) setFormErrors((p) => ({ ...p, phone: null }));
+              clearError('phone');
             }}
             keyboardType="phone-pad"
             maxLength={10}
             placeholder="10-digit mobile"
+            error={errors.phone}
           />
-          {formErrors.phone && <Text style={styles.err}>{formErrors.phone}</Text>}
-        </View>
+        </FormField>
 
         {/* Email */}
-        <View>
-          <Text style={styles.label}>Email Address</Text>
+        <FormField
+          ref={registerContainer('email')}
+          onLayout={registerLayout('email')}
+          label="Email Address"
+          error={errors.email}
+        >
           <Input
+            ref={registerInput('email')}
             value={email}
             onChangeText={(text) => {
               setEmail(text);
-              if (formErrors.email) setFormErrors((p) => ({ ...p, email: null }));
+              clearError('email');
             }}
             keyboardType="email-address"
             autoCapitalize="none"
             placeholder="guest@example.com"
+            error={errors.email}
           />
-          {formErrors.email && <Text style={styles.err}>{formErrors.email}</Text>}
-        </View>
+        </FormField>
 
         {/* City */}
-        <View>
+        <View style={styles.fieldWrap}>
           <Text style={styles.label}>City / Location</Text>
           <Input
             value={city}
@@ -169,7 +217,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
         </View>
 
         {/* Address */}
-        <View>
+        <View style={styles.fieldWrap}>
           <Text style={styles.label}>Full Address</Text>
           <Input
             value={address}
@@ -179,7 +227,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
         </View>
 
         {/* ID Proof Type */}
-        <View>
+        <View style={styles.fieldWrap}>
           <Text style={styles.label}>ID Proof Type</Text>
           <View style={styles.idTypeRow}>
             {ID_TYPES.map((type) => (
@@ -197,20 +245,23 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
         </View>
 
         {/* ID Proof Number */}
-        <View>
-          <Text style={styles.label}>
-            ID Proof Number {guest?.id_proof_last4 ? `(Current: ••••${guest.id_proof_last4})` : ''}
-          </Text>
+        <FormField
+          ref={registerContainer('idProofNumber')}
+          onLayout={registerLayout('idProofNumber')}
+          label={`ID Proof Number ${guest?.id_proof_last4 ? `(Current: ••••${guest.id_proof_last4})` : ''}`}
+          error={errors.idProofNumber}
+        >
           <Input
+            ref={registerInput('idProofNumber')}
             value={idProofNumber}
             onChangeText={(text) => {
               setIdProofNumber(text);
-              if (formErrors.idProofNumber) setFormErrors((p) => ({ ...p, idProofNumber: null }));
+              clearError('idProofNumber');
             }}
             placeholder="Enter ID number to update"
+            error={errors.idProofNumber}
           />
-          {formErrors.idProofNumber && <Text style={styles.err}>{formErrors.idProofNumber}</Text>}
-        </View>
+        </FormField>
 
         {/* Foreign Guest Toggle */}
         <Pressable
@@ -225,22 +276,42 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
 
         {isForeign && (
           <View style={styles.foreignSection}>
-            <View>
-              <Text style={styles.label}>Nationality</Text>
+            <FormField
+              ref={registerContainer('nationality')}
+              onLayout={registerLayout('nationality')}
+              label="Nationality"
+              required
+              error={errors.nationality}
+            >
               <Input
+                ref={registerInput('nationality')}
                 value={nationality}
-                onChangeText={setNationality}
+                onChangeText={(text) => {
+                  setNationality(text);
+                  clearError('nationality');
+                }}
                 placeholder="Country of nationality"
+                error={errors.nationality}
               />
-            </View>
-            <View>
-              <Text style={styles.label}>Visa Expiry Date (YYYY-MM-DD)</Text>
+            </FormField>
+
+            <FormField
+              ref={registerContainer('visaExpiry')}
+              onLayout={registerLayout('visaExpiry')}
+              label="Visa Expiry Date (YYYY-MM-DD)"
+              error={errors.visaExpiry}
+            >
               <Input
+                ref={registerInput('visaExpiry')}
                 value={visaExpiry}
-                onChangeText={setVisaExpiry}
+                onChangeText={(text) => {
+                  setVisaExpiry(text);
+                  clearError('visaExpiry');
+                }}
                 placeholder="YYYY-MM-DD"
+                error={errors.visaExpiry}
               />
-            </View>
+            </FormField>
           </View>
         )}
 
@@ -259,6 +330,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
 
 const styles = StyleSheet.create({
   body: { padding: 16, gap: 14 },
+  fieldWrap: { gap: 4, marginBottom: 2 },
   notice: {
     backgroundColor: colors.surfaceSecondary,
     borderColor: colors.cardBorder,
@@ -268,7 +340,6 @@ const styles = StyleSheet.create({
   },
   noticeText: { fontFamily: fonts.body, fontSize: 12, color: colors.textSecondary, lineHeight: 17 },
   label: { fontFamily: fonts.bodySemibold, fontSize: 12.5, color: colors.heading, marginBottom: 4 },
-  err: { fontFamily: fonts.body, fontSize: 11.5, color: colors.danger, marginTop: 3 },
   idTypeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   idChip: {
     paddingHorizontal: 10,
@@ -295,5 +366,5 @@ const styles = StyleSheet.create({
   checkboxActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   checkmark: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
   checkLabel: { fontFamily: fonts.bodySemibold, fontSize: 12.5, color: colors.heading },
-  foreignSection: { gap: 12, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: colors.primaryLight },
+  foreignSection: { gap: 12, paddingLeft: 8, borderLeftWidth: 2, borderLeftColor: colors.primaryLight, marginTop: 4 },
 });
