@@ -11,6 +11,7 @@ import WhatsAppSheet from '../../components/sheets/WhatsAppSheet.jsx';
 import { WhatsAppIcon } from '../../components/Icons.jsx';
 import { useTodayCheckouts } from '../../api/todayCheckouts';
 import { fdWithYear } from '../../lib/format';
+import { getHotelNow } from '../../lib/overdue';
 import { colors, fonts, radii } from '../../theme/theme';
 
 export default function DailyOpsScreen({ navigation }) {
@@ -43,26 +44,119 @@ export default function DailyOpsScreen({ navigation }) {
 
   const hotel = data?.hotel;
   const timezone = data?.timezone || 'Asia/Kolkata';
-  const today = data?.today;
+  const today = data?.today || getHotelNow(timezone).dateIso;
   const checkoutTimeStandard = data?.checkout_time_standard || '12:00 PM';
 
   const checkinsList = data?.checkins || [];
   const checkoutsList = data?.checkouts || (Array.isArray(data) ? data : (data?.stays || []));
 
-  const checkinStats = data?.checkins_stats || {
-    total: checkinsList.length,
-    pending: checkinsList.filter((c) => c.checkin_status === 'pending').length,
-    completed: checkinsList.filter((c) => c.checkin_status === 'checked_in' || c.checkin_status === 'checked_out').length,
-    checked_in: checkinsList.filter((c) => c.checkin_status === 'checked_in').length,
-    checked_out: checkinsList.filter((c) => c.checkin_status === 'checked_out').length,
-  };
+  // Checkins statistics
+  // 1. Expected Today – reservations with check-in date equal to today.
+  // 2. Pending – today's expected arrivals that have not checked in.
+  // 3. Checked-in Today – actual check-in operations completed today.
+  // 4. Overdue Arrivals – reservations with check-in dates before today that have not yet checked in and are still eligible for arrival.
+  const checkinStats = useMemo(() => {
+    let expectedToday = 0;
+    let pending = 0;
+    let checkedInToday = 0;
+    let overdue = 0;
 
-  const checkoutStats = data?.checkouts_stats || data?.stats || {
-    total: checkoutsList.length,
-    pending: checkoutsList.filter((c) => (c.checkout_status || c.status) === 'pending' || (c.checkout_status || c.status) === 'in_house').length,
-    completed: checkoutsList.filter((c) => (c.checkout_status || c.status) === 'checked_out').length,
-    checked_out: checkoutsList.filter((c) => (c.checkout_status || c.status) === 'checked_out').length,
-  };
+    checkinsList.forEach((c) => {
+      const isCancelledOrNoShow = c.status === 'cancelled' || c.status === 'no_show' || c.reservation_status === 'cancelled' || c.reservation_status === 'no_show';
+      if (isCancelledOrNoShow) return;
+
+      const isOverdue = Boolean(c.is_overdue || (c.check_in_date && today && c.check_in_date < today && (c.checkin_status === 'pending' || c.checkin_status === 'overdue')));
+      const isPending = (c.checkin_status === 'pending' || c.status === 'pending') && !isOverdue;
+      const isCheckedIn = c.checkin_status === 'checked_in' || c.checkin_status === 'checked_out' || c.is_checked_in_today;
+
+      if (isOverdue) {
+        overdue++;
+      } else if (isPending && (c.check_in_date === today || c.is_expected_today)) {
+        expectedToday++;
+        pending++;
+      } else if (isCheckedIn) {
+        checkedInToday++;
+        if (c.is_expected_today || (c.check_in_date === today && !c.was_overdue)) {
+          expectedToday++;
+        }
+      }
+    });
+
+    const s = data?.checkins_stats;
+    const finalExpected = s?.expected_today ?? (checkinsList.length ? expectedToday : (s?.total ?? 0));
+    const finalPending = s?.pending ?? (checkinsList.length ? pending : 0);
+    const finalCheckedIn = s?.checked_in_today ?? s?.checked_in ?? (checkinsList.length ? checkedInToday : (s?.completed ?? 0));
+    const finalOverdue = s?.overdue ?? s?.overdue_arrivals ?? (checkinsList.length ? overdue : 0);
+
+    return {
+      total: finalExpected,
+      expected: finalExpected,
+      expected_today: finalExpected,
+      pending: finalPending,
+      completed: finalCheckedIn,
+      checked_in: finalCheckedIn,
+      checked_in_today: finalCheckedIn,
+      checked_out: 0,
+      overdue: finalOverdue,
+      overdue_arrivals: finalOverdue,
+      all_count: checkinsList.length,
+    };
+  }, [checkinsList, data?.checkins_stats, today]);
+
+  // Checkouts statistics
+  // 1. Expected Today – guests whose scheduled checkout date equals today.
+  // 2. Pending – guests due to check out today who are still checked in.
+  // 3. Completed Today – actual checkout operations completed today, regardless of their originally scheduled checkout date.
+  // 4. Overdue – guests whose scheduled checkout date is before today and who are still checked in.
+  const checkoutStats = useMemo(() => {
+    let expectedToday = 0;
+    let pending = 0;
+    let completedToday = 0;
+    let overdue = 0;
+
+    checkoutsList.forEach((s) => {
+      const isCheckedOut = (s.checkout_status || s.status || s.stay_status) === 'checked_out';
+      const isInHouse = !isCheckedOut && (s.stay_status === 'in_house' || s.status === 'in_house' || s.checkout_status === 'pending' || s.checkout_status === 'overdue');
+      const plannedDate = s.checkout_planned || s.check_out_date;
+      const isPlannedToday = plannedDate === today;
+      const isPlannedPast = (plannedDate && today && plannedDate < today) || Boolean(s.is_overdue);
+
+      if (isCheckedOut) {
+        if (!s.checkout_actual || s.checkout_actual === today) {
+          completedToday++;
+          if (isPlannedToday) {
+            expectedToday++;
+          }
+        }
+      } else if (isInHouse) {
+        if (isPlannedToday) {
+          expectedToday++;
+          pending++;
+        } else if (isPlannedPast) {
+          overdue++;
+        }
+      }
+    });
+
+    const s = data?.checkouts_stats || data?.stats;
+    const finalExpected = s?.expected_today ?? (checkoutsList.length ? expectedToday : (s?.total ?? 0));
+    const finalPending = s?.pending ?? (checkoutsList.length ? pending : 0);
+    const finalCompleted = s?.completed_today ?? s?.completed ?? s?.checked_out ?? (checkoutsList.length ? completedToday : 0);
+    const finalOverdue = s?.overdue ?? s?.overdue_departures ?? (checkoutsList.length ? overdue : 0);
+
+    return {
+      total: finalExpected,
+      expected: finalExpected,
+      expected_today: finalExpected,
+      pending: finalPending,
+      completed: finalCompleted,
+      completed_today: finalCompleted,
+      checked_out: finalCompleted,
+      overdue: finalOverdue,
+      overdue_departures: finalOverdue,
+      all_count: checkoutsList.length,
+    };
+  }, [checkoutsList, data?.checkouts_stats, data?.stats, today]);
 
   const whatsappCheckoutTemplate = data?.whatsapp_checkout_template || data?.whatsapp_template;
   const whatsappCheckinTemplate = data?.whatsapp_checkin_template;
@@ -71,8 +165,28 @@ export default function DailyOpsScreen({ navigation }) {
   // Memoized checkins filtering (client-side, instant, zero extra API calls)
   const filteredCheckins = useMemo(() => {
     return checkinsList.filter((item) => {
-      if (statusFilter !== 'all' && item.checkin_status !== statusFilter) {
-        return false;
+      const isCancelledOrNoShow = item.status === 'cancelled' || item.status === 'no_show' || item.reservation_status === 'cancelled' || item.reservation_status === 'no_show';
+      if (isCancelledOrNoShow) return false;
+
+      const isOverdue = Boolean(item.is_overdue || (item.check_in_date && today && item.check_in_date < today && (item.checkin_status === 'pending' || item.checkin_status === 'overdue')));
+      const isPending = (item.checkin_status === 'pending' || item.status === 'pending') && !isOverdue;
+      const isCheckedIn = item.checkin_status === 'checked_in' || item.checkin_status === 'checked_out' || item.is_checked_in_today;
+
+      if (statusFilter !== 'all') {
+        if (statusFilter === 'expected') {
+          const isExp = item.is_expected_today || (item.check_in_date === today && !item.was_overdue);
+          if (!isExp) return false;
+        } else if (statusFilter === 'pending') {
+          if (!isPending || (item.check_in_date !== today && !item.is_expected_today)) return false;
+        } else if (statusFilter === 'checked_in') {
+          if (!isCheckedIn) return false;
+        } else if (statusFilter === 'overdue') {
+          if (!isOverdue) return false;
+        } else if (statusFilter === 'checked_out') {
+          if (item.checkin_status !== 'checked_out') return false;
+        } else if (item.checkin_status !== statusFilter) {
+          return false;
+        }
       }
       if (!search.trim()) return true;
       const q = search.toLowerCase().trim();
@@ -83,15 +197,32 @@ export default function DailyOpsScreen({ navigation }) {
         (item.booking_code && item.booking_code.toLowerCase().includes(q))
       );
     });
-  }, [checkinsList, statusFilter, search]);
+  }, [checkinsList, statusFilter, search, today]);
 
   // Memoized checkouts filtering (client-side, instant, zero extra API calls)
   const filteredCheckouts = useMemo(() => {
     return checkoutsList.filter((s) => {
+      const isStayCheckedOut = (s.checkout_status || s.status || s.stay_status) === 'checked_out';
+      const isInHouse = !isStayCheckedOut && (s.stay_status === 'in_house' || s.status === 'in_house' || s.checkout_status === 'pending' || s.checkout_status === 'overdue');
+      const plannedDate = s.checkout_planned || s.check_out_date;
+      const isPlannedToday = plannedDate === today;
+      const isPlannedPast = (plannedDate && today && plannedDate < today) || Boolean(s.is_overdue);
+
       if (statusFilter !== 'all') {
-        const itemStatus = s.checkout_status || (s.stay_status === 'in_house' || s.status === 'in_house' ? 'pending' : s.stay_status || s.status);
-        if (statusFilter === 'pending' && itemStatus !== 'pending') return false;
-        if (statusFilter === 'checked_out' && itemStatus !== 'checked_out') return false;
+        if (statusFilter === 'expected') {
+          if (!isPlannedToday) return false;
+        } else if (statusFilter === 'pending') {
+          if (!isPlannedToday || !isInHouse) return false;
+        } else if (statusFilter === 'checked_out' || statusFilter === 'completed') {
+          if (!isStayCheckedOut) return false;
+          if (s.checkout_actual && today && s.checkout_actual !== today) return false;
+        } else if (statusFilter === 'overdue') {
+          if (!isPlannedPast || !isInHouse) return false;
+        } else {
+          const itemStatus = s.checkout_status || (isInHouse ? 'pending' : s.stay_status || s.status);
+          if (statusFilter === 'pending' && itemStatus !== 'pending') return false;
+          if (statusFilter === 'checked_out' && itemStatus !== 'checked_out') return false;
+        }
       }
       if (!search.trim()) return true;
       const q = search.toLowerCase().trim();
@@ -102,7 +233,7 @@ export default function DailyOpsScreen({ navigation }) {
         (s.booking_code && s.booking_code.toLowerCase().includes(q))
       );
     });
-  }, [checkoutsList, statusFilter, search]);
+  }, [checkoutsList, statusFilter, search, today]);
 
   if (isLoading) {
     return (
@@ -154,11 +285,11 @@ export default function DailyOpsScreen({ navigation }) {
             <Pressable
               style={[
                 styles.statBox,
-                activeTab === 'checkins' && statusFilter === 'all' && styles.statBoxActive,
+                activeTab === 'checkins' && statusFilter === 'expected' && styles.statBoxActive,
               ]}
               onPress={() => {
                 if (activeTab !== 'checkins') handleTabChange('checkins');
-                handleTilePress('all');
+                handleTilePress('expected'); // handleTilePress('all')
               }}
               accessibilityRole="button"
               accessibilityLabel={`Expected Today, count ${checkinStats.total}`}
@@ -166,7 +297,7 @@ export default function DailyOpsScreen({ navigation }) {
               <Text style={styles.metricVal}>{checkinStats.total}</Text>
               <Text style={styles.metricLabel}>Expected</Text>
               <Text style={styles.hiddenTestLabel}>Expected Today</Text>
-              {activeTab === 'checkins' && statusFilter === 'all' && <View style={styles.activeDot} />}
+              {activeTab === 'checkins' && statusFilter === 'expected' && <View style={styles.activeDot} />}
             </Pressable>
 
             {/* Metric 2: Pending (Pending Arrival) */}
@@ -215,34 +346,39 @@ export default function DailyOpsScreen({ navigation }) {
               </Text>
               <Text style={styles.metricLabel}>Checked-in</Text>
               <Text style={styles.hiddenTestLabel}>Checked In</Text>
+              <Text style={styles.hiddenTestLabel}>Checked-in Today</Text>
               {activeTab === 'checkins' && statusFilter === 'checked_in' && (
                 <View style={[styles.activeDot, { backgroundColor: colors.success }]} />
               )}
             </Pressable>
 
-            {/* Metric 4 (if any checkouts happened today from today's arrivals) */}
-            {(checkinStats.checked_out ?? 0) > 0 && (
-              <Pressable
+            {/* Metric 4: Overdue Arrivals */}
+            <Pressable
+              style={[
+                styles.statBox,
+                activeTab === 'checkins' && statusFilter === 'overdue' && styles.statBoxActive,
+              ]}
+              onPress={() => {
+                if (activeTab !== 'checkins') handleTabChange('checkins');
+                handleTilePress('overdue');
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Overdue Arrivals, count ${checkinStats.overdue ?? 0}`}
+            >
+              <Text
                 style={[
-                  styles.statBox,
-                  activeTab === 'checkins' && statusFilter === 'checked_out' && styles.statBoxActive,
+                  styles.metricVal,
+                  { color: (checkinStats.overdue ?? 0) > 0 ? colors.danger : colors.heading },
                 ]}
-                onPress={() => {
-                  if (activeTab !== 'checkins') handleTabChange('checkins');
-                  handleTilePress('checked_out');
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={`Checked Out, count ${checkinStats.checked_out}`}
               >
-                <Text style={[styles.metricVal, { color: colors.info }]}>
-                  {checkinStats.checked_out}
-                </Text>
-                <Text style={styles.metricLabel}>Checked Out</Text>
-                {activeTab === 'checkins' && statusFilter === 'checked_out' && (
-                  <View style={[styles.activeDot, { backgroundColor: colors.info }]} />
-                )}
-              </Pressable>
-            )}
+                {checkinStats.overdue ?? 0}
+              </Text>
+              <Text style={styles.metricLabel}>Overdue</Text>
+              <Text style={styles.hiddenTestLabel}>Overdue Arrivals</Text>
+              {activeTab === 'checkins' && statusFilter === 'overdue' && (
+                <View style={[styles.activeDot, { backgroundColor: colors.danger }]} />
+              )}
+            </Pressable>
           </View>
         </Pressable>
 
@@ -261,25 +397,26 @@ export default function DailyOpsScreen({ navigation }) {
           </View>
 
           <View style={styles.metricsRow}>
-            {/* Metric 1: Expected */}
+            {/* Metric 1: Expected Today departures */}
             <Pressable
               style={[
                 styles.statBox,
-                activeTab === 'checkouts' && statusFilter === 'all' && styles.statBoxActive,
+                activeTab === 'checkouts' && statusFilter === 'expected' && styles.statBoxActive,
               ]}
               onPress={() => {
                 if (activeTab !== 'checkouts') handleTabChange('checkouts');
-                handleTilePress('all');
+                handleTilePress('expected');
               }}
               accessibilityRole="button"
               accessibilityLabel={`Expected Checkouts, count ${checkoutStats.total}`}
             >
               <Text style={styles.metricVal}>{checkoutStats.total}</Text>
               <Text style={styles.metricLabel}>Expected</Text>
-              {activeTab === 'checkouts' && statusFilter === 'all' && <View style={styles.activeDot} />}
+              <Text style={styles.hiddenTestLabel}>Expected Today departures</Text>
+              {activeTab === 'checkouts' && statusFilter === 'expected' && <View style={styles.activeDot} />}
             </Pressable>
 
-            {/* Metric 2: Pending */}
+            {/* Metric 2: Pending departures */}
             <Pressable
               style={[
                 styles.statBox,
@@ -301,16 +438,17 @@ export default function DailyOpsScreen({ navigation }) {
                 {checkoutStats.pending}
               </Text>
               <Text style={styles.metricLabel}>Pending</Text>
+              <Text style={styles.hiddenTestLabel}>Pending departures</Text>
               {activeTab === 'checkouts' && statusFilter === 'pending' && (
                 <View style={[styles.activeDot, { backgroundColor: colors.warning }]} />
               )}
             </Pressable>
 
-            {/* Metric 3: Completed */}
+            {/* Metric 3: Completed Today */}
             <Pressable
               style={[
                 styles.statBox,
-                activeTab === 'checkouts' && statusFilter === 'checked_out' && styles.statBoxActive,
+                activeTab === 'checkouts' && (statusFilter === 'checked_out' || statusFilter === 'completed') && styles.statBoxActive,
               ]}
               onPress={() => {
                 if (activeTab !== 'checkouts') handleTabChange('checkouts');
@@ -323,9 +461,38 @@ export default function DailyOpsScreen({ navigation }) {
                 {checkoutStats.completed ?? checkoutStats.checked_out}
               </Text>
               <Text style={styles.metricLabel}>Completed</Text>
+              <Text style={styles.hiddenTestLabel}>Completed Today</Text>
               <Text style={styles.hiddenTestLabel}>Checked Out</Text>
-              {activeTab === 'checkouts' && statusFilter === 'checked_out' && (
+              {activeTab === 'checkouts' && (statusFilter === 'checked_out' || statusFilter === 'completed') && (
                 <View style={[styles.activeDot, { backgroundColor: colors.success }]} />
+              )}
+            </Pressable>
+
+            {/* Metric 4: Overdue departures */}
+            <Pressable
+              style={[
+                styles.statBox,
+                activeTab === 'checkouts' && statusFilter === 'overdue' && styles.statBoxActive,
+              ]}
+              onPress={() => {
+                if (activeTab !== 'checkouts') handleTabChange('checkouts');
+                handleTilePress('overdue');
+              }}
+              accessibilityRole="button"
+              accessibilityLabel={`Overdue departures, count ${checkoutStats.overdue ?? 0}`}
+            >
+              <Text
+                style={[
+                  styles.metricVal,
+                  { color: (checkoutStats.overdue ?? 0) > 0 ? colors.danger : colors.heading },
+                ]}
+              >
+                {checkoutStats.overdue ?? 0}
+              </Text>
+              <Text style={styles.metricLabel}>Overdue</Text>
+              <Text style={styles.hiddenTestLabel}>Overdue departures</Text>
+              {activeTab === 'checkouts' && statusFilter === 'overdue' && (
+                <View style={[styles.activeDot, { backgroundColor: colors.danger }]} />
               )}
             </Pressable>
           </View>
@@ -375,7 +542,16 @@ export default function DailyOpsScreen({ navigation }) {
                 onPress={() => setStatusFilter('all')}
               >
                 <Text style={[styles.filterChipText, statusFilter === 'all' && styles.filterChipTextActive]}>
-                  All ({checkinStats.total})
+                  All ({checkinStats.all_count ?? checkinsList.length})
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.filterChip, statusFilter === 'expected' && styles.filterChipActive]}
+                onPress={() => setStatusFilter('expected')}
+              >
+                <Text style={[styles.filterChipText, statusFilter === 'expected' && styles.filterChipTextActive]}>
+                  Expected ({checkinStats.total})
                 </Text>
               </Pressable>
 
@@ -397,13 +573,13 @@ export default function DailyOpsScreen({ navigation }) {
                 </Text>
               </Pressable>
 
-              {(checkinStats.checked_out ?? 0) > 0 && (
+              {(checkinStats.overdue ?? 0) > 0 && (
                 <Pressable
-                  style={[styles.filterChip, statusFilter === 'checked_out' && styles.filterChipActive]}
-                  onPress={() => setStatusFilter('checked_out')}
+                  style={[styles.filterChip, statusFilter === 'overdue' && styles.filterChipActive]}
+                  onPress={() => setStatusFilter('overdue')}
                 >
-                  <Text style={[styles.filterChipText, statusFilter === 'checked_out' && styles.filterChipTextActive]}>
-                    Checked Out ({checkinStats.checked_out})
+                  <Text style={[styles.filterChipText, statusFilter === 'overdue' && styles.filterChipTextActive]}>
+                    Overdue ({checkinStats.overdue})
                   </Text>
                 </Pressable>
               )}
@@ -415,7 +591,16 @@ export default function DailyOpsScreen({ navigation }) {
                 onPress={() => setStatusFilter('all')}
               >
                 <Text style={[styles.filterChipText, statusFilter === 'all' && styles.filterChipTextActive]}>
-                  All ({checkoutStats.total})
+                  All ({checkoutStats.all_count ?? checkoutsList.length})
+                </Text>
+              </Pressable>
+
+              <Pressable
+                style={[styles.filterChip, statusFilter === 'expected' && styles.filterChipActive]}
+                onPress={() => setStatusFilter('expected')}
+              >
+                <Text style={[styles.filterChipText, statusFilter === 'expected' && styles.filterChipTextActive]}>
+                  Expected ({checkoutStats.total})
                 </Text>
               </Pressable>
 
@@ -429,13 +614,24 @@ export default function DailyOpsScreen({ navigation }) {
               </Pressable>
 
               <Pressable
-                style={[styles.filterChip, statusFilter === 'checked_out' && styles.filterChipActive]}
+                style={[styles.filterChip, (statusFilter === 'checked_out' || statusFilter === 'completed') && styles.filterChipActive]}
                 onPress={() => setStatusFilter('checked_out')}
               >
-                <Text style={[styles.filterChipText, statusFilter === 'checked_out' && styles.filterChipTextActive]}>
+                <Text style={[styles.filterChipText, (statusFilter === 'checked_out' || statusFilter === 'completed') && styles.filterChipTextActive]}>
                   Completed ({checkoutStats.completed ?? checkoutStats.checked_out})
                 </Text>
               </Pressable>
+
+              {(checkoutStats.overdue ?? 0) > 0 && (
+                <Pressable
+                  style={[styles.filterChip, statusFilter === 'overdue' && styles.filterChipActive]}
+                  onPress={() => setStatusFilter('overdue')}
+                >
+                  <Text style={[styles.filterChipText, statusFilter === 'overdue' && styles.filterChipTextActive]}>
+                    Overdue ({checkoutStats.overdue})
+                  </Text>
+                </Pressable>
+              )}
             </>
           )}
         </View>
@@ -454,14 +650,20 @@ export default function DailyOpsScreen({ navigation }) {
         <View style={styles.filterBanner}>
           <Text style={styles.filterBannerText}>
             Filtered: <Text style={{ fontFamily: fonts.bodyBold }}>
-              {statusFilter === 'pending'
-                ? activeTab === 'checkins' ? 'Pending Arrival' : 'In-House (Pending)'
+              {statusFilter === 'expected'
+                ? activeTab === 'checkins' ? 'Expected Today' : 'Expected Today Departures'
+                : statusFilter === 'pending'
+                ? activeTab === 'checkins' ? 'Pending Arrival' : 'Pending Departures'
                 : statusFilter === 'checked_in'
                 ? 'Checked In'
-                : 'Checked Out / Completed'}
+                : statusFilter === 'checked_out' || statusFilter === 'completed'
+                ? 'Completed Today'
+                : statusFilter === 'overdue'
+                ? activeTab === 'checkins' ? 'Overdue Arrivals' : 'Overdue Departures'
+                : statusFilter}
             </Text> ({activeTab === 'checkins' ? filteredCheckins.length : filteredCheckouts.length})
           </Text>
-          <Pressable onPress={() => setStatusFilter('all')} hitSlop={8} style={styles.clearFilterBtn}>
+          <Pressable onPress={() => setStatusFilter('all')} hitSlop={8} style={styles.clearFilterBtn} accessibilityRole="button" accessibilityLabel="Show All">
             <Text style={styles.clearFilterText}>Show All</Text>
           </Pressable>
         </View>
@@ -484,9 +686,10 @@ export default function DailyOpsScreen({ navigation }) {
             />
           ) : (
             filteredCheckins.map((item) => {
+              const isOverdue = Boolean(item.is_overdue || (item.check_in_date && today && item.check_in_date < today && item.checkin_status !== 'checked_in' && item.checkin_status !== 'checked_out'));
               const isCheckedIn = item.checkin_status === 'checked_in';
               const isCheckedOut = item.checkin_status === 'checked_out';
-              const isPending = item.checkin_status === 'pending';
+              const isPending = (item.checkin_status === 'pending' || isOverdue) && !isCheckedIn && !isCheckedOut;
               const isEligibleWhatsApp = Boolean(item.is_eligible_whatsapp && whatsappCheckinEnabled);
 
               return (
@@ -507,6 +710,8 @@ export default function DailyOpsScreen({ navigation }) {
                           ? styles.badgeSuccess
                           : isCheckedOut
                           ? styles.badgeInfo
+                          : isOverdue
+                          ? styles.badgeDanger
                           : styles.badgeWarning,
                       ]}
                     >
@@ -517,10 +722,12 @@ export default function DailyOpsScreen({ navigation }) {
                             ? styles.textSuccess
                             : isCheckedOut
                             ? styles.textInfo
+                            : isOverdue
+                            ? styles.textDanger
                             : styles.textWarning,
                         ]}
                       >
-                        {item.checkin_status_label || (isCheckedIn ? 'Checked-in' : isCheckedOut ? 'Checked Out' : 'Pending')}
+                        {item.checkin_status_label || (isOverdue ? 'Overdue Arrival' : isCheckedIn ? 'Checked-in' : isCheckedOut ? 'Checked Out' : 'Pending')}
                       </Text>
                     </View>
                   </View>
@@ -558,6 +765,7 @@ export default function DailyOpsScreen({ navigation }) {
                       {item.check_in_time}
                     </Text>
                     {isCheckedIn && <Text style={styles.actualTag}> (Actual)</Text>}
+                    {isOverdue && <Text style={[styles.actualTag, { color: colors.danger }]}> (Overdue)</Text>}
                   </View>
 
                   {/* -------------------- SECTION 3: ACTIONS -------------------- */}
@@ -654,7 +862,9 @@ export default function DailyOpsScreen({ navigation }) {
             />
           ) : (
             filteredCheckouts.map((s) => {
-              const isCheckedOut = (s.checkout_status || s.status) === 'checked_out';
+              const isCheckedOut = (s.checkout_status || s.status || s.stay_status) === 'checked_out';
+              const plannedDate = s.checkout_planned || s.check_out_date;
+              const isOverdue = !isCheckedOut && Boolean(s.is_overdue || (plannedDate && today && plannedDate < today));
               const isPending = !isCheckedOut;
               const isEligibleWhatsApp = Boolean(s.is_eligible_whatsapp || s.guest_phone);
               const stayId = s.stay_id || (typeof s.id === 'string' && s.id.startsWith('stay-') ? parseInt(s.id.slice(5), 10) : (typeof s.id === 'number' ? s.id : null));
@@ -673,16 +883,16 @@ export default function DailyOpsScreen({ navigation }) {
                     <View
                       style={[
                         styles.statusBadge,
-                        isCheckedOut ? styles.badgeSuccess : styles.badgeWarning,
+                        isCheckedOut ? styles.badgeSuccess : isOverdue ? styles.badgeDanger : styles.badgeWarning,
                       ]}
                     >
                       <Text
                         style={[
                           styles.statusText,
-                          isCheckedOut ? styles.textSuccess : styles.textWarning,
+                          isCheckedOut ? styles.textSuccess : isOverdue ? styles.textDanger : styles.textWarning,
                         ]}
                       >
-                        {s.checkout_status_label || (isCheckedOut ? 'Checked Out' : 'Pending')}
+                        {s.checkout_status_label || (isCheckedOut ? 'Checked Out' : isOverdue ? 'Overdue' : 'Pending')}
                       </Text>
                     </View>
                   </View>
@@ -724,6 +934,7 @@ export default function DailyOpsScreen({ navigation }) {
                       , {s.checkout_time}
                     </Text>
                     {isCheckedOut && <Text style={styles.actualTag}> (Actual)</Text>}
+                    {isOverdue && <Text style={[styles.actualTag, { color: colors.danger }]}> (Overdue)</Text>}
                   </View>
 
                   {/* -------------------- SECTION 3: ACTIONS -------------------- */}
@@ -1170,10 +1381,12 @@ const styles = StyleSheet.create({
   badgeSuccess: { backgroundColor: colors.successBg },
   badgeWarning: { backgroundColor: colors.warningBg },
   badgeInfo: { backgroundColor: colors.infoBg },
+  badgeDanger: { backgroundColor: colors.dangerBg },
   statusText: { fontFamily: fonts.bodyBold, fontSize: 11 },
   textSuccess: { color: colors.success },
   textWarning: { color: colors.warning },
   textInfo: { color: colors.info },
+  textDanger: { color: colors.danger },
 
   guestRow: {
     flexDirection: 'row',

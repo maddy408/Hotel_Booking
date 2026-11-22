@@ -52,7 +52,7 @@ final class TodayCheckoutsService
 
         $whatsappCheckinEnabled = !isset($settings['whatsapp_checkin_enabled']) || (int) $settings['whatsapp_checkin_enabled'] === 1;
 
-        // Query stays: in_house with checkout_planned = today, or checked_out today
+        // Query stays: in_house with checkout_planned = today, checked_out today, or in_house overdue
         $stmt = $this->db->prepare(
             "SELECT s.id AS stay_id, s.hotel_id, s.reservation_id, s.room_id, s.guest_id,
                     s.persons, s.rate, s.check_in_date, s.checkout_planned, s.checkout_time, s.checkout_actual,
@@ -68,12 +68,18 @@ final class TodayCheckoutsService
              LEFT JOIN reservations res ON res.id = s.reservation_id
              LEFT JOIN invoices i ON i.stay_id = s.id
              WHERE s.hotel_id = :hotel_id
-               AND (s.checkout_planned = :today1 OR (s.status = 'checked_out' AND s.checkout_actual = :today2))
+               AND (
+                 s.checkout_planned = :today1
+                 OR (s.status = 'checked_out' AND s.checkout_actual = :today2)
+                 OR (s.status = 'in_house' AND s.checkout_planned < :today3)
+               )
              ORDER BY
-               CASE WHEN s.status = 'in_house' THEN 0 ELSE 1 END,
+               CASE WHEN s.status = 'in_house' AND s.checkout_planned < :today4 THEN 0
+                    WHEN s.status = 'in_house' THEN 1
+                    ELSE 2 END,
                r.room_no ASC"
         );
-        $stmt->execute(['hotel_id' => $hotelId, 'today1' => $today, 'today2' => $today]);
+        $stmt->execute(['hotel_id' => $hotelId, 'today1' => $today, 'today2' => $today, 'today3' => $today, 'today4' => $today]);
         $stayRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         // Also check pending reservations scheduled to check out today
@@ -96,26 +102,57 @@ final class TodayCheckoutsService
         $resRows = $stmtRes->fetchAll(PDO::FETCH_ASSOC);
 
         $items = [];
+        $expectedTodayCheckoutCount = 0;
         $pendingCount = 0;
-        $checkedOutCount = 0;
+        $completedTodayCount = 0;
+        $overdueCheckoutCount = 0;
 
         foreach ($stayRows as $row) {
-            $isCheckedOut = $row['stay_status'] === 'checked_out';
-            if ($isCheckedOut) {
-                $checkedOutCount++;
+            $isStayCheckedOut = $row['stay_status'] === 'checked_out';
+            $isStayInHouse = $row['stay_status'] === 'in_house';
+            $plannedDate = (string) $row['checkout_planned'];
+            $isPlannedToday = ($plannedDate === $today);
+            $isPlannedPast = ($plannedDate < $today);
+
+            $isOverdue = false;
+            $isExpectedToday = $isPlannedToday;
+
+            if ($isStayCheckedOut) {
+                $completedTodayCount++;
                 $status = 'checked_out';
                 $statusLabel = 'Checked Out';
+                if ($isPlannedToday) {
+                    $expectedTodayCheckoutCount++;
+                }
+                // Past-due checkout completed today: Rule C:
+                // "Never count a past-due checkout as Expected Today."
+                // "If an overdue guest checks out today, increment Completed Today and remove them from the currently overdue list."
                 $checkoutTime = $this->formatCheckoutTime($row['updated_at'], $tz, $checkoutTimeFormatted);
-            } else {
-                $pendingCount++;
-                $status = 'pending';
-                $statusLabel = 'Pending';
+            } elseif ($isStayInHouse) {
+                if ($isPlannedToday) {
+                    $expectedTodayCheckoutCount++;
+                    $pendingCount++;
+                    $status = 'pending';
+                    $statusLabel = 'Pending';
+                } elseif ($isPlannedPast) {
+                    // Scheduled before today and still checked in
+                    $overdueCheckoutCount++;
+                    $status = 'overdue';
+                    $statusLabel = 'Overdue';
+                    $isOverdue = true;
+                } else {
+                    $status = 'in_house';
+                    $statusLabel = 'In-House';
+                }
+
                 if (!empty($row['checkout_time'])) {
                     $ts = strtotime($row['checkout_time']);
                     $checkoutTime = $ts !== false ? date('g:i A', $ts) : $checkoutTimeFormatted;
                 } else {
                     $checkoutTime = $checkoutTimeFormatted;
                 }
+            } else {
+                continue;
             }
 
             $rawPhone = (string) ($row['guest_phone'] ?? '');
@@ -143,6 +180,8 @@ final class TodayCheckoutsService
                 'checkout_time' => $checkoutTime,
                 'checkout_status' => $status,
                 'checkout_status_label' => $statusLabel,
+                'is_overdue' => $isOverdue,
+                'is_expected_today' => $isExpectedToday,
                 'rate' => (float) $row['rate'],
                 'persons' => (int) $row['persons'],
                 'advance_amount' => (float) ($row['advance_amount'] ?? 0),
@@ -155,6 +194,7 @@ final class TodayCheckoutsService
         }
 
         foreach ($resRows as $row) {
+            $expectedTodayCount++;
             $pendingCount++;
             $rawPhone = (string) ($row['guest_phone'] ?? '');
             $cleanPhone = $this->cleanPhoneNumber($rawPhone);
@@ -187,6 +227,8 @@ final class TodayCheckoutsService
                 'checkout_time' => $resCheckoutTime,
                 'checkout_status' => 'pending',
                 'checkout_status_label' => 'Pending Check-in',
+                'is_overdue' => false,
+                'is_expected_today' => true,
                 'rate' => (float) $row['rate'],
                 'persons' => (int) $row['persons'],
                 'advance_amount' => (float) ($row['advance_amount'] ?? 0),
@@ -209,7 +251,7 @@ final class TodayCheckoutsService
                     s.status AS stay_status, s.payment_method, s.created_at, s.updated_at,
                     r.room_no, r.floor, rt.name AS room_type_name, rt.code AS room_type_code,
                     g.name AS guest_name, g.phone AS guest_phone, g.city AS guest_city,
-                    res.booking_code, res.advance_amount,
+                    res.booking_code, res.advance_amount, res.check_in_date AS res_check_in_date,
                     i.id AS invoice_id, i.invoice_number, i.total_amount AS invoice_total
              FROM stays s
              JOIN rooms r ON r.id = s.room_id
@@ -218,14 +260,14 @@ final class TodayCheckoutsService
              LEFT JOIN reservations res ON res.id = s.reservation_id
              LEFT JOIN invoices i ON i.stay_id = s.id
              WHERE s.hotel_id = :hotel_id
-               AND s.check_in_date = :today
                AND s.status != 'cancelled'
+               AND (s.check_in_date = :today1 OR DATE(s.created_at) = :today2)
              ORDER BY r.room_no ASC"
         );
-        $stmtCheckinStays->execute(['hotel_id' => $hotelId, 'today' => $today]);
+        $stmtCheckinStays->execute(['hotel_id' => $hotelId, 'today1' => $today, 'today2' => $today]);
         $checkinStayRows = $stmtCheckinStays->fetchAll(PDO::FETCH_ASSOC);
 
-        // Query pending reservations scheduled to check in today (pending arrivals)
+        // Query pending reservations scheduled to check in today or before today (pending and overdue arrivals)
         $stmtCheckinRes = $this->db->prepare(
             "SELECT res.id AS reservation_id, res.hotel_id, res.booking_code, res.room_id, res.guest_id,
                     res.check_in_date, res.check_out_date AS checkout_planned, res.check_out_time,
@@ -238,16 +280,20 @@ final class TodayCheckoutsService
              JOIN guests g ON g.id = res.guest_id
              WHERE res.hotel_id = :hotel_id
                AND res.status = 'pending'
-               AND res.check_in_date = :today
-             ORDER BY r.room_no ASC"
+               AND res.check_in_date <= :today
+             ORDER BY
+               CASE WHEN res.check_in_date < :today_order THEN 0 ELSE 1 END,
+               r.room_no ASC"
         );
-        $stmtCheckinRes->execute(['hotel_id' => $hotelId, 'today' => $today]);
+        $stmtCheckinRes->execute(['hotel_id' => $hotelId, 'today' => $today, 'today_order' => $today]);
         $checkinResRows = $stmtCheckinRes->fetchAll(PDO::FETCH_ASSOC);
 
         $checkinItems = [];
+        $expectedTodayArrivalsCount = 0;
         $pendingCheckinCount = 0;
         $activeCheckinCount = 0;
         $checkedOutCheckinCount = 0;
+        $overdueArrivalsCount = 0;
         $seenResIds = [];
         $seenStayIds = [];
 
@@ -258,7 +304,23 @@ final class TodayCheckoutsService
             }
             $seenResIds[$resId] = true;
 
-            $pendingCheckinCount++;
+            $isOverdue = false;
+            $isExpectedToday = ($row['check_in_date'] === $today);
+
+            if ($isExpectedToday) {
+                $pendingCheckinCount++;
+                $expectedTodayArrivalsCount++;
+                $checkinStatus = 'pending';
+                $checkinStatusLabel = 'Pending';
+            } elseif ($row['check_in_date'] < $today) {
+                $overdueArrivalsCount++;
+                $checkinStatus = 'overdue';
+                $checkinStatusLabel = 'Overdue Arrival';
+                $isOverdue = true;
+            } else {
+                continue;
+            }
+
             $rawPhone = (string) ($row['guest_phone'] ?? '');
             $cleanPhone = $this->cleanPhoneNumber($rawPhone);
             $isEligibleWhatsApp = $cleanPhone !== '' && $whatsappCheckinEnabled;
@@ -291,8 +353,10 @@ final class TodayCheckoutsService
                 'check_in_time' => '12:00 PM',
                 'checkout_planned' => (string) $row['checkout_planned'],
                 'checkout_time' => $resCheckoutTime,
-                'checkin_status' => 'pending',
-                'checkin_status_label' => 'Pending',
+                'checkin_status' => $checkinStatus,
+                'checkin_status_label' => $checkinStatusLabel,
+                'is_overdue' => $isOverdue,
+                'is_expected_today' => $isExpectedToday,
                 'rate' => (float) $row['rate'],
                 'persons' => (int) $row['persons'],
                 'advance_amount' => (float) ($row['advance_amount'] ?? 0),
@@ -314,14 +378,35 @@ final class TodayCheckoutsService
 
             if ($isStayInHouse) {
                 $activeCheckinCount++;
-                $checkinStatus = 'checked_in';
-                $checkinStatusLabel = 'Checked-in';
             } elseif ($isStayCheckedOut) {
                 $checkedOutCheckinCount++;
-                $checkinStatus = 'checked_out';
-                $checkinStatusLabel = 'Checked Out';
             } else {
                 continue;
+            }
+
+            // Both in_house and checked_out today completed check-in today!
+            $checkinStatus = 'checked_in';
+            $checkinStatusLabel = 'Checked-in';
+
+            $isExpectedToday = false;
+            $wasOverdue = false;
+
+            if ($row['reservation_id'] !== null) {
+                if ($row['res_check_in_date'] === $today) {
+                    $expectedTodayArrivalsCount++;
+                    $isExpectedToday = true;
+                } elseif ($row['res_check_in_date'] < $today) {
+                    // Overdue arrival completed today!
+                    // Rule C: Never count a past-due arrival as Expected Today
+                    // Rule C: If an overdue guest checks in today, increment Checked-in Today and remove them from the currently overdue arrivals list
+                    $wasOverdue = true;
+                }
+            } else {
+                // Direct walk-in today
+                if ($row['check_in_date'] === $today) {
+                    $expectedTodayArrivalsCount++;
+                    $isExpectedToday = true;
+                }
             }
 
             $rawPhone = (string) ($row['guest_phone'] ?? '');
@@ -364,6 +449,10 @@ final class TodayCheckoutsService
                 'checkin_status' => $checkinStatus,
                 'checkin_status_label' => $checkinStatusLabel,
                 'stay_status' => $row['stay_status'],
+                'is_overdue' => false,
+                'was_overdue' => $wasOverdue,
+                'is_expected_today' => $isExpectedToday,
+                'is_checked_in_today' => true,
                 'invoice_id' => $row['invoice_id'] !== null ? (int) $row['invoice_id'] : null,
                 'invoice_number' => $row['invoice_number'] ?? null,
                 'invoice_total' => $row['invoice_total'] !== null ? (float) $row['invoice_total'] : null,
@@ -376,9 +465,9 @@ final class TodayCheckoutsService
             ];
         }
 
-        // Sort checkin items: pending first, then checked_in, then checked_out, then by room_no
+        // Sort checkin items: overdue first, then pending, then checked_in, then by room_no
         usort($checkinItems, function (array $a, array $b): int {
-            $priority = ['pending' => 0, 'checked_in' => 1, 'checked_out' => 2];
+            $priority = ['overdue' => 0, 'pending' => 1, 'checked_in' => 2];
             $aPri = $priority[$a['checkin_status']] ?? 3;
             $bPri = $priority[$b['checkin_status']] ?? 3;
             if ($aPri !== $bPri) {
@@ -408,20 +497,34 @@ final class TodayCheckoutsService
             'whatsapp_checkin_enabled' => $whatsappCheckinEnabled,
             'stats' => [
                 'total' => count($items),
+                'expected_today' => $expectedTodayCheckoutCount,
                 'pending' => $pendingCount,
-                'checked_out' => $checkedOutCount,
+                'completed' => $completedTodayCount,
+                'checked_out' => $completedTodayCount,
+                'overdue' => $overdueCheckoutCount,
             ],
             'checkouts_stats' => [
-                'total' => count($items),
+                'total' => $expectedTodayCheckoutCount,
+                'expected_today' => $expectedTodayCheckoutCount,
+                'expected' => $expectedTodayCheckoutCount,
                 'pending' => $pendingCount,
-                'checked_out' => $checkedOutCount,
+                'completed' => $completedTodayCount,
+                'completed_today' => $completedTodayCount,
+                'checked_out' => $completedTodayCount,
+                'overdue' => $overdueCheckoutCount,
+                'overdue_departures' => $overdueCheckoutCount,
             ],
             'checkins_stats' => [
                 'total' => $totalCheckins,
+                'expected_today' => $expectedTodayArrivalsCount,
+                'expected' => $expectedTodayArrivalsCount,
                 'pending' => $pendingCheckinCount,
                 'completed' => $completedCheckinCount,
-                'checked_in' => $activeCheckinCount,
-                'checked_out' => $checkedOutCheckinCount,
+                'checked_in' => $completedCheckinCount,
+                'checked_in_today' => $completedCheckinCount,
+                'checked_out' => 0,
+                'overdue' => $overdueArrivalsCount,
+                'overdue_arrivals' => $overdueArrivalsCount,
             ],
             'checkouts' => $items,
             'checkins' => $checkinItems,

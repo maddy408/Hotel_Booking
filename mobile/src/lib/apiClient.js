@@ -1,11 +1,7 @@
 import { loadTokens, saveTokens } from '../storage/secureStorage';
 
 export function resolveBaseUrl() {
-  const envUrl = (process.env.EXPO_PUBLIC_API_URL || '').replace(/\/+$/, '');
-  if (envUrl && !envUrl.includes('ethiodeploy.app')) {
-    return envUrl;
-  }
-  return 'http://10.94.9.9:8080';
+  return (process.env.EXPO_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
 }
 
 export const BASE_URL = resolveBaseUrl();
@@ -63,6 +59,9 @@ export function onUnauthorized(handler) {
 function requestViaXHR(path, { method = 'POST', body, auth = true } = {}) {
   return new Promise((resolve, reject) => {
     const baseUrl = resolveBaseUrl() || BASE_URL;
+    if (!baseUrl) {
+      return reject(new ApiError('API URL is not configured. Please define EXPO_PUBLIC_API_URL in mobile/.env (e.g. http://<LAN-IP>:8080).', 0, 'missing_configuration'));
+    }
     const xhr = new XMLHttpRequest();
     xhr.open(method, `${baseUrl}${path}`);
 
@@ -125,6 +124,9 @@ async function rawRequest(path, { method = 'GET', body, auth = true } = {}) {
   if (auth && tokens?.accessToken) headers['Authorization'] = `Bearer ${tokens.accessToken}`;
 
   const baseUrl = resolveBaseUrl() || BASE_URL;
+  if (!baseUrl) {
+    throw new ApiError('API URL is not configured. Please define EXPO_PUBLIC_API_URL in mobile/.env (e.g. http://<LAN-IP>:8080).', 0, 'missing_configuration');
+  }
   let res;
   try {
     res = await fetch(`${baseUrl}${path}`, {

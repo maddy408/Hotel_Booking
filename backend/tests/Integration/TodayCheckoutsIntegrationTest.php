@@ -74,7 +74,7 @@ final class TodayCheckoutsIntegrationTest extends TestCase
             $this->assertNotEmpty($checkout['room_no']);
             $this->assertNotEmpty($checkout['guest_name']);
             $this->assertNotEmpty($checkout['checkout_time']);
-            $this->assertContains($checkout['checkout_status'], ['pending', 'checked_out']);
+            $this->assertContains($checkout['checkout_status'], ['pending', 'checked_out', 'overdue']);
 
             if ($checkout['is_eligible_whatsapp']) {
                 $this->assertNotEmpty($checkout['whatsapp_phone']);
@@ -123,7 +123,7 @@ final class TodayCheckoutsIntegrationTest extends TestCase
             $this->assertArrayHasKey('check_in_time', $checkin);
             $this->assertArrayHasKey('checkin_status', $checkin);
             $this->assertArrayHasKey('checkin_status_label', $checkin);
-            $this->assertContains($checkin['checkin_status'], ['pending', 'checked_in', 'checked_out']);
+            $this->assertContains($checkin['checkin_status'], ['pending', 'checked_in', 'checked_out', 'overdue']);
         }
     }
 

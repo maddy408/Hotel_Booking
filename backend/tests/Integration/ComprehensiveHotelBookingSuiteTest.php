@@ -302,13 +302,17 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
 
     public function test11_CreateBookingsForDifferentDatesInSameRoom(): void
     {
+        $d1 = date('Y-m-d', strtotime('+1 day'));
+        $d2 = date('Y-m-d', strtotime('+3 days'));
+        $d3 = date('Y-m-d', strtotime('+5 days'));
+        $d4 = date('Y-m-d', strtotime('+7 days'));
         $b1 = $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500001', 'Aarav Sharma',
-            '2026-11-20', '2026-11-22', 2, 2200.00, 0.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 0.00, 'cash', 1
         );
         $b2 = $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500002', 'Diya Patel',
-            '2026-11-25', '2026-11-27', 2, 2200.00, 0.00, 'cash', 1
+            $d3, $d4, 2, 2200.00, 0.00, 'cash', 1
         );
 
         $this->assertSame('pending', $b1['status']);
@@ -373,23 +377,26 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
 
     public function test18_CheckOutDateBeforeCheckInRejected(): void
     {
+        $d = date('Y-m-d', strtotime('+5 days'));
+        $before = date('Y-m-d', strtotime('+4 days'));
         $this->expectException(ApiException::class);
         $this->expectExceptionMessage('Checkout date must be after check-in date.');
 
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500001', 'Aarav Sharma',
-            '2026-11-20', '2026-11-19', 2, 2200.00, 0.00, 'cash', 1
+            $d, $before, 2, 2200.00, 0.00, 'cash', 1
         );
     }
 
     public function test19_CheckOutDateSameAsCheckInRejectedZeroNights(): void
     {
+        $d = date('Y-m-d', strtotime('+5 days'));
         $this->expectException(ApiException::class);
         $this->expectExceptionMessage('Checkout date must be after check-in date.');
 
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500001', 'Aarav Sharma',
-            '2026-11-20', '2026-11-20', 2, 2200.00, 0.00, 'cash', 1
+            $d, $d, 2, 2200.00, 0.00, 'cash', 1
         );
     }
 
@@ -843,19 +850,23 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
 
     public function test48_ModifyBookingDatesRoomAndTariff(): void
     {
+        $d1 = date('Y-m-d', strtotime('+10 days'));
+        $d2 = date('Y-m-d', strtotime('+12 days'));
+        $d3 = date('Y-m-d', strtotime('+11 days'));
+        $d4 = date('Y-m-d', strtotime('+14 days'));
         $b = $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500001', 'Aarav Sharma',
-            '2026-11-20', '2026-11-22', 2, 2200.00, 500.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 500.00, 'cash', 1
         );
 
         $updated = $this->reservations->update(
             (int) $b['id'], self::HOTEL_ID, self::ROOM_STD_2,
-            '2026-11-21', '2026-11-24', 2, 2500.00, 800.00, 'card', 1, null, 'Aarav Updated'
+            $d3, $d4, 2, 2500.00, 800.00, 'card', 1, null, 'Aarav Updated'
         );
 
         $this->assertSame(self::ROOM_STD_2, (int) $updated['room_id']);
-        $this->assertSame('2026-11-21', $updated['check_in_date']);
-        $this->assertSame('2026-11-24', $updated['check_out_date']);
+        $this->assertSame($d3, $updated['check_in_date']);
+        $this->assertSame($d4, $updated['check_out_date']);
         $this->assertEquals(2500.00, (float) $updated['rate']);
         $this->assertEquals(800.00, (float) $updated['advance_amount']);
         $this->assertSame('card', $updated['advance_method']);
@@ -864,10 +875,12 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
 
     public function test49_ModifyBookingToConflictingDatesBlocked(): void
     {
+        $d1 = date('Y-m-d', strtotime('+15 days'));
+        $d2 = date('Y-m-d', strtotime('+20 days'));
         // Booking 1 on Room 901
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500001', 'Guest 1',
-            '2026-11-20', '2026-11-25', 2, 2200.00, 0.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 0.00, 'cash', 1
         );
 
         // Booking 2 on Room 902
@@ -882,7 +895,7 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
 
         $this->reservations->update(
             (int) $b2['id'], self::HOTEL_ID, self::ROOM_STD_1,
-            '2026-11-22', '2026-11-26', 2, 2200.00, 0.00, 'cash', 1
+            $d1, $d2, 2, 2200.00, 0.00, 'cash', 1
         );
     }
 
