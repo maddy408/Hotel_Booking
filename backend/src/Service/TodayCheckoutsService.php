@@ -194,7 +194,7 @@ final class TodayCheckoutsService
         }
 
         foreach ($resRows as $row) {
-            $expectedTodayCount++;
+            $expectedTodayCheckoutCount++;
             $pendingCount++;
             $rawPhone = (string) ($row['guest_phone'] ?? '');
             $cleanPhone = $this->cleanPhoneNumber($rawPhone);

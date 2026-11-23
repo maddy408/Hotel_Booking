@@ -152,4 +152,184 @@ final class TodayCheckoutsTest extends TestCase
         $this->assertSame('INV-2026-27-0042', $checkedOutItem['invoice_number']);
         $this->assertSame(3150.0, $checkedOutItem['invoice_total']);
     }
+
+    public function testPendingReservationScheduledToCheckoutToday(): void
+    {
+        $db = new \PDO('sqlite::memory:');
+        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+        $db->exec('CREATE TABLE hotels (id INTEGER PRIMARY KEY, name TEXT, place TEXT, address TEXT, gstin TEXT, phone TEXT, email TEXT)');
+        $db->exec('CREATE TABLE settings (hotel_id INTEGER PRIMARY KEY, timezone TEXT, checkout_hour INTEGER, whatsapp_checkout_template TEXT)');
+        $db->exec('CREATE TABLE rooms (id INTEGER PRIMARY KEY, hotel_id INTEGER, room_type_id INTEGER, room_no INTEGER, floor INTEGER)');
+        $db->exec('CREATE TABLE room_types (id INTEGER PRIMARY KEY, name TEXT, code TEXT)');
+        $db->exec('CREATE TABLE guests (id INTEGER PRIMARY KEY, name TEXT, phone TEXT, city TEXT)');
+        $db->exec('CREATE TABLE reservations (id INTEGER PRIMARY KEY, hotel_id INTEGER, booking_code TEXT, room_id INTEGER, guest_id INTEGER, check_in_date TEXT, check_out_date TEXT, check_out_time TEXT, persons INTEGER, rate REAL, advance_amount REAL, status TEXT)');
+        $db->exec('CREATE TABLE stays (id INTEGER PRIMARY KEY, hotel_id INTEGER, reservation_id INTEGER, room_id INTEGER, guest_id INTEGER, persons INTEGER, rate REAL, check_in_date TEXT, checkout_planned TEXT, checkout_time TEXT, checkout_actual TEXT, status TEXT, payment_method TEXT, created_at TEXT, updated_at TEXT)');
+        $db->exec('CREATE TABLE invoices (id INTEGER PRIMARY KEY, hotel_id INTEGER, stay_id INTEGER, invoice_number TEXT, total_amount REAL)');
+
+        $today = (new DateTimeImmutable('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+
+        $db->exec("INSERT INTO hotels VALUES (1, 'Test Hotel', 'City', 'Address', 'GSTIN123', '9999999999', 'test@hotel.com')");
+        $db->exec("INSERT INTO settings VALUES (1, 'Asia/Kolkata', 12, 'Hello {guest_name}')");
+        $db->exec("INSERT INTO room_types VALUES (1, 'Deluxe', 'DLX')");
+        $db->exec("INSERT INTO rooms VALUES (1, 1, 1, 101, 1)");
+        $db->exec("INSERT INTO guests VALUES (1, 'Charlie Brown', '9843011874', 'Delhi')");
+
+        // Pending reservation scheduled to checkout today
+        $db->exec("INSERT INTO reservations VALUES (10, 1, 'BK-1001', 1, 1, '$today', '$today', '11:00:00', 2, 2000, 500, 'pending')");
+
+        $hotels = new \App\Repository\HotelRepository($db);
+        $settings = new \App\Repository\SettingsRepository($db);
+        $service = new TodayCheckoutsService($db, $hotels, $settings);
+
+        $result = $service->getTodayCheckouts(1);
+        $this->assertSame(1, $result['checkouts_stats']['expected_today']);
+        $this->assertSame(1, $result['checkouts_stats']['pending']);
+        $this->assertCount(1, $result['checkouts']);
+        $this->assertSame('res-10', $result['checkouts'][0]['id']);
+        $this->assertSame('pending', $result['checkouts'][0]['checkout_status']);
+    }
+
+    public function testZeroExpectedCheckoutsDoesNotProduceError(): void
+    {
+        $db = new \PDO('sqlite::memory:');
+        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+        $db->exec('CREATE TABLE hotels (id INTEGER PRIMARY KEY, name TEXT, place TEXT, address TEXT, gstin TEXT, phone TEXT, email TEXT)');
+        $db->exec('CREATE TABLE settings (hotel_id INTEGER PRIMARY KEY, timezone TEXT, checkout_hour INTEGER, whatsapp_checkout_template TEXT)');
+        $db->exec('CREATE TABLE rooms (id INTEGER PRIMARY KEY, hotel_id INTEGER, room_type_id INTEGER, room_no INTEGER, floor INTEGER)');
+        $db->exec('CREATE TABLE room_types (id INTEGER PRIMARY KEY, name TEXT, code TEXT)');
+        $db->exec('CREATE TABLE guests (id INTEGER PRIMARY KEY, name TEXT, phone TEXT, city TEXT)');
+        $db->exec('CREATE TABLE reservations (id INTEGER PRIMARY KEY, hotel_id INTEGER, booking_code TEXT, room_id INTEGER, guest_id INTEGER, check_in_date TEXT, check_out_date TEXT, check_out_time TEXT, persons INTEGER, rate REAL, advance_amount REAL, status TEXT)');
+        $db->exec('CREATE TABLE stays (id INTEGER PRIMARY KEY, hotel_id INTEGER, reservation_id INTEGER, room_id INTEGER, guest_id INTEGER, persons INTEGER, rate REAL, check_in_date TEXT, checkout_planned TEXT, checkout_time TEXT, checkout_actual TEXT, status TEXT, payment_method TEXT, created_at TEXT, updated_at TEXT)');
+        $db->exec('CREATE TABLE invoices (id INTEGER PRIMARY KEY, hotel_id INTEGER, stay_id INTEGER, invoice_number TEXT, total_amount REAL)');
+
+        $db->exec("INSERT INTO hotels VALUES (1, 'Test Hotel', 'City', 'Address', 'GSTIN123', '9999999999', 'test@hotel.com')");
+        $db->exec("INSERT INTO settings VALUES (1, 'Asia/Kolkata', 12, 'Hello {guest_name}')");
+
+        $hotels = new \App\Repository\HotelRepository($db);
+        $settings = new \App\Repository\SettingsRepository($db);
+        $service = new TodayCheckoutsService($db, $hotels, $settings);
+
+        $result = $service->getTodayCheckouts(1);
+        $this->assertSame(0, $result['checkouts_stats']['expected_today']);
+        $this->assertSame(0, $result['checkouts_stats']['pending']);
+        $this->assertSame(0, $result['checkouts_stats']['completed']);
+        $this->assertSame(0, $result['checkouts_stats']['overdue']);
+        $this->assertSame([], $result['checkouts']);
+        $this->assertSame([], $result['checkins']);
+    }
+
+    public function testMultipleExpectedCheckoutsProduceCorrectCount(): void
+    {
+        $db = new \PDO('sqlite::memory:');
+        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+        $db->exec('CREATE TABLE hotels (id INTEGER PRIMARY KEY, name TEXT, place TEXT, address TEXT, gstin TEXT, phone TEXT, email TEXT)');
+        $db->exec('CREATE TABLE settings (hotel_id INTEGER PRIMARY KEY, timezone TEXT, checkout_hour INTEGER, whatsapp_checkout_template TEXT)');
+        $db->exec('CREATE TABLE rooms (id INTEGER PRIMARY KEY, hotel_id INTEGER, room_type_id INTEGER, room_no INTEGER, floor INTEGER)');
+        $db->exec('CREATE TABLE room_types (id INTEGER PRIMARY KEY, name TEXT, code TEXT)');
+        $db->exec('CREATE TABLE guests (id INTEGER PRIMARY KEY, name TEXT, phone TEXT, city TEXT)');
+        $db->exec('CREATE TABLE reservations (id INTEGER PRIMARY KEY, hotel_id INTEGER, booking_code TEXT, room_id INTEGER, guest_id INTEGER, check_in_date TEXT, check_out_date TEXT, check_out_time TEXT, persons INTEGER, rate REAL, advance_amount REAL, status TEXT)');
+        $db->exec('CREATE TABLE stays (id INTEGER PRIMARY KEY, hotel_id INTEGER, reservation_id INTEGER, room_id INTEGER, guest_id INTEGER, persons INTEGER, rate REAL, check_in_date TEXT, checkout_planned TEXT, checkout_time TEXT, checkout_actual TEXT, status TEXT, payment_method TEXT, created_at TEXT, updated_at TEXT)');
+        $db->exec('CREATE TABLE invoices (id INTEGER PRIMARY KEY, hotel_id INTEGER, stay_id INTEGER, invoice_number TEXT, total_amount REAL)');
+
+        $today = (new DateTimeImmutable('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+        $yesterday = (new DateTimeImmutable('yesterday', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+
+        $db->exec("INSERT INTO hotels VALUES (1, 'Test Hotel', 'City', 'Address', 'GSTIN123', '9999999999', 'test@hotel.com')");
+        $db->exec("INSERT INTO settings VALUES (1, 'Asia/Kolkata', 12, 'Hello {guest_name}')");
+        $db->exec("INSERT INTO room_types VALUES (1, 'Deluxe', 'DLX')");
+        $db->exec("INSERT INTO rooms VALUES (1, 1, 1, 101, 1)");
+        $db->exec("INSERT INTO rooms VALUES (2, 1, 1, 102, 1)");
+        $db->exec("INSERT INTO rooms VALUES (3, 1, 1, 103, 1)");
+        $db->exec("INSERT INTO rooms VALUES (4, 1, 1, 104, 1)");
+        $db->exec("INSERT INTO guests VALUES (1, 'Guest 1', '9843011871', 'City')");
+        $db->exec("INSERT INTO guests VALUES (2, 'Guest 2', '9843011872', 'City')");
+        $db->exec("INSERT INTO guests VALUES (3, 'Guest 3', '9843011873', 'City')");
+        $db->exec("INSERT INTO guests VALUES (4, 'Guest 4', '9843011874', 'City')");
+
+        // Stay 1: in_house, checkout_planned = today (expected today, pending)
+        $db->exec("INSERT INTO stays VALUES (1, 1, NULL, 1, 1, 2, 2000, '$yesterday', '$today', '11:00:00', NULL, 'in_house', NULL, '2026-11-20 10:00:00', '2026-11-20 10:00:00')");
+
+        // Stay 2: checked_out today, checkout_planned = today (expected today, completed)
+        $db->exec("INSERT INTO stays VALUES (2, 1, NULL, 2, 2, 1, 2500, '$yesterday', '$today', '11:00:00', '$today', 'checked_out', 'cash', '2026-11-20 10:00:00', '2026-11-23 10:30:00')");
+
+        // Pending Reservation 1: checkout today (expected today, pending)
+        $db->exec("INSERT INTO reservations VALUES (101, 1, 'BK-101', 3, 3, '$today', '$today', '12:00:00', 2, 3000, 500, 'pending')");
+
+        // Pending Reservation 2: checkout today (expected today, pending)
+        $db->exec("INSERT INTO reservations VALUES (102, 1, 'BK-102', 4, 4, '$today', '$today', '12:00:00', 1, 2200, 0, 'pending')");
+
+        $hotels = new \App\Repository\HotelRepository($db);
+        $settings = new \App\Repository\SettingsRepository($db);
+        $service = new TodayCheckoutsService($db, $hotels, $settings);
+
+        $result = $service->getTodayCheckouts(1);
+        // Expected today: Stay 1 (1) + Stay 2 (1) + Res 101 (1) + Res 102 (1) = 4
+        $this->assertSame(4, $result['checkouts_stats']['expected_today']);
+        // Pending checkouts: Stay 1 (1) + Res 101 (1) + Res 102 (1) = 3
+        $this->assertSame(3, $result['checkouts_stats']['pending']);
+        // Completed checkouts: Stay 2 (1) = 1
+        $this->assertSame(1, $result['checkouts_stats']['completed']);
+        $this->assertSame(0, $result['checkouts_stats']['overdue']);
+        $this->assertCount(4, $result['checkouts']);
+    }
+
+    public function testCheckedOutReservationsAndOverdueCheckoutsNotCountedAsExpectedToday(): void
+    {
+        $db = new \PDO('sqlite::memory:');
+        $db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+
+        $db->exec('CREATE TABLE hotels (id INTEGER PRIMARY KEY, name TEXT, place TEXT, address TEXT, gstin TEXT, phone TEXT, email TEXT)');
+        $db->exec('CREATE TABLE settings (hotel_id INTEGER PRIMARY KEY, timezone TEXT, checkout_hour INTEGER, whatsapp_checkout_template TEXT)');
+        $db->exec('CREATE TABLE rooms (id INTEGER PRIMARY KEY, hotel_id INTEGER, room_type_id INTEGER, room_no INTEGER, floor INTEGER)');
+        $db->exec('CREATE TABLE room_types (id INTEGER PRIMARY KEY, name TEXT, code TEXT)');
+        $db->exec('CREATE TABLE guests (id INTEGER PRIMARY KEY, name TEXT, phone TEXT, city TEXT)');
+        $db->exec('CREATE TABLE reservations (id INTEGER PRIMARY KEY, hotel_id INTEGER, booking_code TEXT, room_id INTEGER, guest_id INTEGER, check_in_date TEXT, check_out_date TEXT, check_out_time TEXT, persons INTEGER, rate REAL, advance_amount REAL, status TEXT)');
+        $db->exec('CREATE TABLE stays (id INTEGER PRIMARY KEY, hotel_id INTEGER, reservation_id INTEGER, room_id INTEGER, guest_id INTEGER, persons INTEGER, rate REAL, check_in_date TEXT, checkout_planned TEXT, checkout_time TEXT, checkout_actual TEXT, status TEXT, payment_method TEXT, created_at TEXT, updated_at TEXT)');
+        $db->exec('CREATE TABLE invoices (id INTEGER PRIMARY KEY, hotel_id INTEGER, stay_id INTEGER, invoice_number TEXT, total_amount REAL)');
+
+        $today = (new DateTimeImmutable('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+        $pastDate = (new DateTimeImmutable('-2 days', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d');
+
+        $db->exec("INSERT INTO hotels VALUES (1, 'Test Hotel', 'City', 'Address', 'GSTIN123', '9999999999', 'test@hotel.com')");
+        $db->exec("INSERT INTO settings VALUES (1, 'Asia/Kolkata', 12, 'Hello {guest_name}')");
+        $db->exec("INSERT INTO room_types VALUES (1, 'Deluxe', 'DLX')");
+        $db->exec("INSERT INTO rooms VALUES (1, 1, 1, 101, 1)");
+        $db->exec("INSERT INTO rooms VALUES (2, 1, 1, 102, 1)");
+        $db->exec("INSERT INTO rooms VALUES (3, 1, 1, 103, 1)");
+        $db->exec("INSERT INTO guests VALUES (1, 'Guest 1', '9843011871', 'City')");
+        $db->exec("INSERT INTO guests VALUES (2, 'Guest 2', '9843011872', 'City')");
+        $db->exec("INSERT INTO guests VALUES (3, 'Guest 3', '9843011873', 'City')");
+
+        // 1. Reservation with status 'checked_out' (should NOT be picked up by pending reservations query)
+        $db->exec("INSERT INTO reservations VALUES (201, 1, 'BK-201', 1, 1, '$today', '$today', '12:00:00', 1, 2000, 0, 'checked_out')");
+
+        // 2. Reservation with status 'cancelled' (should NOT be picked up)
+        $db->exec("INSERT INTO reservations VALUES (202, 1, 'BK-202', 1, 1, '$today', '$today', '12:00:00', 1, 2000, 0, 'cancelled')");
+
+        // 3. Overdue stay that checked out today: checkout_planned was in the past, checked out today
+        // Rule C: Never count past-due checkout as Expected Today. Increments Completed Today.
+        $db->exec("INSERT INTO stays VALUES (10, 1, NULL, 2, 2, 1, 2500, '$pastDate', '$pastDate', '11:00:00', '$today', 'checked_out', 'cash', '2026-11-20 10:00:00', '2026-11-23 09:00:00')");
+
+        // 4. Overdue stay still in-house: checkout_planned in the past, status = 'in_house'
+        // Increments overdue count, but NOT expected_today
+        $db->exec("INSERT INTO stays VALUES (11, 1, NULL, 3, 3, 2, 2500, '$pastDate', '$pastDate', '11:00:00', NULL, 'in_house', NULL, '2026-11-20 10:00:00', '2026-11-20 10:00:00')");
+
+        $hotels = new \App\Repository\HotelRepository($db);
+        $settings = new \App\Repository\SettingsRepository($db);
+        $service = new TodayCheckoutsService($db, $hotels, $settings);
+
+        $result = $service->getTodayCheckouts(1);
+
+        // Expected today should be 0 because:
+        // - Res 201 & 202 are not pending
+        // - Stay 10 was overdue (Rule C)
+        // - Stay 11 is overdue
+        $this->assertSame(0, $result['checkouts_stats']['expected_today']);
+        $this->assertSame(0, $result['checkouts_stats']['pending']);
+        $this->assertSame(1, $result['checkouts_stats']['completed']);
+        $this->assertSame(1, $result['checkouts_stats']['overdue']);
+    }
 }
