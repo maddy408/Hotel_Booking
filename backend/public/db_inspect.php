@@ -77,6 +77,19 @@ try {
         exit;
     }
 
+    // MODE: RESTORE ROOM STATUSES (48 OK, ROOMS 201 & 207 REPAIR)
+    if ($mode === 'restore_repair_rooms') {
+        $r1 = $db->exec("UPDATE rooms SET housekeeping_status = 'ok', note = NULL WHERE room_no NOT IN (201, 207)");
+        $r2 = $db->exec("UPDATE rooms SET housekeeping_status = 'repair', note = 'Problem not written' WHERE room_no IN (201, 207)");
+        echo json_encode([
+            'success' => true,
+            'rooms_reset_to_ok' => $r1,
+            'rooms_restored_to_repair' => $r2,
+            'current_repairs' => $db->query("SELECT room_no, housekeeping_status, note FROM rooms WHERE housekeeping_status = 'repair'")->fetchAll(PDO::FETCH_ASSOC)
+        ]);
+        exit;
+    }
+
     // Table counts
     $tables = [
         'reservations', 'stays', 'invoices', 'payments', 'stay_charges',
@@ -138,9 +151,12 @@ try {
             // 10. audit_logs (transactional events)
             $executionResults['audit_logs'] = $db->exec("DELETE FROM audit_logs WHERE entity_type IN ('stay', 'reservation', 'guest')");
 
-            // 11. Reset rooms in cleaning status to 'ok' with note = NULL
-            // Preserve legitimate repairs for Rooms 201 and 207
-            $executionResults['rooms_reset_from_cleaning'] = $db->exec("UPDATE rooms SET housekeeping_status = 'ok', note = NULL WHERE housekeeping_status = 'cleaning'");
+            // 11. Reset rooms:
+            // Reset all rooms except 201 and 207 to 'ok' with note = NULL
+            $executionResults['rooms_reset_to_ok'] = $db->exec("UPDATE rooms SET housekeeping_status = 'ok', note = NULL WHERE room_no NOT IN (201, 207)");
+
+            // Preserve / restore legitimate repairs for Rooms 201 and 207
+            $executionResults['rooms_restored_to_repair'] = $db->exec("UPDATE rooms SET housekeeping_status = 'repair', note = 'Problem not written' WHERE room_no IN (201, 207)");
 
             // COMMIT TRANSACTION
             $db->commit();
@@ -215,7 +231,8 @@ try {
         $dryRunResults['guests'] = $db->exec("DELETE FROM guests");
         $dryRunResults['housekeeping_logs'] = $db->exec("DELETE FROM housekeeping_logs");
         $dryRunResults['audit_logs (transactions)'] = $db->exec("DELETE FROM audit_logs WHERE entity_type IN ('stay', 'reservation', 'guest')");
-        $dryRunResults['rooms_reset_from_cleaning'] = $db->exec("UPDATE rooms SET housekeeping_status = 'ok', note = NULL WHERE housekeeping_status = 'cleaning'");
+        $dryRunResults['rooms_reset_to_ok'] = $db->exec("UPDATE rooms SET housekeeping_status = 'ok', note = NULL WHERE room_no NOT IN (201, 207)");
+        $dryRunResults['rooms_restored_to_repair'] = $db->exec("UPDATE rooms SET housekeeping_status = 'repair', note = 'Problem not written' WHERE room_no IN (201, 207)");
         $db->rollBack();
         $dryRunStatus = 'success_dry_run_rolled_back';
     } catch (\Throwable $e) {
