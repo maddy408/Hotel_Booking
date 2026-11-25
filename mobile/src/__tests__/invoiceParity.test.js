@@ -140,7 +140,7 @@ describe('Mobile Invoice Print & Calculation Parity with Web', () => {
         <head><title>Invoice #INV-2026-101</title></head>
         <body>
           <div class="header">
-            <h1>TAMARIND COURT</h1>
+            <h1>KKK LODGE</h1>
             <p>GSTIN: 33AAACT1234F1Z5</p>
           </div>
           <div class="guest-info">
@@ -160,7 +160,7 @@ describe('Mobile Invoice Print & Calculation Parity with Web', () => {
       </html>
     `;
 
-    assert.ok(mockHtml.includes('TAMARIND COURT'));
+    assert.ok(mockHtml.includes('KKK LODGE'));
     assert.ok(mockHtml.includes('GSTIN: 33AAACT1234F1Z5'));
     assert.ok(mockHtml.includes('Ramesh Kumar'));
     assert.ok(mockHtml.includes('996311'));

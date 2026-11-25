@@ -62,7 +62,7 @@ final class OccupantDetailsAndCheckInTest extends TestCase
         $this->uploader = new OccupantDocumentUploader($this->tempDir);
 
         // Setup hotel 991
-        $this->db->exec("INSERT INTO hotels (id, name, place) VALUES (" . self::HOTEL_ID . ", 'Tamarind Court Pondy', 'Pondicherry')");
+        $this->db->exec("INSERT INTO hotels (id, name, place) VALUES (" . self::HOTEL_ID . ", 'KKK Lodge Pondy', 'Pondicherry')");
         $this->db->exec("INSERT INTO settings (hotel_id, invoice_prefix, checkout_hour, timezone) VALUES (" . self::HOTEL_ID . ", 'TCP', 12, 'Asia/Kolkata')");
 
         // Setup hotel 992 (tenant isolation)

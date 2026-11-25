@@ -114,7 +114,7 @@ final class InvoiceControllerTest extends TestCase
             created_at TEXT
         )');
 
-        $this->db->exec("INSERT INTO hotels VALUES (1, 'Tamarind Court', 'Puducherry', '123 Heritage Lane', '33AAAAA0000A1Z5', '9989015824', 'hotel@example.com')");
+        $this->db->exec("INSERT INTO hotels VALUES (1, 'KKK Lodge', 'Puducherry', '123 Heritage Lane', '33AAAAA0000A1Z5', '9989015824', 'hotel@example.com')");
         $this->db->exec("INSERT INTO settings VALUES (1, 0.05, 0.18, 7500.0, 'TC', 4, 1, 'none', 0.0)");
         $this->db->exec("INSERT INTO room_types VALUES (1, 'Deluxe Room', 'DEL')");
         $this->db->exec("INSERT INTO rooms VALUES (1, 1, 1, '301', 3)");

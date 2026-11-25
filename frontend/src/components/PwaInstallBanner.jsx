@@ -67,9 +67,9 @@ export default function PwaInstallBanner() {
       // Fallback instruction for browsers like iOS Safari or desktop Chrome when prompt event already passed
       const isIos = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
       if (isIos) {
-        alert("To install Tamarind Court app: Tap the 'Share' icon (square with arrow) at the bottom and choose 'Add to Home Screen'.");
+        alert("To install KKK Lodge app: Tap the 'Share' icon (square with arrow) at the bottom and choose 'Add to Home Screen'.");
       } else {
-        alert("To install: Open browser menu (⋮ or top right) and select 'Install Tamarind Court' or 'Add to Home Screen'.");
+        alert("To install: Open browser menu (⋮ or top right) and select 'Install KKK Lodge' or 'Add to Home Screen'.");
       }
       setIsVisible(false);
       sessionStorage.setItem('tc_pwa_dismissed', '1');
@@ -94,7 +94,7 @@ export default function PwaInstallBanner() {
             <polyline points="7 10 12 15 17 10" />
             <line x1="12" y1="15" x2="12" y2="3" />
           </svg>
-          <span className="pwa-banner-text">Install Tamarind Court App on your Home Screen!</span>
+          <span className="pwa-banner-text">Install KKK Lodge App on your Home Screen!</span>
         </div>
         <div className="pwa-banner-actions">
           <button type="button" className="pwa-btn-close" onClick={handleClose}>

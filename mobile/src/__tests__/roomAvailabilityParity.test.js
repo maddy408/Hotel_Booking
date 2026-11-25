@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const srcDir = path.resolve(__dirname, '..');
 
-describe('Tamarind Court - Room Availability Parity & Verification', () => {
+describe('KKK Lodge - Room Availability Parity & Verification', () => {
   const directPickerPath = path.join(srcDir, 'components', 'sheets', 'DirectCheckInPicker.jsx');
   const newBookingSheetPath = path.join(srcDir, 'components', 'sheets', 'NewBookingSheet.jsx');
   const roomsScreenPath = path.join(srcDir, 'screens', 'rooms', 'RoomsScreen.jsx');

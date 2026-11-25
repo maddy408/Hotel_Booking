@@ -6,5 +6,5 @@ header('Content-Type: application/json');
 
 echo json_encode([
     'status' => 'ok',
-    'service' => 'Tamarind Court Backend'
+    'service' => 'KKK Lodge Backend'
 ]);

@@ -53,7 +53,7 @@ export default function CustomDrawerContent(props) {
           <View style={styles.crestWrap}>
             <CrestIcon color="#FFFFFF" size={26} />
           </View>
-          <Text style={styles.hotelTitle}>Tamarind Court</Text>
+          <Text style={styles.hotelTitle}>KKK Lodge</Text>
           <View style={styles.userInfoWrap}>
             <Text style={styles.userName}>{user?.name || 'Staff'}</Text>
             <View style={styles.badge}>

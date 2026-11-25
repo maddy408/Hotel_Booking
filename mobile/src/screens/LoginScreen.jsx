@@ -87,7 +87,7 @@ export default function LoginScreen() {
               <Path d="M12 15c-1 2-3 4-6 4 2 1.5 4 1.5 6 0 2 1.5 4 1.5 6 0-3 0-5-2-6-4Z" />
             </Svg>
           </View>
-          <Text style={styles.title}>Tamarind Court</Text>
+          <Text style={styles.title}>KKK Lodge</Text>
           <Text style={styles.subtitle}>Front desk sign in</Text>
 
           <Controller

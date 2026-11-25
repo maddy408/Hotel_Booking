@@ -173,7 +173,7 @@ export default function Layout() {
                 <line x1="3" y1="18" x2="21" y2="18"></line>
               </svg>
             </button>
-            <div className="crest" aria-hidden="true" title={hotel?.name || 'Tamarind Court'}>
+            <div className="crest" aria-hidden="true" title={hotel?.name || 'KKK Lodge'}>
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M12 3c-1.5 3-4 7-8 9 2.5 1 5.5 1 8-1 2.5 2 5.5 2 8 1-4-2-6.5-6-8-9Z" />
                 <path d="M12 11c-2 2.5-5 4-8 4 2 2 5 2.5 8 0 3 2.5 6 2 8 0-3 0-6-1.5-8-4Z" />
@@ -181,7 +181,7 @@ export default function Layout() {
               </svg>
             </div>
             <div className="brand-titles">
-              <h1>{hotel?.name || 'Tamarind Court'}</h1>
+              <h1>{hotel?.name || 'KKK Lodge'}</h1>
               <small>{(hotel?.place ? hotel.place + ' · ' : '') + fdLong(todayIso())}</small>
             </div>
           </div>
@@ -238,7 +238,7 @@ export default function Layout() {
               </svg>
             </div>
             <div>
-              <h3>{hotel?.name || 'Tamarind Court'}</h3>
+              <h3>{hotel?.name || 'KKK Lodge'}</h3>
               <p className="drawer-hotel-sub">{hotel?.place || 'Front Desk System'}</p>
             </div>
           </div>

@@ -47,10 +47,10 @@ describe('Issue 1: Export CSV – Download Instead of Share', () => {
     );
   });
 
-  it('3. Uses meaningful filename with hotel prefix and dates (Tamarind_Court_Invoices_...)', () => {
+  it('3. Uses meaningful filename with hotel prefix and dates (KKK_Lodge_Invoices_...)', () => {
     assert.ok(
-      reportsApiContent.includes('Tamarind_Court_Invoices_'),
-      'Filename must have meaningful hotel prefix Tamarind_Court_Invoices_'
+      reportsApiContent.includes('KKK_Lodge_Invoices_'),
+      'Filename must have meaningful hotel prefix KKK_Lodge_Invoices_'
     );
     // Preserves query parameters from and to
     assert.ok(

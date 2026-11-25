@@ -15,7 +15,7 @@ SET @fy := CASE WHEN MONTH(@today) >= 4
 -- hotel + settings
 -- ---------------------------------------------------------------------------
 INSERT INTO hotels (id, name, place, address, gstin, phone, email)
-VALUES (1, 'Tamarind Court', 'Madurai', '12 Tallakulam Main Road, Madurai, Tamil Nadu', '33AAAAA0000A1Z5', '9800000000', 'frontdesk@tamarindcourt.example');
+VALUES (1, 'KKK Lodge', 'Madurai', '12 Tallakulam Main Road, Madurai, Tamil Nadu', '33AAAAA0000A1Z5', '9800000000', 'frontdesk@tamarindcourt.example');
 
 INSERT INTO settings (hotel_id, gst_slab1_max_rate, gst_slab1_gst_rate, gst_slab2_max_rate, gst_slab2_gst_rate, gst_slab3_gst_rate, tax_extras, checkout_hour, currency, financial_year_start_month, invoice_prefix, booking_prefix, timezone, whatsapp_checkout_template)
 VALUES (1, 1000.00, 0.0000, 7500.00, 0.0500, 0.1800, 0, 12, 'INR', 4, 'INV', 'BK', 'Asia/Kolkata', 'Dear {guest_name}, thank you for choosing {hotel_name}. Your checkout for Room {room_no} is scheduled for today by {checkout_time}. Please visit the front desk for bill settlement. Have a pleasant journey! Call {hotel_phone} for assistance.');

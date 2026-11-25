@@ -1,5 +1,5 @@
 // Minimal Service Worker for PWA installation and offline caching shell
-const CACHE_NAME = 'tamarind-court-v1';
+const CACHE_NAME = 'kkk-lodge-v1';
 const PRECACHE_URLS = ['/', '/index.html', '/favicon.svg', '/manifest.json'];
 
 self.addEventListener('install', (event) => {

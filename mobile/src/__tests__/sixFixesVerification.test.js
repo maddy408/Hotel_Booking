@@ -8,7 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const srcDir = path.resolve(__dirname, '..');
 
-describe('Verification of 6 Tamarind Court UI & Functionality Fixes', () => {
+describe('Verification of 6 KKK Lodge UI & Functionality Fixes', () => {
 
   // ---------------------------------------------------------------------------
   // Issue 1: Room Dashboard – Direct Clean & Repair Options

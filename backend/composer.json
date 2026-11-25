@@ -1,6 +1,6 @@
 {
   "name": "tamarind-court/backend",
-  "description": "Tamarind Court Front Desk - PHP backend (Router -> Controller -> Service -> Repository)",
+  "description": "KKK Lodge Front Desk - PHP backend (Router -> Controller -> Service -> Repository)",
   "type": "project",
   "license": "proprietary",
   "require": {

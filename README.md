@@ -1,6 +1,6 @@
-# Tamarind Court Front Desk
+# KKK Lodge Front Desk
 
-A production-rebuild of the `Tamarind Court Front Desk.html` prototype: a hotel front-desk
+A production-rebuild of the `KKK Lodge Front Desk.html` prototype: a hotel front-desk
 console (rooms, bookings, check-in/out, billing, GST invoicing, reports) with a real
 database, authentication, and role-based access, built on React + Vite and a hand-rolled
 layered PHP backend on MySQL.

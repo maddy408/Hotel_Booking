@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View, Alert } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
+import { useQueryClient } from '@tanstack/react-query';
 import Screen, { ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
 import Button from '../../components/ui/Button.jsx';
 import GuestEditSheet from '../../components/sheets/GuestEditSheet.jsx';
@@ -22,6 +23,7 @@ export default function GuestDetailsScreen({ route, navigation }) {
   const deleteIdImage = useDeleteIdImage();
   const deleteDoc = useDeleteOccupantDocument();
   const deleteGuest = useDeleteGuest();
+  const queryClient = useQueryClient();
   const toast = useToast();
 
   const [activeTab, setActiveTab] = useState('personal');
@@ -220,8 +222,21 @@ export default function GuestDetailsScreen({ route, navigation }) {
     );
   };
 
+  const navigateToGuestsList = () => {
+    if (typeof navigation?.reset === 'function') {
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'GuestsHome' }],
+      });
+    } else if (typeof navigation?.replace === 'function') {
+      navigation.replace('GuestsHome');
+    } else if (typeof navigation?.navigate === 'function') {
+      navigation.navigate('GuestsHome');
+    }
+  };
+
   const handleDeleteGuest = () => {
-    if (!guest || deletingGuest) return;
+    if (!guest || deletingGuest || deleteGuest.isPending) return;
     Alert.alert(
       'Delete Guest',
       `Are you sure you want to delete ${guest.name}? This action cannot be undone.`,
@@ -231,11 +246,16 @@ export default function GuestDetailsScreen({ route, navigation }) {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            if (deletingGuest || deleteGuest.isPending) return;
             setDeletingGuest(true);
             try {
               await deleteGuest.mutateAsync(guestId);
+              queryClient.invalidateQueries({ queryKey: ['guests'] });
+              queryClient.removeQueries({ queryKey: ['guest', guestId] });
+              queryClient.removeQueries({ queryKey: ['guest', Number(guestId)] });
+              queryClient.removeQueries({ queryKey: ['guest', String(guestId)] });
               toast(`Guest ${guest.name} deleted.`);
-              navigation.navigate('Guests');
+              navigateToGuestsList();
             } catch (e) {
               const msg = e.message || 'Cannot delete guest.';
               toast(msg);
@@ -341,10 +361,10 @@ export default function GuestDetailsScreen({ route, navigation }) {
             />
           )}
           <Button
-            title={deletingGuest ? 'Deleting…' : '🗑️ Delete Guest'}
+            title={deletingGuest || deleteGuest.isPending ? 'Deleting…' : '🗑️ Delete Guest'}
             variant="danger"
             size="sm"
-            loading={deletingGuest}
+            loading={deletingGuest || deleteGuest.isPending}
             disabled={deletingGuest || deleteGuest.isPending}
             onPress={handleDeleteGuest}
           />
@@ -837,7 +857,7 @@ export default function GuestDetailsScreen({ route, navigation }) {
           onSaved={() => refetch()}
           onDeleted={() => {
             setSheet(null);
-            navigation.navigate('Guests');
+            navigateToGuestsList();
           }}
           onViewBooking={(bookingId) => setSheet({ type: 'booking', id: Number(bookingId) })}
         />

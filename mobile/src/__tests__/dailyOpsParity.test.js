@@ -223,19 +223,19 @@ describe('Task: Make Mobile Daily Ops Match Web Daily Operations', () => {
         checkinTime: '12:00 PM',
         checkoutDate: '2026-11-22',
         checkoutTime: '11:00 AM',
-        hotelName: 'Tamarind Court',
+        hotelName: 'KKK Lodge',
         hotelPhone: '9999999999',
       });
       assert.ok(checkinMsg.includes('Aditi'));
       assert.ok(checkinMsg.includes('101'));
-      assert.ok(checkinMsg.includes('Tamarind Court'));
+      assert.ok(checkinMsg.includes('KKK Lodge'));
 
       const checkoutMsg = buildWhatsAppMessage(null, {
         guestName: 'Vikram',
         roomNo: '201',
         checkoutTime: '11:00 AM',
         checkoutDate: '2026-11-21',
-        hotelName: 'Tamarind Court',
+        hotelName: 'KKK Lodge',
         hotelPhone: '9999999999',
         status: 'Pending',
       });

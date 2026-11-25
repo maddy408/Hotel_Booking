@@ -167,7 +167,7 @@ describe('Phase 3: In-App Invoice Retrieval, Display & Actions Parity', () => {
     },
     hotel: {
       id: 1,
-      name: 'Tamarind Court',
+      name: 'KKK Lodge',
       address: '12 Heritage Street, Pondicherry',
       gstin: '33AAAAA0000A1Z5',
       phone: '+91 98400 12345',
@@ -212,7 +212,7 @@ describe('Phase 3: In-App Invoice Retrieval, Display & Actions Parity', () => {
 
   it('2. Builds complete HTML invoice with all details for in-app printing and sharing', () => {
     const html = buildInvoiceHtml(mockPayload);
-    assert.ok(html.includes('Tamarind Court'));
+    assert.ok(html.includes('KKK Lodge'));
     assert.ok(html.includes('TC-2026-0042'));
     assert.ok(html.includes('Ananya Sharma'));
     assert.ok(html.includes('9876543210'));

@@ -52,8 +52,13 @@ export function useDeleteGuest() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (guestId) => api.delete(`/guests/${guestId}`),
-    onSuccess: () => {
+    onSuccess: (_, guestId) => {
       qc.invalidateQueries({ queryKey: ['guests'] });
+      if (guestId) {
+        qc.removeQueries({ queryKey: ['guest', guestId] });
+        qc.removeQueries({ queryKey: ['guest', Number(guestId)] });
+        qc.removeQueries({ queryKey: ['guest', String(guestId)] });
+      }
       qc.invalidateQueries({ queryKey: ['all-referrals'] });
       qc.invalidateQueries({ queryKey: ['rooms'] });
     },

@@ -119,7 +119,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
   };
 
   const handleDelete = () => {
-    if (!guest || deletingGuest) return;
+    if (!guest || deletingGuest || deleteGuest.isPending) return;
     Alert.alert(
       'Delete Guest',
       `Are you sure you want to delete ${guest.name}? This action cannot be undone.`,
@@ -129,6 +129,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            if (deletingGuest || deleteGuest.isPending) return;
             setDeletingGuest(true);
             try {
               await deleteGuest.mutateAsync(guestId);

@@ -1,4 +1,4 @@
-# Nixpacks configuration for Tamarind Court Frontend (Vite + React)
+# Nixpacks configuration for KKK Lodge Frontend (Vite + React)
 [phases.setup]
 nixPkgs = ["nodejs_20"]
 

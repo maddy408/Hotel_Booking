@@ -58,7 +58,7 @@ final class GuestReferralsTest extends TestCase
         $this->db = Connection::get();
         $this->cleanup();
 
-        $this->db->exec("INSERT INTO hotels (id, name, place) VALUES (" . self::HOTEL_ID . ", 'Tamarind Court Referral Test', 'Chennai')");
+        $this->db->exec("INSERT INTO hotels (id, name, place) VALUES (" . self::HOTEL_ID . ", 'KKK Lodge Referral Test', 'Chennai')");
         $this->db->exec("INSERT INTO hotels (id, name, place) VALUES (" . self::OTHER_HOTEL_ID . ", 'Other Hotel', 'Madurai')");
 
         $this->db->exec("INSERT INTO settings (hotel_id, checkout_hour) VALUES (" . self::HOTEL_ID . ", 12)");

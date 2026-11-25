@@ -66,7 +66,7 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
         $this->cleanup();
 
         // 1. Isolated Hotel & Settings
-        $this->db->exec("INSERT INTO hotels (id, name, place) VALUES (" . self::HOTEL_ID . ", 'Test Hotel Tamarind', 'Goa')");
+        $this->db->exec("INSERT INTO hotels (id, name, place) VALUES (" . self::HOTEL_ID . ", 'Test Hotel KKK Lodge', 'Goa')");
         $this->db->exec(
             "INSERT INTO settings (hotel_id, invoice_prefix, booking_prefix, checkout_hour, timezone, gst_slab1_max_rate, gst_slab1_gst_rate, gst_slab2_max_rate, gst_slab2_gst_rate, gst_slab3_gst_rate, cancellation_deadline_hours, cancellation_free_allowed, cancellation_fee_type, cancellation_fee_value, cancellation_late_fee_type, cancellation_late_fee_value)
              VALUES (" . self::HOTEL_ID . ", 'TESTINV', 'TESTBK', 12, 'Asia/Kolkata', 1000.00, 0.0000, 7500.00, 0.0500, 0.1800, 24, 1, 'none', 0.00, 'percentage', 10.00)"

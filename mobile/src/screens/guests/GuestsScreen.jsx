@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Screen, { EmptyState, ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
 import SearchInput from '../../components/ui/SearchInput.jsx';
 import Button from '../../components/ui/Button.jsx';
@@ -15,6 +16,12 @@ export default function GuestsScreen({ navigation }) {
 
   const debouncedQ = useDebounce(q, 350);
   const { data: guests, isLoading, isError, error, refetch, isRefetching } = useGuests(debouncedQ);
+
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch])
+  );
 
   const filteredGuests = useMemo(() => {
     return (guests || []).filter((g) => {

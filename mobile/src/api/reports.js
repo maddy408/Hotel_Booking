@@ -46,8 +46,8 @@ export async function downloadInvoicesCsv(from, to, customFilename) {
   const filename =
     customFilename ||
     (from === to
-      ? `Tamarind_Court_Invoices_${from}.csv`
-      : `Tamarind_Court_Invoices_${from}_to_${to}.csv`);
+      ? `KKK_Lodge_Invoices_${from}.csv`
+      : `KKK_Lodge_Invoices_${from}_to_${to}.csv`);
 
   const dest = FileSystem.cacheDirectory + filename;
 

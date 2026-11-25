@@ -42,7 +42,7 @@ export default function Login() {
             <path d="M12 15c-1 2-3 4-6 4 2 1.5 4 1.5 6 0 2 1.5 4 1.5 6 0-3 0-5-2-6-4Z" />
           </svg>
         </div>
-        <h1>Tamarind Court</h1>
+        <h1>KKK Lodge</h1>
         <p className="muted">Front desk sign in</p>
 
         <div className={`f ${errors.username ? 'bad' : ''}`}>

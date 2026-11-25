@@ -48,7 +48,7 @@ export function buildCheckInWhatsAppMessage(template, {
     .replace(/\{\{checkin_time\}\}|\{\{check_in_time\}\}|\{checkin_time\}|\{check_in_time\}/g, checkinTime || '12:00 PM')
     .replace(/\{\{checkout_date\}\}|\{\{check_out_date\}\}|\{checkout_date\}|\{check_out_date\}/g, checkoutDate || '')
     .replace(/\{\{checkout_time\}\}|\{\{check_out_time\}\}|\{checkout_time\}|\{check_out_time\}/g, checkoutTime || '12:00 PM')
-    .replace(/\{\{hotel_name\}\}|\{hotel_name\}/g, hotelName || 'Tamarind Court')
+    .replace(/\{\{hotel_name\}\}|\{hotel_name\}/g, hotelName || 'KKK Lodge')
     .replace(/\{\{hotel_phone\}\}|\{hotel_phone\}/g, hotelPhone || '');
 }
 

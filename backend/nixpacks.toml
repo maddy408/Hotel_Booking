@@ -1,4 +1,4 @@
-# Nixpacks configuration for Tamarind Court Backend (PHP)
+# Nixpacks configuration for KKK Lodge Backend (PHP)
 [phases.setup]
 nixPkgs = ["php82", "php82Packages.composer"]
 

@@ -6,7 +6,7 @@ export function buildProformaInvoiceData({ stay, bill, hotel, settings, guest, s
   const actualStayId = Number(stayId || stay?.id || 0);
 
   const fallbackHotel = hotel || {
-    name: 'Tamarind Court',
+    name: 'KKK Lodge',
     place: 'Puducherry',
     address: '123 Heritage Lane',
     gstin: '',

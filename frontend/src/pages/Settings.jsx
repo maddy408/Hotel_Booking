@@ -227,7 +227,7 @@ export default function Settings() {
     .replace(/{room_no}/g, '106')
     .replace(/{checkout_time}/g, formatCheckoutHour(checkoutHour))
     .replace(/{checkout_date}/g, '05 Nov 2026')
-    .replace(/{hotel_name}/g, hotel.name || 'Tamarind Court')
+    .replace(/{hotel_name}/g, hotel.name || 'KKK Lodge')
     .replace(/{hotel_phone}/g, hotel.phone || '9800000000')
     .replace(/{status}/g, 'Pending');
 
@@ -238,7 +238,7 @@ export default function Settings() {
     .replace(/\{\{checkin_time\}\}|\{checkin_time\}/g, '10:30 AM')
     .replace(/\{\{checkout_date\}\}|\{checkout_date\}/g, '07 Nov 2026')
     .replace(/\{\{checkout_time\}\}|\{checkout_time\}/g, formatCheckoutHour(checkoutHour))
-    .replace(/\{\{hotel_name\}\}|\{hotel_name\}/g, hotel.name || 'Tamarind Court')
+    .replace(/\{\{hotel_name\}\}|\{hotel_name\}/g, hotel.name || 'KKK Lodge')
     .replace(/\{\{hotel_phone\}\}|\{hotel_phone\}/g, hotel.phone || '9800000000');
 
   return (

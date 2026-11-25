@@ -434,7 +434,7 @@ export default function InvoicePrintScreen({ route, navigation }) {
         {/* Hotel Branding Header */}
         <View style={styles.hotelHeader}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.hotelName}>{hotel.name || 'Tamarind Court'}</Text>
+            <Text style={styles.hotelName}>{hotel.name || 'KKK Lodge'}</Text>
             <Text style={styles.hotelMuted}>{hotel.address || hotel.place || ''}</Text>
             {hotel.gstin ? <Text style={styles.hotelMuted}>GSTIN: {hotel.gstin}</Text> : null}
             {hotel.phone ? <Text style={styles.hotelMuted}>Phone: {hotel.phone}</Text> : null}

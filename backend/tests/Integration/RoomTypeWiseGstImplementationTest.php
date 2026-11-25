@@ -70,7 +70,7 @@ final class RoomTypeWiseGstImplementationTest extends TestCase
         $this->cleanup();
 
         // 1. Hotel registered in Tamil Nadu (state code '33')
-        $this->db->exec("INSERT INTO hotels (id, name, place, gstin, address) VALUES (" . self::HOTEL_ID . ", 'Tamarind Court GST Test', 'Tenkasi', '33AAAAA1111A1Z1', '12 Main Rd, Tenkasi')");
+        $this->db->exec("INSERT INTO hotels (id, name, place, gstin, address) VALUES (" . self::HOTEL_ID . ", 'KKK Lodge GST Test', 'Tenkasi', '33AAAAA1111A1Z1', '12 Main Rd, Tenkasi')");
 
         // 2. Settings configured with 7,500 threshold: Slab 1 (5%), Slab 2 (18%), Slab 3 (18%)
         $this->db->exec("INSERT INTO settings (
