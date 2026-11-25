@@ -319,11 +319,33 @@ final class GuestController
     public function downloadIdImage(Request $request): ?array
     {
         $path = $this->guestService->idImagePath((int) $request->attribute('hotelId'), (int) $request->routeParams['id']);
-        header('Content-Type: ' . (mime_content_type($path) ?: 'application/octet-stream'));
+        $mime = mime_content_type($path) ?: 'application/octet-stream';
+        $filename = basename($path);
+        header('Content-Type: ' . $mime);
         header('Content-Length: ' . filesize($path));
+        header('Content-Disposition: inline; filename="' . $filename . '"');
         header('Cache-Control: private, max-age=0, no-store');
         readfile($path);
         return null;
+    }
+
+    public function deleteIdImage(Request $request): array
+    {
+        $guest = $this->guestService->deleteIdImage(
+            (int) $request->attribute('hotelId'),
+            (int) $request->routeParams['id'],
+            (int) $request->attribute('userId')
+        );
+        return ['deleted' => true, 'guest' => $this->guestService->toPublic($guest)];
+    }
+
+    public function delete(Request $request): array
+    {
+        $guestId = (int) $request->routeParams['id'];
+        $hotelId = (int) $request->attribute('hotelId');
+        $userId = (int) $request->attribute('userId');
+        $this->guestService->delete($hotelId, $guestId, $userId);
+        return ['deleted' => true];
     }
 
     /** @return array{type:string, roomNo:?int, stayId:?int, bookingId:?int, bookingDate:?string}|null */

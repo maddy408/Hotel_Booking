@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { File } from 'expo-file-system';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import Button from '../ui/Button.jsx';
 import { fetchOccupantDocumentLocalFile, viewOccupantDocument } from '../../api/occupantDocuments';
+import { fetchIdImageLocalFile } from '../../api/idImage';
 import { colors, fonts, radii } from '../../theme/theme';
 
 function formatFileSize(bytes) {
@@ -12,7 +14,7 @@ function formatFileSize(bytes) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export default function DocumentViewerSheet({ doc, onClose }) {
+export default function DocumentViewerSheet({ doc, onClose, onDelete }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [docData, setDocData] = useState(null);
@@ -22,6 +24,28 @@ export default function DocumentViewerSheet({ doc, onClose }) {
   const suggestedName = doc?.original_filename || 'document';
 
   const loadDocument = async () => {
+    if (doc?.isGuestIdDoc && doc?.guestId) {
+      try {
+        setLoading(true);
+        setError(null);
+        const data = await fetchIdImageLocalFile(doc.guestId);
+        setDocData(data);
+        if (data.mime === 'application/pdf') {
+          try {
+            const file = new File(data.uri);
+            await File.preview(file, { mimeType: data.mime });
+          } catch (previewErr) {
+            console.warn('Auto-preview failed:', previewErr);
+          }
+        }
+      } catch (e) {
+        setError(e.message || 'Could not load the ID document.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     if (!docId) {
       setError('Document ID is missing.');
       setLoading(false);
@@ -56,7 +80,12 @@ export default function DocumentViewerSheet({ doc, onClose }) {
   const handleOpenSystemViewer = async () => {
     try {
       setLaunchingViewer(true);
-      await viewOccupantDocument(docId, suggestedName);
+      if (doc?.isGuestIdDoc && docData?.uri) {
+        const file = new File(docData.uri);
+        await File.preview(file, { mimeType: docData.mime });
+      } else {
+        await viewOccupantDocument(docId, suggestedName);
+      }
     } catch (e) {
       setError(e.message || 'Could not open document in viewer.');
     } finally {
@@ -110,13 +139,23 @@ export default function DocumentViewerSheet({ doc, onClose }) {
               <Text style={styles.metaText}>
                 {formatFileSize(docData.size)} · Image
               </Text>
-              <Button
-                title={launchingViewer ? 'Opening…' : 'Open in System Viewer'}
-                variant="outline"
-                size="sm"
-                loading={launchingViewer}
-                onPress={handleOpenSystemViewer}
-              />
+              <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                {onDelete ? (
+                  <Button
+                    title="🗑️ Delete"
+                    variant="danger"
+                    size="sm"
+                    onPress={() => onDelete(docId)}
+                  />
+                ) : null}
+                <Button
+                  title={launchingViewer ? 'Opening…' : 'Open in System Viewer'}
+                  variant="outline"
+                  size="sm"
+                  loading={launchingViewer}
+                  onPress={handleOpenSystemViewer}
+                />
+              </View>
             </View>
           </View>
         ) : (
@@ -140,6 +179,14 @@ export default function DocumentViewerSheet({ doc, onClose }) {
                   loading={launchingViewer}
                   onPress={handleOpenSystemViewer}
                 />
+                {onDelete ? (
+                  <Button
+                    title="🗑️ Delete Document"
+                    variant="danger"
+                    size="md"
+                    onPress={() => onDelete(docId)}
+                  />
+                ) : null}
                 <Button
                   title="Close Document"
                   variant="outline"

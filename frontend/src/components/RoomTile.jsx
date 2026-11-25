@@ -130,7 +130,10 @@ export default function RoomTile({ room, onClick, onOpenBooking }) {
         </span>
       )}
 
-      {room.hasPendingBooking && room.pendingBooking && room.status === 'occupied' && (
+      {(room.hasConflict || room.hasPendingBooking) &&
+        room.pendingBooking &&
+        room.status === 'occupied' &&
+        (!room.pendingBooking.checkOutDate || room.pendingBooking.checkOutDate > today) && (
         <span
           className="room-booking-conflict-warn"
           role="button"

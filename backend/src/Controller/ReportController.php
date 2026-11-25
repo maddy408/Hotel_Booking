@@ -17,13 +17,23 @@ final class ReportController
 
     public function today(Request $request): array
     {
+        $from = $request->input('from') ?: $request->input('date');
+        $to = $request->input('to') ?: ($request->input('date') ?: $from);
+        if ($from && $to) {
+            return $this->reports->today((int) $request->attribute('hotelId'), (string) $from, (string) $to);
+        }
         return $this->reports->today((int) $request->attribute('hotelId'));
     }
 
     public function dayEnd(Request $request): array
     {
+        $from = $request->input('from') ?: $request->input('date');
+        $to = $request->input('to') ?: ($request->input('date') ?: $from);
+        if ($from && $to) {
+            return $this->reports->dayEnd((int) $request->attribute('hotelId'), (string) $from, (string) $to);
+        }
         $date = (string) $request->input('date', date('Y-m-d'));
-        return $this->reports->dayEnd((int) $request->attribute('hotelId'), $date);
+        return $this->reports->dayEnd((int) $request->attribute('hotelId'), $date, $date);
     }
 
     public function occupancy(Request $request): array

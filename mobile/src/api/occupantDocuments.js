@@ -27,7 +27,7 @@ export function useStayDocuments(stayId) {
 
 /**
  * Web passes browser File objects straight into FormData. On RN, the caller passes
- * expo-image-picker/expo-document-picker results shaped as { uri, name, type } —
+ * expo-document-picker results shaped as { uri, name, type } —
  * React Native's FormData/fetch understands that exact shape natively for multipart upload.
  */
 export function useUploadStayDocuments() {

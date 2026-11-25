@@ -47,3 +47,15 @@ export function useUpdateGuest() {
     },
   });
 }
+
+export function useDeleteGuest() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (guestId) => api.delete(`/guests/${guestId}`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['guests'] });
+      qc.invalidateQueries({ queryKey: ['all-referrals'] });
+      qc.invalidateQueries({ queryKey: ['rooms'] });
+    },
+  });
+}

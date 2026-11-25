@@ -5,6 +5,7 @@ import { useUploadIdImage, fetchIdImageBlobUrl } from '../../api/idImage';
 import { fetchOccupantDocumentBlob } from '../../api/occupantDocuments';
 import { useToast } from '../../context/ToastContext.jsx';
 import { fd } from '../../lib/format';
+import { validatePhone, handlePhoneInputChange } from '../../lib/validation.js';
 
 const ID_TYPES = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport', 'Other'];
 
@@ -115,9 +116,9 @@ export default function GuestProfileSheet({ guestId, initialEdit = false, onClos
     if (!form.name.trim()) {
       errs.name = 'Guest name is required.';
     }
-    const cleanPhone = form.phone.replace(/\D/g, '');
-    if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
-      errs.phone = 'Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.';
+    const phoneValidation = validatePhone(form.phone);
+    if (!phoneValidation.isValid) {
+      errs.phone = phoneValidation.error;
     }
     if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       errs.email = 'Enter a valid email address.';
@@ -196,8 +197,16 @@ export default function GuestProfileSheet({ guestId, initialEdit = false, onClos
                 maxLength={10}
                 required
                 value={form.phone}
-                onChange={(e) => handleEditChange('phone', e.target.value)}
-                placeholder="10-digit mobile"
+                onChange={(e) => {
+                  const res = handlePhoneInputChange(e.target.value, form.phone);
+                  handleEditChange('phone', res.value);
+                  if (res.error) {
+                    setFormErrors((prev) => ({ ...prev, phone: res.error }));
+                  } else {
+                    setFormErrors((prev) => ({ ...prev, phone: null }));
+                  }
+                }}
+                placeholder="10-digit mobile (starts with 6-9)"
               />
               {formErrors.phone && <span className="err">{formErrors.phone}</span>}
             </div>

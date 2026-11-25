@@ -24,7 +24,7 @@ final class ReservationController
         if ($status === 'overdue' || $request->input('overdue') === '1' || $request->input('overdue') === 'true') {
             return $this->reservations->listOverdue($hotelId);
         }
-        return $this->reservations->list($hotelId);
+        return $this->reservations->list($hotelId, $status);
     }
 
     public function show(Request $request): array
@@ -208,7 +208,14 @@ final class ReservationController
     public function checkIn(Request $request): array
     {
         $persons = $request->input('persons');
-        $personsVal = ($persons !== null && is_numeric($persons)) ? (int) $persons : null;
+        if ($persons !== null && $persons !== '') {
+            if (!is_numeric($persons) || (int) $persons < 1) {
+                throw \App\Support\ApiException::validation(['persons' => 'Actual persons count must be a positive whole number.']);
+            }
+            $personsVal = (int) $persons;
+        } else {
+            $personsVal = null;
+        }
 
         $filesInput = $request->file('documents') ?? $request->file('documents[]') ?? $request->file('files') ?? $request->file('files[]') ?? $_FILES['documents'] ?? $_FILES['documents[]'] ?? $_FILES['files'] ?? $_FILES['files[]'] ?? null;
         $documentFiles = \App\Support\OccupantDocumentUploader::normalizeFiles($filesInput);

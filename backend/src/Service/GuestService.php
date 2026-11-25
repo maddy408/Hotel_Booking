@@ -32,9 +32,38 @@ class GuestService
         if ($this->uploader === null) {
             throw new \RuntimeException('ID image uploads are not configured.');
         }
+        $oldPath = !empty($guest['id_image_path']) ? (string) $guest['id_image_path'] : null;
         $path = $this->uploader->store($guestId, $file);
         $this->guests->update($guestId, ['id_image_path' => $path]);
+        if ($oldPath !== null && $oldPath !== $path) {
+            try {
+                $this->uploader->delete($oldPath);
+            } catch (\Throwable) {
+                // Ignore failure if previous file was missing
+            }
+        }
         return $this->guests->find($guestId);
+    }
+
+    public function deleteIdImage(int $hotelId, int $guestId, ?int $userId = null): array
+    {
+        $guest = $this->guests->find($guestId);
+        if ($guest === null || (int) $guest['hotel_id'] !== $hotelId) {
+            throw ApiException::notFound('Guest not found.');
+        }
+        if (!empty($guest['id_image_path']) && $this->uploader !== null) {
+            try {
+                $this->uploader->delete($guest['id_image_path']);
+            } catch (\Throwable) {
+                // Ignore failure if file was already missing
+            }
+            $this->guests->update($guestId, ['id_image_path' => null]);
+        }
+        $updated = $this->guests->find($guestId);
+        if ($this->audit !== null && $userId !== null) {
+            $this->audit->log($hotelId, $userId, 'guest_id_image_delete', 'guest', $guestId, $guest, $updated);
+        }
+        return $updated;
     }
 
     /** @return string absolute filesystem path, after confirming the guest belongs to this hotel */
@@ -235,5 +264,74 @@ class GuestService
             throw ApiException::validation(['phone' => 'Enter a valid 10-digit mobile number starting with 6-9.']);
         }
         return $digits;
+    }
+
+    public function delete(int $hotelId, int $guestId, int $userId): void
+    {
+        $guest = $this->guests->find($guestId);
+        if ($guest === null || (int) $guest['hotel_id'] !== $hotelId) {
+            throw ApiException::notFound('Guest not found.');
+        }
+
+        // 1. Check for active stay (in_house)
+        $activeStay = $this->guests->findActiveStay($guestId);
+        if ($activeStay !== null) {
+            $roomNo = $activeStay['room_no'] ?? 'assigned room';
+            throw ApiException::conflict(
+                "Cannot delete guest: guest has an active stay in Room {$roomNo}. Checkout must be completed first.",
+                'active_stay',
+                ['stayId' => (string) $activeStay['id'], 'roomNo' => (string) $roomNo]
+            );
+        }
+
+        // 2. Check for active/future booking (pending or checked_in)
+        $activeBooking = $this->guests->findActiveBooking($guestId);
+        if ($activeBooking !== null) {
+            $bookingCode = !empty($activeBooking['booking_code'])
+                ? $activeBooking['booking_code']
+                : ('BK-' . $activeBooking['id']);
+            throw ApiException::conflict(
+                "Cannot delete guest: guest has a future booking ({$bookingCode}). The booking must be cancelled first.",
+                'active_booking',
+                ['bookingId' => (string) $activeBooking['id'], 'bookingCode' => (string) $bookingCode]
+            );
+        }
+
+        // 3. Check for billing / invoice records
+        if ($this->guests->hasInvoices($guestId)) {
+            throw ApiException::conflict(
+                'Cannot delete guest: guest has billing or invoice records.',
+                'has_invoices'
+            );
+        }
+
+        // 4. Check for payment or refund records
+        if ($this->guests->hasPayments($guestId)) {
+            throw ApiException::conflict(
+                'Cannot delete guest: guest has payment or refund records.',
+                'has_payments'
+            );
+        }
+
+        // 5. Check for completed stay history
+        if ($this->guests->hasCompletedStays($guestId)) {
+            throw ApiException::conflict(
+                'Cannot delete guest: guest has completed stay history.',
+                'completed_stay'
+            );
+        }
+
+        if (!empty($guest['id_image_path']) && $this->uploader !== null) {
+            try {
+                $this->uploader->delete($guest['id_image_path']);
+            } catch (\Throwable) {
+                // Ignore failure if file was already removed
+            }
+        }
+
+        $this->guests->delete($guestId);
+        if ($this->audit !== null) {
+            $this->audit->log($hotelId, $userId, 'guest_delete', 'guest', $guestId, $guest, null);
+        }
     }
 }

@@ -1,10 +1,11 @@
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import Button from '../ui/Button.jsx';
 import { FieldError, Input, Segmented } from '../ui/Field.jsx';
 import { useStay, useStayBill, useAddExtra, useRemoveExtra } from '../../api/stays';
-import { viewOccupantDocument } from '../../api/occupantDocuments';
+import { viewOccupantDocument, useUploadStayDocuments, useDeleteOccupantDocument } from '../../api/occupantDocuments';
 import { useToast } from '../ToastContext.jsx';
 import { fd, inr, todayIso } from '../../lib/format';
 import { colors, fonts, radii } from '../../theme/theme';
@@ -22,6 +23,8 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
 
   const addExtra = useAddExtra();
   const removeExtra = useRemoveExtra();
+  const uploadDocs = useUploadStayDocuments();
+  const deleteDoc = useDeleteOccupantDocument();
   const toast = useToast();
 
   const [xLabel, setXLabel] = useState('Food');
@@ -51,6 +54,80 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
     } finally {
       setLoadingDocId(null);
     }
+  };
+
+  const handleUploadStayDoc = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'],
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.length) return;
+
+      const overSized = result.assets.filter((f) => f.size && f.size > 10 * 1024 * 1024);
+      if (overSized.length > 0) {
+        toast('Document must be 10 MB or smaller.');
+        return;
+      }
+
+      const files = result.assets.map((f) => ({
+        uri: f.uri,
+        name: f.name,
+        type: f.mimeType || 'application/octet-stream',
+      }));
+
+      await uploadDocs.mutateAsync({ stayId: validStayId, files });
+      toast('ID document uploaded successfully.');
+      refetch();
+    } catch (err) {
+      toast(err.message || 'Failed to upload document.');
+    }
+  };
+
+  const handleDeleteDocument = (docId) => {
+    Alert.alert(
+      'Delete Document',
+      'Are you sure you want to delete this document?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDoc.mutateAsync({ docId });
+              toast('Document deleted.');
+              refetch();
+            } catch (e) {
+              toast(e.message || 'Failed to delete document.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRemoveExtra = (charge) => {
+    Alert.alert(
+      'Remove Extra Charge',
+      `Are you sure you want to remove "${charge.label}" (${inr(charge.amount)})?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await removeExtra.mutateAsync({ stayId, chargeId: charge.id });
+              toast(`Charge "${charge.label}" removed.`);
+            } catch (e) {
+              toast(e.message || 'Failed to remove charge.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleAddExtra = async () => {
@@ -202,7 +279,7 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
                 <View key={c.id} style={styles.chargeRow}>
                   <Text style={styles.chargeName}>{c.label}</Text>
                   <Text style={styles.valueMono}>{inr(c.amount)}</Text>
-                  <Pressable onPress={() => removeExtra.mutateAsync({ stayId, chargeId: c.id })} hitSlop={8}>
+                  <Pressable onPress={() => handleRemoveExtra(c)} hitSlop={8} accessibilityLabel="Remove Charge">
                     <Text style={styles.chargeDelete}>✕</Text>
                   </Pressable>
                 </View>
@@ -213,7 +290,42 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
 
         {/* Occupants & ID Documents */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Registered Occupants & Documents</Text>
+          <View style={[styles.infoRow, { marginBottom: 6, flexWrap: 'wrap', gap: 6 }]}>
+            <Text style={[styles.cardTitle, { flexShrink: 1, marginBottom: 0 }]}>Occupants & ID Documents</Text>
+            <Button
+              title={uploadDocs.isPending ? 'Uploading…' : '+ Upload ID Document'}
+              variant="outline"
+              size="sm"
+              loading={uploadDocs.isPending}
+              disabled={uploadDocs.isPending}
+              onPress={handleUploadStayDoc}
+            />
+          </View>
+
+          {/* Stay-level documents */}
+          {stay.documents && stay.documents.length > 0 ? (
+            <View style={{ marginBottom: 8, gap: 4 }}>
+              <Text style={styles.labelBold}>Stay Documents ({stay.documents.length})</Text>
+              {stay.documents.map((doc) => (
+                <View key={doc.id} style={styles.docRow}>
+                  <Text style={styles.docName} numberOfLines={1}>📄 {doc.original_filename}</Text>
+                  <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                    <Button
+                      title={loadingDocId === doc.id ? 'Loading…' : 'View Document'}
+                      variant="outline"
+                      size="sm"
+                      disabled={loadingDocId === doc.id}
+                      onPress={() => handleViewDocument(doc)}
+                    />
+                    <Pressable onPress={() => handleDeleteDocument(doc.id)} hitSlop={8} accessibilityLabel="Delete Document">
+                      <Text style={{ color: colors.danger, fontSize: 15, paddingHorizontal: 4 }}>✕</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
           {(stay.occupants || []).map((occ) => (
             <View key={occ.id} style={styles.occItem}>
               <View style={styles.infoRow}>
@@ -221,20 +333,26 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
                 <Text style={styles.valueMono}>{occ.phone || '—'}</Text>
               </View>
               {(occ.documents || []).map((doc) => (
-                <Pressable
-                  key={doc.id}
-                  style={styles.docRow}
-                  disabled={loadingDocId === doc.id}
-                  onPress={() => handleViewDocument(doc)}
-                >
+                <View key={doc.id} style={styles.docRow}>
                   <Text style={styles.docName} numberOfLines={1}>📄 {doc.original_filename}</Text>
-                  <Text style={styles.docAction}>{loadingDocId === doc.id ? 'Opening…' : 'View / Open'}</Text>
-                </Pressable>
+                  <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                    <Button
+                      title={loadingDocId === doc.id ? 'Loading…' : 'View Document'}
+                      variant="outline"
+                      size="sm"
+                      disabled={loadingDocId === doc.id}
+                      onPress={() => handleViewDocument(doc)}
+                    />
+                    <Pressable onPress={() => handleDeleteDocument(doc.id)} hitSlop={8} accessibilityLabel="Delete Document">
+                      <Text style={{ color: colors.danger, fontSize: 15, paddingHorizontal: 4 }}>✕</Text>
+                    </Pressable>
+                  </View>
+                </View>
               ))}
             </View>
           ))}
-          {(!stay.occupants || stay.occupants.length === 0) && (
-            <Text style={styles.meta}>No extra occupants recorded.</Text>
+          {(!stay.occupants || stay.occupants.length === 0) && (!stay.documents || stay.documents.length === 0) && (
+            <Text style={styles.meta}>No extra occupants or documents recorded.</Text>
           )}
         </View>
 

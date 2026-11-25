@@ -73,4 +73,29 @@ final class UserService
     {
         return $this->roles->all();
     }
+
+    public function delete(int $id, int $hotelId, int $actingUserId): void
+    {
+        if ($id === $actingUserId) {
+            throw ApiException::conflict('You cannot delete your own account.');
+        }
+
+        $user = $this->users->findById($id);
+        if ($user === null || (int) $user['hotel_id'] !== $hotelId) {
+            throw ApiException::notFound('User not found.');
+        }
+
+        if ($user['role_code'] === 'admin' && (bool) $user['is_active']) {
+            if ($this->users->countActiveAdmins($hotelId) <= 1) {
+                throw ApiException::conflict('Cannot delete the last active administrator.');
+            }
+        }
+
+        if ($this->users->referenceCount($id) > 0) {
+            throw ApiException::conflict('Cannot permanently delete user: account has operational or audit history. Deactivate the account instead.');
+        }
+
+        $this->users->delete($id);
+        $this->audit->log($hotelId, $actingUserId, 'user_delete', 'user', $id, $user, null);
+    }
 }

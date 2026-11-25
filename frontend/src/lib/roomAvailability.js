@@ -63,7 +63,7 @@ export function getCardDisplay(room, checkIn, checkOut) {
       badge: 'Booked',
       detail: 'Until ' + fd(checkOut),
       condition: 'reserved',
-      blockedReason: `Reserved for requested dates until ${fd(checkOut)}.`,
+      blockedReason: 'This room is already booked for these dates. Please select another room.',
       turnoverNotice: null,
     };
   }

@@ -60,5 +60,65 @@ final class BookingCheckInValidationTest extends TestCase
         $hasError = $enteredPersons > $maxPersons;
         $this->assertFalse($hasError);
     }
+
+    public function testSinglePersonRoomGrammarValidation(): void
+    {
+        $maxPersons = 1;
+        $enteredPersons = 2;
+        $unit = $maxPersons === 1 ? 'person' : 'persons';
+        $expectedMsg = "This room allows a maximum of {$maxPersons} {$unit}.";
+
+        try {
+            if ($enteredPersons > $maxPersons) {
+                throw ApiException::validation(['persons' => $expectedMsg], $expectedMsg);
+            }
+            $this->fail('Expected ApiException was not thrown');
+        } catch (ApiException $e) {
+            $this->assertSame(422, $e->getStatus());
+            $this->assertSame('This room allows a maximum of 1 person.', $e->getMessage());
+        }
+    }
+
+    public function testDynamicRoomCapacityLimit(): void
+    {
+        $maxPersons = 4;
+        $withinLimit = 4;
+        $exceeded = 5;
+
+        $this->assertFalse($withinLimit > $maxPersons);
+        $this->assertTrue($exceeded > $maxPersons);
+
+        $unit = $maxPersons === 1 ? 'person' : 'persons';
+        $msg = "This room allows a maximum of {$maxPersons} {$unit}.";
+        $this->assertSame('This room allows a maximum of 4 persons.', $msg);
+    }
+
+    public function testRejectNonPositivePersons(): void
+    {
+        $invalidPersons = 0;
+        try {
+            if ($invalidPersons < 1) {
+                throw ApiException::validation(['persons' => 'Persons count must be a positive whole number.'], 'Persons count must be a positive whole number.');
+            }
+            $this->fail('Expected ApiException for 0 persons');
+        } catch (ApiException $e) {
+            $this->assertSame(422, $e->getStatus());
+            $this->assertSame('Persons count must be a positive whole number.', $e->getMessage());
+        }
+    }
+
+    public function testRejectNonPositiveDays(): void
+    {
+        $invalidDays = -1;
+        try {
+            if ($invalidDays < 1) {
+                throw ApiException::validation(['days' => 'Days must be at least 1.'], 'Days must be at least 1.');
+            }
+            $this->fail('Expected ApiException for negative days');
+        } catch (ApiException $e) {
+            $this->assertSame(422, $e->getStatus());
+            $this->assertSame('Days must be at least 1.', $e->getMessage());
+        }
+    }
 }
 

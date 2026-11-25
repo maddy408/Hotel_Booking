@@ -1,12 +1,12 @@
 import { useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import Button from '../ui/Button.jsx';
 import { FieldError, FormErrorBanner, Input, Segmented } from '../ui/Field.jsx';
 import {
-  useStay, useStayBill, useAddExtra, useRemoveExtra, useExtendStay, useCheckout, useApplyDiscount,
+  useStay, useStayBill, useEarlyCheckoutPreview, useAddExtra, useRemoveExtra, useExtendStay, useCheckout, useApplyDiscount,
 } from '../../api/stays';
 import { viewOccupantDocument, useUploadStayDocuments } from '../../api/occupantDocuments';
 import { BASE_URL } from '../../lib/apiClient';
@@ -24,12 +24,22 @@ const EXTRAS = ['Food', 'Laundry', 'Extra bed', 'Taxi', 'Other'];
 export default function CheckoutSheet({ stayId, onClose, initialMode }) {
   const navigation = useNavigation();
   const { data: stay, isError: isStayError, error: stayError } = useStay(stayId);
-  const { data: bill, isError: isBillError, error: billError } = useStayBill(stayId);
+  const { data: rawBill, isError: isBillError, error: billError } = useStayBill(stayId);
 
   const [actualCheckoutDate] = useState(todayIso());
   const [discountVal, setDiscountVal] = useState('');
   const [discountReason, setDiscountReason] = useState('');
   const [showDiscountInput, setShowDiscountInput] = useState(false);
+
+  const effectiveDiscount = discountVal !== '' ? Number(discountVal) : (stay?.discount_amount != null ? Number(stay.discount_amount) : undefined);
+  const { data: previewData } = useEarlyCheckoutPreview(
+    stayId,
+    {
+      checkoutDate: actualCheckoutDate,
+      discount: effectiveDiscount,
+    }
+  );
+  const bill = previewData?.bill || rawBill;
 
   const addExtra = useAddExtra();
   const removeExtra = useRemoveExtra();
@@ -43,6 +53,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
   const [pay, setPay] = useState('cash');
   const [refundReason, setRefundReason] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [completedResult, setCompletedResult] = useState(null);
   const uploadDocs = useUploadStayDocuments();
   const [loadingDocId, setLoadingDocId] = useState(null);
@@ -72,13 +83,40 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
         multiple: true,
         copyToCacheDirectory: true,
       });
-      if (result.canceled) return;
+      if (result.canceled || !result.assets?.length) return;
+      const overSized = result.assets.filter((f) => f.size && f.size > 10 * 1024 * 1024);
+      if (overSized.length > 0) {
+        toast('Document must be 10 MB or smaller.');
+        return;
+      }
       const files = (result.assets || []).map((f) => ({ uri: f.uri, name: f.name, type: f.mimeType || 'application/octet-stream' }));
       await uploadDocs.mutateAsync({ stayId, files });
       toast('ID proof document uploaded successfully.');
     } catch (err) {
       toast(err.message || 'Failed to upload document.');
     }
+  };
+
+  const handleRemoveExtra = (charge) => {
+    Alert.alert(
+      'Remove Extra Charge',
+      `Are you sure you want to remove "${charge.label}" (${inr(charge.amount)})?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await removeExtra.mutateAsync({ stayId, chargeId: charge.id });
+              toast(`Charge "${charge.label}" removed.`);
+            } catch (e) {
+              toast(e.message || 'Failed to remove charge.');
+            }
+          },
+        },
+      ]
+    );
   };
 
   if (!stayId || isStayError || isBillError) {
@@ -142,6 +180,8 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
   };
 
   const doCheckout = async () => {
+    if (isSubmitting || checkout.isPending) return;
+    setIsSubmitting(true);
     setFormError('');
     try {
       const result = await checkout.mutateAsync({
@@ -155,8 +195,12 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
     } catch (err) {
       setFormError(err.message || 'Checkout failed.');
       toast(err.message || 'Checkout failed.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  const isCheckoutBusy = checkout.isPending || isSubmitting;
 
   return (
     <Sheet onClose={onClose} scrollRef={scrollRef}>
@@ -191,14 +235,14 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
         )}
 
         <View style={{ gap: 4 }}>
-          <View style={styles.rowBetween}>
-            <Text style={styles.label}>ID Proof Documents ({stay.documents?.length || 0})</Text>
-            <Button title={uploadDocs.isPending ? 'Uploading…' : '+ Add'} variant="outline" size="sm" loading={uploadDocs.isPending} onPress={handlePostCheckInUpload} />
+          <View style={[styles.rowBetween, { flexWrap: 'wrap', gap: 6 }]}>
+            <Text style={[styles.label, { flexShrink: 1 }]}>ID Proof Documents ({stay.documents?.length || 0})</Text>
+            <Button title={uploadDocs.isPending ? 'Uploading…' : '+ Upload ID Document'} variant="outline" size="sm" loading={uploadDocs.isPending} onPress={handlePostCheckInUpload} />
           </View>
           {(stay.documents || []).map((doc) => (
             <Pressable key={doc.id} style={styles.fileRow} disabled={loadingDocId === doc.id} onPress={() => handleViewDocument(doc)}>
               <Text style={styles.fileName} numberOfLines={1}>{doc.original_filename}</Text>
-              <Text style={styles.docAction}>{loadingDocId === doc.id ? 'Loading…' : 'View'}</Text>
+              <Text style={styles.docAction}>{loadingDocId === doc.id ? 'Loading…' : 'View Document'}</Text>
             </Pressable>
           ))}
         </View>
@@ -225,8 +269,9 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                 {!isCheckedOut && !completedResult ? (
                   <Pressable
                     hitSlop={10}
-                    onPress={() => removeExtra.mutate({ stayId, chargeId: x.id })}
+                    onPress={() => handleRemoveExtra(x)}
                     style={styles.removeBtn}
+                    accessibilityLabel="Remove Extra Charge"
                   >
                     <Text style={styles.removeFile}>✕</Text>
                   </Pressable>
@@ -356,12 +401,12 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                 <View style={styles.confirmBox}>
                   <Text style={styles.confirmTitle}>Bill is fully paid. Complete checkout for Room {stay.room_no}?</Text>
                   <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                    <Button title={checkout.isPending ? 'Checking out...' : 'Yes, check out'} variant="info" loading={checkout.isPending} onPress={doCheckout} style={{ flex: 1 }} />
-                    <Button title="Cancel" variant="outline" onPress={() => setConfirming(false)} style={{ flex: 1 }} />
+                    <Button title={isCheckoutBusy ? 'Checking out...' : 'Yes, check out'} variant="info" loading={isCheckoutBusy} disabled={isCheckoutBusy} onPress={doCheckout} style={{ flex: 1 }} />
+                    <Button title="Cancel" variant="outline" disabled={isCheckoutBusy} onPress={() => setConfirming(false)} style={{ flex: 1 }} />
                   </View>
                 </View>
               ) : (
-                <Button title="Complete checkout (Fully paid)" variant="info" size="lg" onPress={() => setConfirming(true)} />
+                <Button title="Complete checkout (Fully paid)" variant="info" size="lg" disabled={isCheckoutBusy} onPress={() => setConfirming(true)} />
               )
             ) : bal > 0 ? (
               <>
@@ -373,12 +418,12 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                   <View style={styles.confirmBox}>
                     <Text style={styles.confirmTitle}>Collect {inr(bal)} by {pay.toUpperCase()} to complete checkout?</Text>
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                      <Button title={checkout.isPending ? 'Processing...' : 'Yes, collect & check out'} variant="info" loading={checkout.isPending} onPress={doCheckout} style={{ flex: 1 }} />
-                      <Button title="Cancel" variant="outline" onPress={() => setConfirming(false)} style={{ flex: 1 }} />
+                      <Button title={isCheckoutBusy ? 'Processing...' : 'Yes, collect & check out'} variant="info" loading={isCheckoutBusy} disabled={isCheckoutBusy} onPress={doCheckout} style={{ flex: 1 }} />
+                      <Button title="Cancel" variant="outline" disabled={isCheckoutBusy} onPress={() => setConfirming(false)} style={{ flex: 1 }} />
                     </View>
                   </View>
                 ) : (
-                  <Button title={`Check out · Collect ${inr(bal)}`} variant="info" size="lg" onPress={() => setConfirming(true)} />
+                  <Button title={`Check out · Collect ${inr(bal)}`} variant="info" size="lg" disabled={isCheckoutBusy} onPress={() => setConfirming(true)} />
                 )}
               </>
             ) : (
@@ -395,12 +440,12 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                   <View style={styles.confirmBox}>
                     <Text style={styles.confirmTitle}>Refund {inr(Math.abs(bal))} by {pay.toUpperCase()} to complete checkout?</Text>
                     <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                      <Button title={checkout.isPending ? 'Processing...' : 'Yes, refund & check out'} variant="info" loading={checkout.isPending} onPress={doCheckout} style={{ flex: 1 }} />
-                      <Button title="Cancel" variant="outline" onPress={() => setConfirming(false)} style={{ flex: 1 }} />
+                      <Button title={isCheckoutBusy ? 'Processing...' : 'Yes, refund & check out'} variant="info" loading={isCheckoutBusy} disabled={isCheckoutBusy} onPress={doCheckout} style={{ flex: 1 }} />
+                      <Button title="Cancel" variant="outline" disabled={isCheckoutBusy} onPress={() => setConfirming(false)} style={{ flex: 1 }} />
                     </View>
                   </View>
                 ) : (
-                  <Button title={`Check out · Refund ${inr(Math.abs(bal))}`} variant="info" size="lg" onPress={() => setConfirming(true)} />
+                  <Button title={`Check out · Refund ${inr(Math.abs(bal))}`} variant="info" size="lg" disabled={isCheckoutBusy} onPress={() => setConfirming(true)} />
                 )}
               </>
             )}

@@ -19,5 +19,6 @@ return static function (Router $router, PDO $db, callable $auth): void {
     $router->get('/roles', [$controller, 'roles'], [$auth, $adminOnly]);
     $router->post('/users', [$controller, 'create'], [$auth, $adminOnly]);
     $router->put('/users/{id}', [$controller, 'update'], [$auth, $adminOnly]);
+    $router->delete('/users/{id}', [$controller, 'delete'], [$auth, $adminOnly]);
     $router->post('/users/{id}/reset-password', [$controller, 'resetPassword'], [$auth, $adminOnly]);
 };

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useGuest } from '../api/guests';
-import { useUploadIdImage, fetchIdImageBlobUrl } from '../api/idImage';
+import { useGuest, useDeleteGuest } from '../api/guests';
+import { useUploadIdImage, useDeleteIdImage, fetchIdImageBlobUrl } from '../api/idImage';
 import { fetchOccupantDocumentBlob, useDeleteOccupantDocument } from '../api/occupantDocuments';
 import GuestEditSheet from '../components/sheets/GuestEditSheet.jsx';
 import BookingDetailSheet from '../components/sheets/BookingDetailSheet.jsx';
@@ -17,6 +17,8 @@ export default function GuestDetails() {
   const guestId = Number(id);
   const { data: guest, isLoading, isError, error, refetch } = useGuest(guestId);
   const uploadIdImage = useUploadIdImage();
+  const deleteIdImage = useDeleteIdImage();
+  const deleteGuest = useDeleteGuest();
   const deleteOccupantDoc = useDeleteOccupantDocument();
   const toast = useToast();
 
@@ -24,6 +26,7 @@ export default function GuestDetails() {
   const [photoBlobUrl, setPhotoBlobUrl] = useState(null);
   const [sheet, setSheet] = useState(null);
   const [activeTab, setActiveTab] = useState('personal');
+  const [deleteError, setDeleteError] = useState(null);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -95,6 +98,38 @@ export default function GuestDetails() {
       refetch();
     } catch (err) {
       toast(err.message || 'Could not remove document.');
+    }
+  };
+
+  const handleDeleteGuest = async () => {
+    if (!window.confirm(`Are you sure you want to delete ${guest.name}? This action cannot be undone.`)) return;
+    setDeleteError(null);
+    try {
+      await deleteGuest.mutateAsync(guestId);
+      toast(`Guest ${guest.name} deleted.`);
+      navigate('/guests');
+    } catch (err) {
+      toast(err.message || 'Cannot delete guest.');
+      setDeleteError({
+        message: err.message || 'Cannot delete guest.',
+        code: err.code || null,
+        bookingId: err.fields?.bookingId || null,
+        bookingCode: err.fields?.bookingCode || null,
+        stayId: err.fields?.stayId || null,
+        roomNo: err.fields?.roomNo || null,
+      });
+    }
+  };
+
+  const handleDeleteIdPhoto = async () => {
+    if (!window.confirm(`Are you sure you want to delete the ID document photo for ${guest.name}?`)) return;
+    try {
+      await deleteIdImage.mutateAsync({ guestId });
+      toast('ID photo deleted.');
+      setPhotoBlobUrl(null);
+      refetch();
+    } catch (err) {
+      toast(err.message || 'Failed to delete ID photo.');
     }
   };
 
@@ -353,8 +388,73 @@ export default function GuestDetails() {
           >
             + New Booking
           </button>
+          <button
+            type="button"
+            className="btn sm red"
+            style={{ fontWeight: 600 }}
+            disabled={deleteGuest.isPending}
+            onClick={handleDeleteGuest}
+          >
+            {deleteGuest.isPending ? 'Deleting…' : '🗑️ Delete Guest'}
+          </button>
         </div>
       </div>
+
+      {/* Deletion Error Notification Banner */}
+      {deleteError && (
+        <div
+          role="alert"
+          style={{
+            background: 'var(--red-subtle, #fef2f2)',
+            border: '1px solid var(--red-border, #fecaca)',
+            color: 'var(--red-text, #991b1b)',
+            padding: '12px 16px',
+            borderRadius: 8,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14 }}>
+            <span>⚠️</span>
+            <span>{deleteError.message}</span>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {deleteError.bookingId && (
+              <button
+                type="button"
+                className="btn sm"
+                style={{
+                  background: 'var(--red, #dc2626)',
+                  color: '#fff',
+                  border: 'none',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                }}
+                onClick={() => {
+                  setSheet({ type: 'booking', id: Number(deleteError.bookingId) });
+                  setDeleteError(null);
+                }}
+              >
+                View Booking {deleteError.bookingCode ? `(${deleteError.bookingCode})` : ''}
+              </button>
+            )}
+            <button
+              type="button"
+              className="btn sm ghost"
+              style={{ cursor: 'pointer', border: 'none', background: 'transparent', fontSize: 16 }}
+              onClick={() => setDeleteError(null)}
+              title="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 2. Compact Summary (Only Important Summary Metrics, No Empty Cards) */}
       <div
@@ -1210,6 +1310,15 @@ export default function GuestDetails() {
                 >
                   View Photo
                 </button>
+                <button
+                  type="button"
+                  className="btn sm red"
+                  style={{ fontSize: 11.5 }}
+                  disabled={deleteIdImage.isPending}
+                  onClick={handleDeleteIdPhoto}
+                >
+                  {deleteIdImage.isPending ? 'Deleting…' : 'Delete Photo'}
+                </button>
               </div>
             </div>
           )}
@@ -1455,6 +1564,7 @@ export default function GuestDetails() {
           guestId={sheet.id}
           onClose={() => setSheet(null)}
           onSaved={() => refetch()}
+          onViewBooking={(bookingId) => setSheet({ type: 'booking', id: Number(bookingId) })}
         />
       )}
       {sheet?.type === 'booking' && (

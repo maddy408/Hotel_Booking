@@ -1,16 +1,32 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Screen, { EmptyState, ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
 import SearchInput from '../../components/ui/SearchInput.jsx';
+import DateFilter from '../../components/DateFilter.jsx';
 import { useDoneStays } from '../../api/stays';
 import { useTodayReport } from '../../api/reports';
-import { fd, inr } from '../../lib/format';
+import { fd, inr, getPresetDateRange } from '../../lib/format';
 import { colors, fonts, radii } from '../../theme/theme';
 
 export default function BillsScreen({ navigation }) {
-  const { data: stays, isLoading, isError, error, refetch, isRefetching } = useDoneStays();
-  const { data: today } = useTodayReport();
+  const [filter, setFilter] = useState(() => getPresetDateRange('today'));
+  const stayRange = useMemo(() => ({ from: filter.from, to: filter.to }), [filter.from, filter.to]);
+  const { data: stays, isLoading, isError, error, refetch: refetchStays, isRefetching: isStaysRefetching } = useDoneStays(stayRange);
+  const { data: today, refetch: refetchToday, isRefetching: isTodayRefetching } = useTodayReport(filter.from, filter.to);
   const [search, setSearch] = useState('');
+
+  const refetchAll = useCallback(() => {
+    refetchStays();
+    refetchToday();
+  }, [refetchStays, refetchToday]);
+
+  // Refetch latest bills and today summary whenever Bills screen gains navigation focus
+  useFocusEffect(
+    useCallback(() => {
+      refetchAll();
+    }, [refetchAll])
+  );
 
   const filteredDone = useMemo(() => {
     const list = [...(stays || [])].sort((a, b) => (b.checkout_actual || '').localeCompare(a.checkout_actual || '') || b.id - a.id);
@@ -24,21 +40,31 @@ export default function BillsScreen({ navigation }) {
     ));
   }, [stays, search]);
 
+  const periodLabel = filter.preset === 'today' ? 'Today' : filter.label;
+  const isSingleDay = filter.from === filter.to;
+  const dateSubtext = isSingleDay ? fd(filter.from) : `${fd(filter.from)} → ${fd(filter.to)}`;
+
+  // Use backend summary totals, falling back to loaded stay records
+  const checkoutsCount = today?.checkouts ?? (stays ? stays.length : '—');
+  const billedAmount = today?.billedAtCheckout ?? (stays ? stays.reduce((sum, s) => sum + (Number(s.invoice_total) || 0), 0) : 0);
+
   const renderHeader = useMemo(() => (
     <View style={styles.headerContainer}>
+      <DateFilter value={filter} onChange={setFilter} />
+
       <View style={styles.summaryCard}>
         <View style={styles.summaryHeader}>
-          <Text style={styles.sectionTitle}>Today</Text>
-          <Text style={styles.meta}>{today ? fd(today.date) : ''}</Text>
+          <Text style={styles.sectionTitle}>{periodLabel}</Text>
+          <Text style={styles.meta}>{dateSubtext}</Text>
         </View>
         <View style={styles.summaryRow}>
           <View style={styles.summaryItem}>
             <Text style={styles.summaryLabel}>Check-outs</Text>
-            <Text style={styles.summaryValue}>{today?.checkouts ?? '—'}</Text>
+            <Text style={styles.summaryValue}>{checkoutsCount}</Text>
           </View>
           <View style={styles.summaryItem}>
             <Text style={styles.summaryLabel}>Billed at check-out</Text>
-            <Text style={styles.summaryValue}>{inr(today?.billedAtCheckout ?? 0)}</Text>
+            <Text style={styles.summaryValue}>{inr(billedAmount)}</Text>
           </View>
         </View>
       </View>
@@ -50,12 +76,14 @@ export default function BillsScreen({ navigation }) {
         style={{ marginBottom: 12 }}
       />
 
-      <Text style={styles.sectionTitle}>All Bills ({filteredDone.length})</Text>
+      <Text style={styles.sectionTitle}>
+        {filter.preset === 'today' ? `Today's Bills (${filteredDone.length})` : `Bills (${filteredDone.length})`}
+      </Text>
     </View>
-  ), [today, filteredDone.length, search]);
+  ), [filter, periodLabel, dateSubtext, checkoutsCount, billedAmount, search, filteredDone.length]);
 
-  if (isLoading) return <Screen><LoadingState /></Screen>;
-  if (isError) return <Screen><ErrorState message={error?.message} onRetry={refetch} /></Screen>;
+  if (isLoading) return <Screen scroll={false}><LoadingState /></Screen>;
+  if (isError) return <Screen scroll={false}><ErrorState message={error?.message} onRetry={refetchAll} /></Screen>;
 
   const renderBillItem = ({ item: s }) => (
     <Pressable
@@ -81,12 +109,16 @@ export default function BillsScreen({ navigation }) {
         keyExtractor={(s) => String(s.id)}
         renderItem={renderBillItem}
         ListHeaderComponent={renderHeader}
-        ListEmptyComponent={<EmptyState title="No bills found" />}
+        ListEmptyComponent={
+          <EmptyState
+            title={search.trim() ? "No bills found" : `No bills for ${periodLabel.toLowerCase()}`}
+          />
+        }
         contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl
-            refreshing={!!isRefetching}
-            onRefresh={refetch}
+            refreshing={isStaysRefetching || isTodayRefetching}
+            onRefresh={refetchAll}
             colors={[colors.primary]}
           />
         }

@@ -25,6 +25,7 @@ return static function (Router $router, PDO $db, callable $auth): void {
         new RoomTypeRepository($db),
         new HousekeepingLogRepository($db),
         new AuditLogger(new AuditLogRepository($db)),
+        new SettingsRepository($db),
     );
 
     $roomTypeController = new RoomTypeController($roomService, new RoomTypeRepository($db));

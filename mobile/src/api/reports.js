@@ -1,15 +1,29 @@
 import { Platform } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useQuery } from '@tanstack/react-query';
 import * as FileSystem from 'expo-file-system/legacy';
 import { File } from 'expo-file-system';
 import { api, BASE_URL, getTokens } from '../lib/apiClient';
 
-export function useTodayReport() {
-  return useQuery({ queryKey: ['report-today'], queryFn: () => api.get('/reports/today'), refetchInterval: 60000 });
+import { addDaysIso, fd, inr, todayIso } from '../lib/format';
+
+export function useTodayReport(from, to) {
+  const queryStr = from && to ? `?from=${from}&to=${to}` : (from ? `?date=${from}` : '');
+  const isCurrentDay = !from || from === todayIso();
+  return useQuery({
+    queryKey: ['report-today', from, to],
+    queryFn: () => api.get(`/reports/today${queryStr}`),
+    refetchInterval: isCurrentDay ? 60000 : false,
+  });
 }
 
-export function useDayEndReport(date) {
-  return useQuery({ queryKey: ['report-day-end', date], queryFn: () => api.get(`/reports/day-end?date=${date}`) });
+export function useDayEndReport(from, to) {
+  const queryStr = to ? `?from=${from}&to=${to}` : (from ? `?date=${from}` : '');
+  return useQuery({
+    queryKey: ['report-day-end', from, to],
+    queryFn: () => api.get(`/reports/day-end${queryStr}`),
+    enabled: !!from,
+  });
 }
 
 export function useOccupancyReport(from, to) {
@@ -48,38 +62,76 @@ export async function downloadInvoicesCsv(from, to, customFilename) {
   let savedUri = result.uri;
   let savedToDownloads = false;
 
+  const SAF_DOWNLOADS_KEY = 'tc_saf_downloads_uri';
+
   // On Android, save the generated CSV to the public Downloads folder via SAF
   if (Platform.OS === 'android' && FileSystem.StorageAccessFramework) {
-    let initialUri = null;
-    try {
-      initialUri = FileSystem.StorageAccessFramework.getUriForDirectoryInRoot('Download');
-    } catch {
-      // Fallback if getUriForDirectoryInRoot is not supported on older versions
-      initialUri = null;
-    }
-
-    const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync(initialUri);
-    if (!permissions.granted) {
-      throw new Error('Storage permission not granted. Download cancelled.');
-    }
-
     const csvContent = await FileSystem.readAsStringAsync(result.uri, {
       encoding: FileSystem.EncodingType.UTF8,
     });
-
     const baseName = filename.replace(/\.csv$/i, '');
-    const safUri = await FileSystem.StorageAccessFramework.createFileAsync(
-      permissions.directoryUri,
-      baseName,
-      'text/csv'
-    );
 
-    await FileSystem.StorageAccessFramework.writeAsStringAsync(safUri, csvContent, {
-      encoding: FileSystem.EncodingType.UTF8,
-    });
+    let saved = false;
+    let targetDirectoryUri = null;
 
-    savedUri = safUri;
-    savedToDownloads = true;
+    // Check if user previously granted directory access to avoid repeatedly prompting
+    try {
+      targetDirectoryUri = await AsyncStorage.getItem(SAF_DOWNLOADS_KEY);
+    } catch {
+      targetDirectoryUri = null;
+    }
+
+    if (targetDirectoryUri) {
+      try {
+        const safUri = await FileSystem.StorageAccessFramework.createFileAsync(
+          targetDirectoryUri,
+          baseName,
+          'text/csv'
+        );
+        await FileSystem.StorageAccessFramework.writeAsStringAsync(safUri, csvContent, {
+          encoding: FileSystem.EncodingType.UTF8,
+        });
+        savedUri = safUri;
+        savedToDownloads = true;
+        saved = true;
+      } catch {
+        // Cached directory permission may have expired or revoked; will re-prompt below
+        saved = false;
+      }
+    }
+
+    if (!saved) {
+      let initialUri = null;
+      try {
+        initialUri = FileSystem.StorageAccessFramework.getUriForDirectoryInRoot('Download');
+      } catch {
+        // Fallback if getUriForDirectoryInRoot is not supported on older versions
+        initialUri = null;
+      }
+
+      const permissions = await FileSystem.StorageAccessFramework.requestDirectoryPermissionsAsync(initialUri);
+      if (!permissions.granted) {
+        throw new Error('Storage permission not granted. Download cancelled.');
+      }
+
+      // Cache directory URI for automatic future downloads without repeated folder picker
+      try {
+        await AsyncStorage.setItem(SAF_DOWNLOADS_KEY, permissions.directoryUri);
+      } catch {}
+
+      const safUri = await FileSystem.StorageAccessFramework.createFileAsync(
+        permissions.directoryUri,
+        baseName,
+        'text/csv'
+      );
+
+      await FileSystem.StorageAccessFramework.writeAsStringAsync(safUri, csvContent, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+
+      savedUri = safUri;
+      savedToDownloads = true;
+    }
   } else {
     // Non-Android platforms (iOS/web): file is saved in app document/cache storage
     savedToDownloads = true;

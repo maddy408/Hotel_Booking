@@ -25,3 +25,11 @@ export function useUpdateUser() {
 export function useResetPassword() {
   return useMutation({ mutationFn: ({ id, password }) => api.post(`/users/${id}/reset-password`, { password }) });
 }
+
+export function useDeleteUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (userId) => api.delete(`/users/${userId}`),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['users'] }),
+  });
+}

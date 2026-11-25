@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useRooms } from '../api/rooms';
-import { todayIso } from '../lib/format';
+import { todayIso, addDaysIso } from '../lib/format';
 import RoomTile from '../components/RoomTile.jsx';
 import CheckInSheet from '../components/sheets/CheckInSheet.jsx';
 import CheckoutSheet from '../components/sheets/CheckoutSheet.jsx';
@@ -246,7 +246,13 @@ export default function Rooms() {
       </div>
 
       {sheet?.type === 'direct' && (
-        <DirectCheckInPicker rooms={rooms} onClose={() => setSheet(null)} onPick={(room) => setSheet({ type: 'checkin', room })} />
+        <DirectCheckInPicker
+          rooms={rooms}
+          checkIn={today}
+          checkOut={addDaysIso(today, 1)}
+          onClose={() => setSheet(null)}
+          onPick={(room) => setSheet({ type: 'checkin', room })}
+        />
       )}
       {sheet?.type === 'roomDetails' && (
         <RoomDetailsSheet

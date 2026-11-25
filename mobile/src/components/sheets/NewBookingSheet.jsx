@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import Button from '../ui/Button.jsx';
 import { FormErrorBanner, FormField, FieldError, Input, Segmented, Stepper } from '../ui/Field.jsx';
 import ReferredBySelect from '../ReferredBySelect.jsx';
-import { useFreeRooms, useCreateReservation, useUpdateReservation } from '../../api/reservations';
+import { useFreeRooms, useCreateReservation, useUpdateReservation, useUploadReservationDocuments } from '../../api/reservations';
 import { useGuestLookup } from '../../api/guests';
 import { useRoomTypes, useRooms } from '../../api/rooms';
 import { useSettings } from '../../api/settings';
@@ -12,10 +13,10 @@ import { useToast } from '../ToastContext.jsx';
 import { addDaysIso, estimateGstRate, formatGstBreakup, fd, formatCheckoutHour, inr, nightsBetween, todayIso } from '../../lib/format';
 import { BADGE_THEME, getCardDisplay, isRoomBookable } from '../../lib/roomAvailability.js';
 import { api } from '../../lib/apiClient';
-import { useFormValidation, isValidDate } from '../../lib/validation';
+import { useFormValidation, isValidDate, isValidPhone, validatePhone, handlePhoneInputChange, getRoomConfiguredRate } from '../../lib/validation';
 import { colors, fonts, radii } from '../../theme/theme';
 
-export default function NewBookingSheet({ editReservation, presetGuest, preSelectedRoom, onClose }) {
+export default function NewBookingSheet({ editReservation, presetGuest, preSelectedRoom, initialCheckIn, onClose }) {
   const isEdit = Boolean(editReservation?.id || editReservation?.booking_code);
   const initialRoomId = preSelectedRoom?.id || editReservation?.room_id || null;
   const { data: roomTypes } = useRoomTypes();
@@ -23,13 +24,16 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
   const { data: settings } = useSettings();
   const create = useCreateReservation();
   const update = useUpdateReservation();
+  const uploadResDocs = useUploadReservationDocuments();
   const toast = useToast();
   const scrollRef = useRef(null);
+  const [selectedDocs, setSelectedDocs] = useState([]);
 
   const {
     errors,
     formError,
     clearError,
+    setError,
     registerInput,
     registerContainer,
     registerLayout,
@@ -52,12 +56,24 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
 
   const [phone, setPhone] = useState(isEdit ? editReservation.guest_phone || '' : presetGuest?.phone || '');
   const [name, setName] = useState(isEdit ? editReservation.guest_name || '' : presetGuest?.name || '');
-  const [checkIn, setCheckIn] = useState(isEdit ? (editReservation.check_in_date < todayIso() ? todayIso() : editReservation.check_in_date) : addDaysIso(todayIso(), 1));
+  const defaultCheckIn = isEdit
+    ? (editReservation.check_in_date < todayIso() ? todayIso() : editReservation.check_in_date)
+    : (initialCheckIn || todayIso());
+  const [checkIn, setCheckIn] = useState(defaultCheckIn);
   const [days, setDays] = useState(isEdit ? nightsBetween(editReservation.check_in_date, editReservation.check_out_date) : 1);
   const [persons, setPersons] = useState(isEdit ? Number(editReservation.persons) || 1 : 1);
   const [typeFilter, setTypeFilter] = useState('all');
   const [roomId, setRoomId] = useState(initialRoomId);
-  const [rate, setRate] = useState(isEdit ? String(editReservation.rate) : (preSelectedRoom ? String(preSelectedRoom.type_rate || preSelectedRoom.roomType?.rate || '') : ''));
+  const prevRoomIdRef = useRef(initialRoomId);
+
+  const initialTargetRoom = preSelectedRoom
+    || (roomsData?.rooms && roomsData.rooms.find((r) => r.id === initialRoomId))
+    || null;
+  const initialRate = isEdit
+    ? String(editReservation.rate ?? '')
+    : (initialTargetRoom ? String(getRoomConfiguredRate(initialTargetRoom, roomTypes) || initialTargetRoom.type_rate || initialTargetRoom.roomType?.rate || '') : '');
+
+  const [rate, setRate] = useState(initialRate);
   const [advance, setAdvance] = useState(isEdit ? String(editReservation.advance_amount ?? editReservation.advance_paid ?? 0) : '');
   const [pay, setPay] = useState(isEdit ? editReservation.advance_method || 'cash' : 'cash');
   const [notes, setNotes] = useState(isEdit ? editReservation.notes || '' : '');
@@ -104,6 +120,43 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
     }
   }, [freeRooms, roomId, selectableRooms]);
 
+  // Automatically populate and update Room Master rate for pre-book and room changes
+  useEffect(() => {
+    if (isEdit) {
+      if (roomId && prevRoomIdRef.current && prevRoomIdRef.current !== roomId) {
+        const room = (freeRooms && freeRooms.find((r) => r.id === roomId))
+          || (roomsData?.rooms && roomsData.rooms.find((r) => r.id === roomId))
+          || null;
+        if (room) {
+          const configuredRate = getRoomConfiguredRate(room, roomTypes);
+          if (configuredRate > 0) {
+            setRate(String(configuredRate));
+            clearError('rate');
+          }
+        }
+        prevRoomIdRef.current = roomId;
+      }
+      return;
+    }
+
+    if (roomId) {
+      const isRoomChanged = prevRoomIdRef.current !== roomId;
+      const room = (freeRooms && freeRooms.find((r) => r.id === roomId))
+        || (roomsData?.rooms && roomsData.rooms.find((r) => r.id === roomId))
+        || (preSelectedRoom && preSelectedRoom.id === roomId ? preSelectedRoom : null)
+        || null;
+
+      if (room) {
+        const configuredRate = getRoomConfiguredRate(room, roomTypes);
+        if (configuredRate > 0 && (!rate || rate === '0' || isRoomChanged)) {
+          setRate(String(configuredRate));
+          clearError('rate');
+        }
+      }
+      prevRoomIdRef.current = roomId;
+    }
+  }, [isEdit, roomId, roomsData, freeRooms, preSelectedRoom, roomTypes, clearError]);
+
   const readyCount = (freeRooms || []).filter((r) => (r.card_badge || (r.booking_status === 'available_ready' ? 'Ready' : '')) === 'Ready').length;
   const occupiedCount = (freeRooms || []).filter((r) => (r.card_badge || '') === 'Occupied').length;
   const cleaningCount = (freeRooms || []).filter((r) => (r.card_badge || (r.booking_status === 'available_not_ready' ? 'Cleaning' : '')) === 'Cleaning').length;
@@ -140,8 +193,14 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
 
   const isPersonsExceeded = roomMaxPersons != null && Number(persons) > Number(roomMaxPersons);
   const maxPersonsMsg = roomMaxPersons != null
-    ? `This room allows a maximum of ${roomMaxPersons} ${Number(roomMaxPersons) === 1 ? 'person' : 'persons'}.`
+    ? `Maximum ${roomMaxPersons} ${Number(roomMaxPersons) === 1 ? 'person' : 'persons'} allowed for this room.`
     : '';
+
+  useEffect(() => {
+    if (roomId && roomMaxPersons != null && Number(persons) > Number(roomMaxPersons)) {
+      setPersons(Number(roomMaxPersons));
+    }
+  }, [roomId, roomMaxPersons, persons]);
 
   useEffect(() => {
     if (errors.persons && roomMaxPersons != null && Number(persons) <= Number(roomMaxPersons)) {
@@ -149,15 +208,43 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
     }
   }, [persons, roomMaxPersons, errors.persons, clearError]);
 
+  const handlePickDocument = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'],
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.length) return;
+
+      const overSized = result.assets.filter((f) => f.size && f.size > 10 * 1024 * 1024);
+      if (overSized.length > 0) {
+        toast('Document must be 10 MB or smaller.');
+        return;
+      }
+
+      const valid = result.assets.map((f) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+        uri: f.uri,
+        name: f.name,
+        type: f.mimeType || 'application/octet-stream',
+        size: f.size,
+      }));
+      setSelectedDocs((prev) => [...prev, ...valid]);
+    } catch (e) {
+      toast('Could not attach file: ' + e.message);
+    }
+  };
+
+  const removeDoc = (id) => setSelectedDocs((prev) => prev.filter((d) => d.id !== id));
+
   const onSubmit = async () => {
     const isValid = validate(() => {
       const errs = {};
-      const cleanPh = (phone || '').replace(/\D/g, '');
+      const phoneValidation = validatePhone(phone);
 
-      if (!cleanPh) {
-        errs.phone = 'Mobile number is required.';
-      } else if (!/^[6-9]\d{9}$/.test(cleanPh)) {
-        errs.phone = 'Please enter a valid 10-digit mobile number.';
+      if (!phoneValidation.isValid) {
+        errs.phone = phoneValidation.error;
       }
 
       if (!name.trim()) {
@@ -265,11 +352,21 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
           notes: notes ? notes.trim() : null,
           ...sourcePayload,
         });
+        if (selectedDocs.length > 0 && result?.id) {
+          try {
+            await uploadResDocs.mutateAsync({ reservationId: result.id, files: selectedDocs });
+          } catch (_docErr) {
+            // Optional upload failure does not break successful reservation creation
+          }
+        }
         toast(`Booking ${result.booking_code} saved. Room ${result.room_no} on ${fd(result.check_in_date)}.`);
       }
       onClose();
     } catch (err) {
       handleBackendError(err);
+      if (err?.message) {
+        toast(err.message);
+      }
     }
   };
 
@@ -305,11 +402,16 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
             maxLength={10}
             value={phone}
             onChangeText={(v) => {
-              setPhone(v);
-              clearError('phone');
+              const res = handlePhoneInputChange(v, phone);
+              setPhone(res.value);
+              if (res.error) {
+                setError('phone', res.error);
+              } else {
+                clearError('phone');
+              }
             }}
             error={errors.phone}
-            placeholder="10-digit mobile"
+            placeholder="10-digit mobile (starts with 6-9)"
           />
           {matchedGuestId && !isEdit ? <Text style={styles.found}>Old guest found. Name filled in.</Text> : null}
         </FormField>
@@ -444,12 +546,25 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
           <Stepper
             value={Number(persons) || 1}
             min={1}
-            max={20}
+            max={roomMaxPersons != null ? Number(roomMaxPersons) : 20}
+            onExceedMax={(maxLimit) => {
+              toast(`Maximum ${maxLimit} ${Number(maxLimit) === 1 ? 'person' : 'persons'} allowed for this room.`);
+            }}
             onChange={(v) => {
-              clearError('persons');
-              setPersons(v);
+              if (roomMaxPersons != null && v > Number(roomMaxPersons)) {
+                setPersons(Number(roomMaxPersons));
+                toast(`Maximum ${roomMaxPersons} ${Number(roomMaxPersons) === 1 ? 'person' : 'persons'} allowed for this room.`);
+              } else {
+                clearError('persons');
+                setPersons(v);
+              }
             }}
           />
+          {roomMaxPersons != null && (
+            <Text style={[styles.hint, { color: Number(persons) >= Number(roomMaxPersons) ? colors.primary : colors.textSecondary, marginTop: 4 }]}>
+              Maximum {roomMaxPersons} {Number(roomMaxPersons) === 1 ? 'person' : 'persons'} allowed for this room.
+            </Text>
+          )}
         </FormField>
 
         {/* Leaves on */}
@@ -541,7 +656,11 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
                     setInspectedRoomId(r.id);
                     setRoomId(r.id);
                     clearError('roomId');
-                    if (!rateTouched) setRate(String(Number(r.type_rate || r.roomType?.rate || 0)));
+                    const configuredRate = getRoomConfiguredRate(r, roomTypes);
+                    if (configuredRate > 0) {
+                      setRate(String(configuredRate));
+                      clearError('rate');
+                    }
                   }}
                 >
                   <Text style={[styles.roomCardNo, isSelected && { color: '#fff' }]}>{r.room_no}</Text>
@@ -801,6 +920,37 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
           <View style={styles.billRow}><Text style={styles.billLabelTot}>Balance due on arrival</Text><Text style={styles.billValueTot}>{inr(Math.max(0, total - (Number(advance) || 0)))}</Text></View>
         </View>
 
+        {/* Optional ID Document Upload */}
+        <View style={styles.docSection}>
+          <View style={styles.rowBetween}>
+            <Text style={styles.label}>ID Proof Documents (Optional)</Text>
+            <Button
+              title="+ Attach Document"
+              variant="outline"
+              size="sm"
+              onPress={handlePickDocument}
+            />
+          </View>
+          {selectedDocs.map((item) => (
+            <View key={item.id} style={styles.docRow}>
+              <View style={{ flex: 1, marginRight: 8 }}>
+                <Text style={styles.docName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.docMeta}>
+                  {item.type === 'application/pdf' ? 'PDF' : 'Scanned ID'} {item.size ? `· ${(item.size / 1024).toFixed(1)} KB` : ''}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => removeDoc(item.id)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Remove Selected Document"
+              >
+                <Text style={styles.removeFile}>✕</Text>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+
         <Button
           title={isPending ? 'Saving…' : isEdit ? 'Save changes' : 'Confirm booking'}
           variant="primary"
@@ -901,4 +1051,9 @@ const styles = StyleSheet.create({
   readyBanner: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: colors.successBg, borderColor: colors.successBorder, borderWidth: 1, borderRadius: radii.sm, padding: 8, marginTop: 8 },
   readyBannerText: { flex: 1, fontFamily: fonts.bodySemibold, fontSize: 11.5, color: colors.success },
   bannerIcon: { fontSize: 14 },
+  docSection: { gap: 6, marginVertical: 4 },
+  docRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radii.sm, padding: 8 },
+  docName: { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.text },
+  docMeta: { fontFamily: fonts.mono, fontSize: 10, color: colors.textSecondary, marginTop: 1 },
+  removeFile: { fontSize: 16, color: colors.danger },
 });

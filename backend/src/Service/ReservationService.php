@@ -76,15 +76,20 @@ final class ReservationService
             }
             if ($checkIn <= $today) {
                 $activeStay = $this->stays->findInHouseByRoom($roomId, true);
-                if ($activeStay !== null && $activeStay['checkout_planned'] > $checkIn) {
+                if ($activeStay !== null) {
                     throw ApiException::conflict("Room {$room['room_no']} is already occupied by another active stay. Complete the previous checkout before assigning this room.");
                 }
             }
 
             // Enforce max_persons
+            if ($persons < 1) {
+                $msg = 'Persons count must be a positive whole number.';
+                throw ApiException::validation(['persons' => $msg], $msg);
+            }
             $maxPersons = (int) ($room['max_persons'] ?? 2);
             if ($persons > $maxPersons) {
-                $msg = "This room allows a maximum of {$maxPersons} persons.";
+                $unit = $maxPersons === 1 ? 'person' : 'persons';
+                $msg = "This room allows a maximum of {$maxPersons} {$unit}.";
                 throw ApiException::validation(['persons' => $msg], $msg);
             }
 
@@ -187,15 +192,20 @@ final class ReservationService
             }
             if ($checkIn <= $today) {
                 $activeStay = $this->stays->findInHouseByRoom($roomId, true);
-                if ($activeStay !== null && $activeStay['checkout_planned'] > $checkIn) {
+                if ($activeStay !== null && (int) ($activeStay['reservation_id'] ?? 0) !== $reservationId) {
                     throw ApiException::conflict("Room {$room['room_no']} is already occupied by another active stay. Complete the previous checkout before assigning this room.");
                 }
             }
 
             // Enforce max_persons
+            if ($persons < 1) {
+                $msg = 'Persons count must be a positive whole number.';
+                throw ApiException::validation(['persons' => $msg], $msg);
+            }
             $maxPersons = (int) ($room['max_persons'] ?? 2);
             if ($persons > $maxPersons) {
-                $msg = "This room allows a maximum of {$maxPersons} persons.";
+                $unit = $maxPersons === 1 ? 'person' : 'persons';
+                $msg = "This room allows a maximum of {$maxPersons} {$unit}.";
                 throw ApiException::validation(['persons' => $msg], $msg);
             }
 
@@ -721,10 +731,14 @@ final class ReservationService
         return (string) ($reservation['check_in_date'] ?? '') < $today;
     }
 
-    public function list(int $hotelId): array
+    public function list(int $hotelId, ?string $status = null): array
     {
         $today = $this->hotelToday($hotelId);
-        $list = $this->reservations->listPending($hotelId);
+        if ($status === 'all') {
+            $list = $this->reservations->listAll($hotelId);
+        } else {
+            $list = $this->reservations->listPending($hotelId);
+        }
         foreach ($list as &$res) {
             $isOverdue = ($res['status'] === 'pending' && (string) $res['check_in_date'] < $today);
             $res['is_overdue'] = $isOverdue;

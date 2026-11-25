@@ -20,7 +20,7 @@ export class ApiError extends Error {
     const fieldMessages = fields ? Object.values(fields).filter(Boolean) : [];
     // The backend's top-level message for a 422 is just "Validation failed" — the useful
     // detail is in `fields`. Fold it into the displayed message so toasts/forms are helpful.
-    const combined = fieldMessages.length ? fieldMessages.join(' ') : message;
+    const combined = (status === 422 && fieldMessages.length) ? fieldMessages.join(' ') : message;
     super(combined);
     this.status = status;
     this.code = code;

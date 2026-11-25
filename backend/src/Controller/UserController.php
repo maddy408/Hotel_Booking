@@ -111,4 +111,14 @@ final class UserController
         );
         return ['reset' => true];
     }
+
+    public function delete(Request $request): array
+    {
+        $this->users->delete(
+            (int) $request->routeParams['id'],
+            (int) $request->attribute('hotelId'),
+            (int) $request->attribute('userId'),
+        );
+        return ['deleted' => true];
+    }
 }

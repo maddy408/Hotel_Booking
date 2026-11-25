@@ -1,8 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '../lib/apiClient';
 
-export function useReservations() {
-  return useQuery({ queryKey: ['reservations'], queryFn: () => api.get('/reservations'), refetchInterval: 30000 });
+export function useReservations(params) {
+  const query = params ? `?${new URLSearchParams(params).toString()}` : '';
+  return useQuery({ queryKey: ['reservations', params], queryFn: () => api.get(`/reservations${query}`), refetchInterval: 30000 });
 }
 
 export function useReservation(id) {

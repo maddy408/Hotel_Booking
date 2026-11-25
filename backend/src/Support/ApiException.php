@@ -52,9 +52,9 @@ class ApiException extends \RuntimeException
         return new self($message, 403, 'forbidden');
     }
 
-    public static function conflict(string $message): self
+    public static function conflict(string $message, string $errorCode = 'conflict', ?array $fields = null): self
     {
-        return new self($message, 409, 'conflict');
+        return new self($message, 409, $errorCode, $fields);
     }
 
     /** @param array<string,string> $fields */

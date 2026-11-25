@@ -107,11 +107,12 @@ function RoomTypesPanel() {
   };
 
   const removeType = async (t) => {
+    if (!window.confirm(`Are you sure you want to delete room type "${t.name}"?`)) return;
     try {
       await deleteType.mutateAsync(t.id);
       toast(`${t.name} removed.`);
     } catch (err) {
-      toast(err.message);
+      toast(err.message || 'Cannot delete room type.');
     }
   };
 
@@ -298,16 +299,12 @@ function RoomsPanel() {
   };
 
   const onDelete = async (room) => {
-    if (armed !== room.id) {
-      setArmed(room.id);
-      toast(`Tap × again to remove Room ${room.roomNo}.`);
-      return;
-    }
+    if (!window.confirm(`Are you sure you want to delete Room ${room.roomNo}? This cannot be undone.`)) return;
     try {
       await deleteRoom.mutateAsync(room.id);
       toast(`Room ${room.roomNo} removed.`);
     } catch (err) {
-      toast(err.message);
+      toast(err.message || 'Cannot delete room.');
     } finally {
       setArmed(null);
     }

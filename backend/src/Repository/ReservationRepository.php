@@ -51,6 +51,7 @@ class ReservationRepository
             $sql .= ' AND reservations.id != :exclude_id';
             $params['exclude_id'] = $excludeId;
         }
+        $sql .= ' LOCK IN SHARE MODE';
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         return $stmt->fetchAll();
@@ -177,6 +178,28 @@ class ReservationRepository
         $this->db->prepare("UPDATE reservations SET status = 'checked_in' WHERE id = :id")->execute(['id' => $id]);
     }
 
+    public function markCheckedOut(int $id): void
+    {
+        $this->db->prepare("UPDATE reservations SET status = 'checked_out' WHERE id = :id")->execute(['id' => $id]);
+    }
+
+    public function findCheckedInByRoom(int $roomId, bool $lockForUpdate = false): ?array
+    {
+        $sql = "SELECT r.*, g.name AS guest_name
+                FROM reservations r
+                JOIN guests g ON g.id = r.guest_id
+                JOIN stays s ON s.reservation_id = r.id AND s.status = 'in_house'
+                WHERE r.room_id = :room_id AND r.status = 'checked_in'
+                LIMIT 1";
+        if ($lockForUpdate) {
+            $sql .= ' FOR UPDATE';
+        }
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(['room_id' => $roomId]);
+        $row = $stmt->fetch();
+        return $row === false ? null : $row;
+    }
+
     public function cancel(int $id, string $reason, float $cancellationFee = 0.0, float $refundableAmount = 0.0, ?int $cancelledBy = null): void
     {
         $this->db->prepare(
@@ -198,13 +221,14 @@ class ReservationRepository
         $this->db->prepare("UPDATE reservations SET status = 'no_show' WHERE id = :id")->execute(['id' => $id]);
     }
 
-    /** @return array<int,array<string,mixed>> all live (pending) bookings for a hotel, with guest/room info and actual successful advance paid */
+    /** @return array<int,array<string,mixed>> all live (pending) bookings for a hotel, with guest/room/stay info and actual successful advance paid */
     public function listPending(int $hotelId): array
     {
         $stmt = $this->db->prepare(
             "SELECT b.*, g.name AS guest_name, g.phone AS guest_phone, r.room_no, r.housekeeping_status,
                     rt.max_persons, rt.name AS room_type_name,
                     ref_g.name AS referred_by_guest_name, ref_g.phone AS referred_by_guest_phone,
+                    s.id AS stay_id, s.status AS stay_status, s.checkout_actual, s.checkout_planned,
                     COALESCE((
                         SELECT SUM(CASE WHEN p.type = 'refund' THEN -p.amount ELSE p.amount END)
                         FROM payments p
@@ -214,8 +238,35 @@ class ReservationRepository
              JOIN guests g ON g.id = b.guest_id
              JOIN rooms r ON r.id = b.room_id
              JOIN room_types rt ON rt.id = r.room_type_id
+             LEFT JOIN stays s ON s.reservation_id = b.id
              LEFT JOIN guests ref_g ON ref_g.id = b.referred_by_guest_id
              WHERE b.hotel_id = :hotel_id AND b.status = 'pending'
+             ORDER BY b.check_in_date, r.room_no"
+        );
+        $stmt->execute(['hotel_id' => $hotelId]);
+        return $stmt->fetchAll();
+    }
+
+    /** @return array<int,array<string,mixed>> all bookings for a hotel across all statuses, with guest/room/stay info and actual advance paid */
+    public function listAll(int $hotelId): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT b.*, g.name AS guest_name, g.phone AS guest_phone, r.room_no, r.housekeeping_status,
+                    rt.max_persons, rt.name AS room_type_name,
+                    ref_g.name AS referred_by_guest_name, ref_g.phone AS referred_by_guest_phone,
+                    s.id AS stay_id, s.status AS stay_status, s.checkout_actual, s.checkout_planned,
+                    COALESCE((
+                        SELECT SUM(CASE WHEN p.type = 'refund' THEN -p.amount ELSE p.amount END)
+                        FROM payments p
+                        WHERE p.reservation_id = b.id AND p.type IN ('advance', 'refund') AND p.status = 'successful'
+                    ), 0) AS advance_paid
+             FROM reservations b
+             JOIN guests g ON g.id = b.guest_id
+             JOIN rooms r ON r.id = b.room_id
+             JOIN room_types rt ON rt.id = r.room_type_id
+             LEFT JOIN stays s ON s.reservation_id = b.id
+             LEFT JOIN guests ref_g ON ref_g.id = b.referred_by_guest_id
+             WHERE b.hotel_id = :hotel_id
              ORDER BY b.check_in_date, r.room_no"
         );
         $stmt->execute(['hotel_id' => $hotelId]);
@@ -247,6 +298,7 @@ class ReservationRepository
             "SELECT b.*, g.name AS guest_name, g.phone AS guest_phone, r.room_no, r.housekeeping_status,
                     rt.max_persons, rt.name AS room_type_name, u_cb.name AS cancelled_by_name,
                     ref_g.name AS referred_by_guest_name, ref_g.phone AS referred_by_guest_phone,
+                    s.id AS stay_id, s.status AS stay_status, s.checkout_actual, s.checkout_planned,
                     COALESCE((
                         SELECT SUM(CASE WHEN p.type = 'refund' THEN -p.amount ELSE p.amount END)
                         FROM payments p
@@ -256,6 +308,7 @@ class ReservationRepository
              JOIN guests g ON g.id = b.guest_id
              JOIN rooms r ON r.id = b.room_id
              JOIN room_types rt ON rt.id = r.room_type_id
+             LEFT JOIN stays s ON s.reservation_id = b.id
              LEFT JOIN users u_cb ON u_cb.id = b.cancelled_by
              LEFT JOIN guests ref_g ON ref_g.id = b.referred_by_guest_id
              WHERE b.id = :id"

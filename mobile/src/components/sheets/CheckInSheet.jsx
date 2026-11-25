@@ -1,7 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
-import { Alert, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import Button from '../ui/Button.jsx';
@@ -14,16 +13,11 @@ import { useRooms, useHousekeepingAction } from '../../api/rooms';
 import { useSettings } from '../../api/settings';
 import { useToast } from '../ToastContext.jsx';
 import { addDaysIso, estimateGstRate, formatGstBreakup, fd, formatCheckoutHour, inr, todayIso } from '../../lib/format';
-import { useFormValidation } from '../../lib/validation';
+import { useFormValidation, validatePhone, isValidPhone, handlePhoneInputChange, cleanPhone10 } from '../../lib/validation';
 import { colors, fonts, radii } from '../../theme/theme';
 
 const IDS = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport'];
 const ADVANCE_REQUIRED_MSG = 'Please enter and collect the advance amount before check-in.';
-
-const cleanPhone10 = (raw) => {
-  const digits = String(raw || '').replace(/\D/g, '');
-  return digits.length > 10 ? digits.slice(-10) : digits;
-};
 
 const MIME_EXT_MAP = {
   jpg: 'image/jpeg',
@@ -212,38 +206,25 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
     const num = Number(newCount);
     if (isNaN(num) || num < 1 || !Number.isInteger(num)) return;
     if (roomMaxPersons != null && num > Number(roomMaxPersons)) {
-      setServerPersonsError(`This room allows a maximum of ${roomMaxPersons} persons.`);
+      setServerPersonsError(`Maximum ${roomMaxPersons} ${Number(roomMaxPersons) === 1 ? 'person' : 'persons'} allowed for this room.`);
       return;
     }
     const currentCount = occupants.length;
     if (num === currentCount) return;
 
     if (num < currentCount) {
-      const removedEntries = occupants.slice(num);
-      const hasData = removedEntries.some((o) => (o.name && o.name.trim()) || (o.phone && o.phone.trim()) || (o.gender && o.gender.trim()));
-      const doShrink = () => {
-        setOccupants((prev) => prev.slice(0, num));
-        setOccupantErrors((prev) => {
-          const next = { ...prev };
-          for (let i = num; i < currentCount; i++) delete next[i];
-          return next;
-        });
-        setSelectedFiles((prev) => prev.map((f) => (f.occupantTarget != null && f.occupantTarget >= num ? { ...f, occupantTarget: num === 1 ? 0 : null } : f)));
-        setPreBookingAssignments((prev) => {
-          const next = { ...prev };
-          for (const docId in next) if (next[docId] != null && next[docId] >= num) next[docId] = num === 1 ? 0 : null;
-          return next;
-        });
-      };
-      if (hasData) {
-        Alert.alert(
-          'Remove occupant details?',
-          `Changing persons count from ${currentCount} to ${num} will remove details for Person ${num + 1}${currentCount > num + 1 ? ` to ${currentCount}` : ''}.`,
-          [{ text: 'Cancel', style: 'cancel' }, { text: 'Proceed', style: 'destructive', onPress: doShrink }]
-        );
-      } else {
-        doShrink();
-      }
+      setOccupants((prev) => prev.slice(0, num));
+      setOccupantErrors((prev) => {
+        const next = { ...prev };
+        for (let i = num; i < currentCount; i++) delete next[i];
+        return next;
+      });
+      setSelectedFiles((prev) => prev.map((f) => (f.occupantTarget != null && f.occupantTarget >= num ? { ...f, occupantTarget: num === 1 ? 0 : null } : f)));
+      setPreBookingAssignments((prev) => {
+        const next = { ...prev };
+        for (const docId in next) if (next[docId] != null && next[docId] >= num) next[docId] = num === 1 ? 0 : null;
+        return next;
+      });
     } else {
       setOccupants((prev) => {
         const next = [...prev];
@@ -255,7 +236,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
 
   const personCount = occupants.length;
   const isPersonsExceeded = roomMaxPersons != null && personCount > Number(roomMaxPersons);
-  const personsError = isPersonsExceeded ? `This room allows a maximum of ${roomMaxPersons} persons.` : serverPersonsError;
+  const personsError = isPersonsExceeded ? `Maximum ${roomMaxPersons} ${Number(roomMaxPersons) === 1 ? 'person' : 'persons'} allowed for this room.` : serverPersonsError;
 
   const [advanceSubmitted, setAdvanceSubmitted] = useState(triggerAdvanceError);
   const [serverAdvanceError, setServerAdvanceError] = useState('');
@@ -397,40 +378,6 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
     }
   };
 
-  const pickPhoto = async (occupantTarget) => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        quality: 0.8,
-      });
-      if (result.canceled || !result.assets || !result.assets[0]) return;
-      const asset = result.assets[0];
-      if (asset.fileSize && asset.fileSize > 10 * 1024 * 1024) {
-        const msg = 'Photo must be 10 MB or smaller.';
-        toast(msg);
-        Alert.alert('File Too Large', msg);
-        return;
-      }
-      const cleanName = sanitizeFileName(asset.fileName || `id-photo-${Date.now()}.jpg`);
-      const type = asset.mimeType || 'image/jpeg';
-      const uri = formatFileUri(asset.uri);
-
-      const valid = {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-        uri,
-        name: cleanName,
-        type,
-        size: asset.fileSize,
-        isImage: true,
-        occupantTarget: occupantTarget != null ? occupantTarget : (occupants.length === 1 ? 0 : null),
-      };
-      setSelectedFiles((prev) => [...prev, valid]);
-    } catch (e) {
-      toast('Could not pick photo: ' + e.message);
-    }
-  };
-
   const removeFile = (id) => setSelectedFiles((prev) => prev.filter((f) => f.id !== id));
 
   const handleCollectAdvance = async () => {
@@ -478,11 +425,9 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
     }
 
     if (!isFromReservation) {
-      const cleanPh = (phone || '').replace(/\D/g, '');
-      if (!cleanPh) {
-        validationErrs.phone = 'Mobile number is required.';
-      } else if (!/^[6-9]\d{9}$/.test(cleanPh)) {
-        validationErrs.phone = 'Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.';
+      const phoneValidation = validatePhone(phone);
+      if (!phoneValidation.isValid) {
+        validationErrs.phone = phoneValidation.error;
       }
       if (!name.trim()) {
         validationErrs.name = 'Enter guest name.';
@@ -512,7 +457,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
       const errs = {};
       if (!(occ.name || '').trim()) { errs.name = 'Name is required.'; hasOccErrors = true; }
       if (!['Male', 'Female', 'Other'].includes((occ.gender || '').trim())) { errs.gender = 'Gender is required.'; hasOccErrors = true; }
-      if (cleanPhone10(occ.phone).length !== 10) { errs.phone = '10-digit phone number is required.'; hasOccErrors = true; }
+      if (!validatePhone(occ.phone).isValid) { errs.phone = 'Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.'; hasOccErrors = true; }
       if (Object.keys(errs).length > 0) occErrors[idx] = errs;
     });
     if (hasOccErrors) {
@@ -783,7 +728,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
               onLayout={registerLayout('phone')}
               label="Mobile number"
               required
-              error={errors.phone || (phoneTouched && !/^[6-9]\d{9}$/.test(phone || '') ? 'Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.' : '')}
+              error={errors.phone || (phoneTouched && !isValidPhone(phone) ? 'Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.' : '')}
             >
               <Input
                 ref={registerInput('phone')}
@@ -792,11 +737,16 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
                 placeholder="10 digits (6-9)"
                 value={phone}
                 onChangeText={(v) => {
-                  setPhone(v);
-                  clearError('phone');
+                  const res = handlePhoneInputChange(v, phone);
+                  setPhone(res.value);
+                  if (res.error) {
+                    setError('phone', res.error);
+                  } else {
+                    clearError('phone');
+                  }
                 }}
                 onBlur={() => setPhoneTouched(true)}
-                error={Boolean(errors.phone || (phoneTouched && !/^[6-9]\d{9}$/.test(phone || '')))}
+                error={Boolean(errors.phone || (phoneTouched && !isValidPhone(phone)))}
               />
               {matchedGuestId ? <Text style={styles.found}>Old guest found. Details filled in.</Text> : null}
             </FormField>
@@ -898,8 +848,20 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
             <Text style={styles.label}>Actual Persons Count *</Text>
             <Text style={styles.hint}>Max {roomMaxPersons}</Text>
           </View>
-          <Stepper value={occupants.length} min={1} max={roomMaxPersons} onChange={handlePersonsChange} />
-          {personsError ? <Text style={styles.err}>{personsError}</Text> : null}
+          <Stepper
+            value={occupants.length}
+            min={1}
+            max={roomMaxPersons}
+            onExceedMax={(maxLimit) => setServerPersonsError(`Maximum ${maxLimit} ${Number(maxLimit) === 1 ? 'person' : 'persons'} allowed for this room.`)}
+            onChange={handlePersonsChange}
+          />
+          {personsError ? (
+            <Text style={styles.err}>{personsError}</Text>
+          ) : (roomMaxPersons != null && occupants.length >= Number(roomMaxPersons)) ? (
+            <Text style={[styles.hint, { color: colors.primary, marginTop: 4 }]}>
+              Maximum {roomMaxPersons} {Number(roomMaxPersons) === 1 ? 'person' : 'persons'} allowed for this room.
+            </Text>
+          ) : null}
         </View>
 
         <View ref={registerContainer('occupants')} onLayout={registerLayout('occupants')} style={{ gap: 8 }}>
@@ -940,7 +902,12 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
                   maxLength={10}
                   value={occ.phone}
                   onChangeText={(v) => {
-                    handleOccupantFieldChange(idx, 'phone', v.replace(/\D/g, '').slice(0, 10));
+                    const res = handlePhoneInputChange(v, occ.phone || '');
+                    handleOccupantFieldChange(idx, 'phone', res.value);
+                    setOccupantErrors((prev) => ({
+                      ...prev,
+                      [idx]: { ...(prev[idx] || {}), phone: res.error || null },
+                    }));
                     clearError('occupants');
                   }}
                   error={occErr.phone}
@@ -948,41 +915,40 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
                 />
                 {occErr.phone ? <FieldError style={{ marginBottom: 8 }}>{occErr.phone}</FieldError> : null}
 
-                {/* Dedicated Choose File Button and Upload Area */}
+                {/* Dedicated Document Picker Button and Upload Area */}
                 <View ref={idx === 0 ? registerContainer('documents') : undefined} onLayout={idx === 0 ? registerLayout('documents') : undefined} style={styles.uploadSection}>
                   <Text style={styles.subLabel}>ID Proof Document *</Text>
-                  <View style={{ flexDirection: 'row', gap: 6 }}>
-                    <Pressable
-                      style={[styles.chooseFileBtn, { flex: 1 }, docCount > 0 ? styles.chooseFileBtnSuccess : styles.chooseFileBtnActive]}
-                      onPress={() => pickDocument(idx)}
-                    >
-                      <Text style={styles.chooseFileIcon}>📎</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.chooseFileTitle} numberOfLines={1}>
-                          {docCount > 0 ? `Attach Doc (P${idx + 1})` : `Choose File / Upload ID (P${idx + 1})`}
-                        </Text>
-                        <Text style={styles.chooseFileSubtitle}>PDF or Doc</Text>
-                      </View>
-                    </Pressable>
-                    <Pressable
-                      style={[styles.chooseFileBtn, { flex: 1 }, docCount > 0 ? styles.chooseFileBtnSuccess : styles.chooseFileBtnActive]}
-                      onPress={() => pickPhoto(idx)}
-                    >
-                      <Text style={styles.chooseFileIcon}>📷</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.chooseFileTitle} numberOfLines={1}>
-                          Upload Photo (P{idx + 1})
-                        </Text>
-                        <Text style={styles.chooseFileSubtitle}>Gallery / Photo</Text>
-                      </View>
-                    </Pressable>
-                  </View>
+                  <Pressable
+                    style={[styles.chooseFileBtn, docCount > 0 ? styles.chooseFileBtnSuccess : styles.chooseFileBtnActive]}
+                    onPress={() => pickDocument(idx)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Upload ID Document for Person ${idx + 1}`}
+                  >
+                    <Text style={styles.chooseFileIcon}>📎</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.chooseFileTitle}>
+                        {docCount > 0 ? `Attach Document (P${idx + 1})` : `Upload ID Document (P${idx + 1})`}
+                      </Text>
+                      <Text style={styles.chooseFileSubtitle}>PDF, JPEG, PNG, WebP (max 10 MB)</Text>
+                    </View>
+                  </Pressable>
 
                   {/* Attached files list for this occupant */}
                   {occFiles.map((file) => (
                     <View key={file.id} style={styles.occFilePill}>
-                      <Text style={styles.occFileName} numberOfLines={1}>📄 {file.name}</Text>
-                      <Pressable onPress={() => removeFile(file.id)} hitSlop={8} style={styles.occFileDelete}>
+                      <View style={{ flex: 1, marginRight: 8 }}>
+                        <Text style={styles.occFileName} numberOfLines={1}>📄 {file.name}</Text>
+                        <Text style={styles.occFileMeta}>
+                          {file.type === 'application/pdf' ? 'PDF' : 'Scanned ID'} {file.size ? `· ${(file.size / 1024).toFixed(1)} KB` : ''}
+                        </Text>
+                      </View>
+                      <Pressable
+                        onPress={() => removeFile(file.id)}
+                        hitSlop={8}
+                        style={styles.occFileDelete}
+                        accessibilityRole="button"
+                        accessibilityLabel="Remove Selected Document"
+                      >
                         <Text style={styles.occFileDeleteText}>✕</Text>
                       </Pressable>
                     </View>
@@ -1019,16 +985,28 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
 
         {selectedFiles.length > 0 && (
           <View style={{ gap: 6 }}>
-            <Text style={styles.label}>Uploaded ID Documents ({selectedFiles.length})</Text>
+            <Text style={styles.label}>Selected ID Documents ({selectedFiles.length})</Text>
             {selectedFiles.map((item) => (
               <View key={item.id} style={styles.fileRow}>
-                <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={styles.fileName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={styles.fileMeta}>
+                    {item.type === 'application/pdf' ? 'PDF' : 'Scanned ID'} {item.size ? `· ${(item.size / 1024).toFixed(1)} KB` : ''}
+                  </Text>
+                </View>
                 <Segmented
                   options={occupants.map((occ, i) => ({ value: i, label: `P${i + 1}` }))}
                   value={item.occupantTarget}
                   onChange={(v) => setSelectedFiles((prev) => prev.map((f) => (f.id === item.id ? { ...f, occupantTarget: v } : f)))}
                 />
-                <Pressable onPress={() => removeFile(item.id)} hitSlop={8}><Text style={styles.removeFile}>✕</Text></Pressable>
+                <Pressable
+                  onPress={() => removeFile(item.id)}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Remove Selected Document"
+                >
+                  <Text style={styles.removeFile}>✕</Text>
+                </Pressable>
               </View>
             ))}
           </View>
@@ -1179,7 +1157,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(34, 197, 94, 0.05)',
   },
   chooseFileIcon: { fontSize: 20 },
-  chooseFileTitle: { fontFamily: fonts.bodyBold, fontSize: 12.5, color: colors.heading },
+  chooseFileTitle: { fontFamily: fonts.bodyBold, fontSize: 12.5, color: colors.heading, flexShrink: 1, flexWrap: 'wrap' },
   chooseFileSubtitle: { fontFamily: fonts.body, fontSize: 10.5, color: colors.textSecondary, marginTop: 1 },
   occFilePill: {
     flexDirection: 'row',
@@ -1194,13 +1172,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   occFileName: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 11.5, color: colors.text, marginRight: 8 },
+  occFileMeta: { fontFamily: fonts.mono, fontSize: 10, color: colors.textSecondary, marginTop: 1 },
   occFileDelete: { padding: 4 },
   occFileDeleteText: { fontSize: 13, color: colors.danger, fontWeight: '700' },
-  docOk: { fontFamily: fonts.bodySemibold, fontSize: 11.5, color: colors.success },
-  docMissing: { fontFamily: fonts.bodySemibold, fontSize: 11.5, color: colors.danger },
+  docOk: { fontFamily: fonts.bodySemibold, fontSize: 11.5, color: colors.success, flexShrink: 1, flexWrap: 'wrap' },
+  docMissing: { fontFamily: fonts.bodySemibold, fontSize: 11.5, color: colors.danger, flexShrink: 1, flexWrap: 'wrap' },
   docAction: { fontFamily: fonts.bodyBold, fontSize: 12, color: colors.primary },
   fileRow: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border, borderRadius: radii.sm, padding: 8 },
   fileName: { flex: 1, fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.text },
+  fileMeta: { fontFamily: fonts.mono, fontSize: 10, color: colors.textSecondary, marginTop: 1 },
   removeFile: { fontSize: 16, color: colors.danger },
   warn: { backgroundColor: colors.warningBg, borderWidth: 1, borderColor: colors.warningBorder, borderRadius: radii.md, padding: 10 },
   warnDanger: { backgroundColor: colors.dangerBg, borderColor: colors.dangerBorder },

@@ -319,4 +319,69 @@ final class CheckoutWorkflowThreeFlowsTest extends TestCase
             $this->assertArrayHasKey('actualCheckoutDate', (array) $e->getFields());
         }
     }
+
+    public function testCheckoutReturnsCompleteBillInvoiceAndStayAndListDoneIncludesInvoiceId(): void
+    {
+        $checkIn = '2026-11-10';
+        $plannedOut = '2026-11-12';
+        $stayId = $this->stayRepo->create(
+            self::HOTEL_ID, null, $this->room101Id, $this->guestId, 2, 2000.00, $checkIn, $plannedOut, 1
+        );
+        // Advance paid: 1000. Total is 2 nights * 2000 = 4000 + 5% GST (200) = 4200. Outstanding: 3200
+        $this->paymentRepo->record(self::HOTEL_ID, null, $stayId, 'advance', 1000.00, 'upi', 1);
+
+        $result = $this->stayService->checkout(
+            $stayId,
+            self::HOTEL_ID,
+            'upi',
+            null,
+            1,
+            3200.00,
+            '2026-11-12'
+        );
+
+        // Verify order and completeness of returned data
+        $this->assertArrayHasKey('stay', $result);
+        $this->assertArrayHasKey('bill', $result);
+        $this->assertArrayHasKey('invoice', $result);
+        $this->assertArrayHasKey('payments', $result);
+
+        $this->assertSame('checked_out', $result['stay']['status']);
+        $this->assertSame(4200.00, (float) $result['bill']['total']);
+        $this->assertNotEmpty($result['invoice']['invoice_number']);
+        $this->assertSame(4200.00, (float) $result['invoice']['total_amount']);
+        $this->assertGreaterThan(0, (int) $result['invoice']['id']);
+
+        // Verify listDoneForHotel includes invoice_id
+        $doneList = $this->stayRepo->listDoneForHotel(self::HOTEL_ID);
+        $this->assertNotEmpty($doneList);
+        $found = null;
+        foreach ($doneList as $item) {
+            if ((int) $item['id'] === $stayId) {
+                $found = $item;
+                break;
+            }
+        }
+        $this->assertNotNull($found);
+        $this->assertArrayHasKey('invoice_id', $found);
+        $this->assertSame((int) $result['invoice']['id'], (int) $found['invoice_id']);
+        $this->assertSame($result['invoice']['invoice_number'], $found['invoice_number']);
+
+        // Duplicate checkout must fail and be blocked
+        try {
+            $this->stayService->checkout(
+                $stayId,
+                self::HOTEL_ID,
+                'upi',
+                null,
+                1,
+                0.0,
+                '2026-11-12'
+            );
+            $this->fail('Expected conflict exception on duplicate checkout');
+        } catch (ApiException $e) {
+            $this->assertSame(409, $e->getStatus());
+            $this->assertStringContainsString('already checked out', $e->getMessage());
+        }
+    }
 }

@@ -264,7 +264,7 @@ export default function TodayCheckouts() {
                 aria-pressed={statusFilter === 'all'}
                 onClick={() => setStatusFilter('all')}
               >
-                All ({activeTab === 'checkins' ? checkinStats.total : checkoutStats.total})
+                All ({activeTab === 'checkins' ? (checkinStats.all_count ?? (data?.checkins?.length || checkinStats.total)) : (checkoutStats.all_count ?? (data?.checkouts?.length || checkoutStats.total))})
               </button>
               <button
                 type="button"
@@ -298,7 +298,7 @@ export default function TodayCheckouts() {
 
             <span className="muted" style={{ fontSize: 13 }}>
               Showing {activeTab === 'checkins' ? filteredCheckins.length : filteredCheckouts.length} of{' '}
-              {activeTab === 'checkins' ? checkinStats.total : checkoutStats.total}
+              {activeTab === 'checkins' ? (checkinStats.all_count ?? (data?.checkins?.length || checkinStats.total)) : (checkoutStats.all_count ?? (data?.checkouts?.length || checkoutStats.total))}
             </span>
           </div>
         </div>

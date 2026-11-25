@@ -41,10 +41,19 @@ class StayChargeRepository
         return (int) $this->db->lastInsertId();
     }
 
-    public function remove(int $id, int $stayId): void
+    public function find(int $id): ?array
     {
-        $this->db->prepare('DELETE FROM stay_charges WHERE id = :id AND stay_id = :stay_id')
-            ->execute(['id' => $id, 'stay_id' => $stayId]);
+        $stmt = $this->db->prepare('SELECT * FROM stay_charges WHERE id = :id');
+        $stmt->execute(['id' => $id]);
+        $row = $stmt->fetch();
+        return $row === false ? null : $row;
+    }
+
+    public function remove(int $id, int $stayId): bool
+    {
+        $stmt = $this->db->prepare('DELETE FROM stay_charges WHERE id = :id AND stay_id = :stay_id');
+        $stmt->execute(['id' => $id, 'stay_id' => $stayId]);
+        return $stmt->rowCount() > 0;
     }
 
     /** @return array<int,array<string,mixed>> */

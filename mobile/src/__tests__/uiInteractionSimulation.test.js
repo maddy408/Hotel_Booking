@@ -64,12 +64,11 @@ describe('Mobile UI Interaction & Control Flow Tests', () => {
     const checkInPath = path.join(srcDir, 'components', 'sheets', 'CheckInSheet.jsx');
     const pickerContent = fs.readFileSync(pickerPath, 'utf8');
     const checkInContent = fs.readFileSync(checkInPath, 'utf8');
-
     assert.ok(pickerContent.includes('onPick'), 'Picker must trigger onPick on room select');
     assert.ok(checkInContent.includes('buttonTitle'), 'CheckInSheet must bind dynamic check-in button');
     assert.ok(checkInContent.includes('handlePersonsChange') && checkInContent.includes('Stepper'), 'Must allow setting persons and occupants via Stepper');
     assert.ok(checkInContent.includes('DocumentPicker') || checkInContent.includes('pickDocument'), 'Must support document picking');
-    assert.ok(checkInContent.includes('ImagePicker') || checkInContent.includes('pickPhoto'), 'Must support camera/photo upload');
+    assert.ok(!checkInContent.includes('ImagePicker') && !checkInContent.includes('pickPhoto'), 'Must not have separate photo picker');
     assert.ok(checkInContent.includes('ADVANCE_REQUIRED_MSG'), 'Must enforce advance collection before checkin');
   });
 
@@ -133,7 +132,8 @@ describe('Mobile UI Interaction & Control Flow Tests', () => {
     const detailsContent = fs.readFileSync(detailsPath, 'utf8');
 
     assert.ok(guestsContent.includes('SearchInput'), 'Must support guest search');
-    assert.ok(detailsContent.includes('handlePickIdPhoto'), 'Must support picking ID photo');
+    assert.ok(detailsContent.includes('handlePickDocument'), 'Must support picking ID document');
+    assert.ok(!detailsContent.includes('ImagePicker'), 'Must not import ImagePicker');
     assert.ok(detailsContent.includes('GuestEditSheet'), 'Must connect to GuestEditSheet');
     assert.ok(detailsContent.includes('DocumentViewerSheet'), 'Must connect to DocumentViewerSheet');
   });

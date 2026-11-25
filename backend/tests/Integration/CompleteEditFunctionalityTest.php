@@ -360,7 +360,7 @@ final class CompleteEditFunctionalityTest extends TestCase
 
         // Try to update booking2 so it overlaps booking1
         $this->expectException(ApiException::class);
-        $this->expectExceptionMessage('already booked for part of those dates');
+        $this->expectExceptionMessage('This room is already booked for these dates. Please select another room.');
 
         $this->reservationService->update(
             (int) $booking2['id'],

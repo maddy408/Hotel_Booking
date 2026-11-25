@@ -123,4 +123,44 @@ final class UserRepository
         $this->db->prepare('UPDATE users SET password_hash = :hash WHERE id = :id')
             ->execute(['hash' => $passwordHash, 'id' => $id]);
     }
+
+    public function countActiveAdmins(int $hotelId): int
+    {
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM users u
+             JOIN roles r ON r.id = u.role_id
+             WHERE u.hotel_id = :hotel_id AND r.code = 'admin' AND u.is_active = 1"
+        );
+        $stmt->execute(['hotel_id' => $hotelId]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    public function referenceCount(int $userId): int
+    {
+        $stmt = $this->db->prepare(
+            "SELECT
+                (SELECT COUNT(*) FROM audit_logs WHERE user_id = :u1)
+              + (SELECT COUNT(*) FROM stays WHERE created_by = :u2)
+              + (SELECT COUNT(*) FROM reservations WHERE created_by = :u3 OR cancelled_by = :u4)
+              + (SELECT COUNT(*) FROM payments WHERE received_by = :u5)
+              + (SELECT COUNT(*) FROM stay_charges WHERE added_by = :u6)
+              + (SELECT COUNT(*) FROM housekeeping_logs WHERE changed_by = :u7)"
+        );
+        $stmt->execute([
+            'u1' => $userId,
+            'u2' => $userId,
+            'u3' => $userId,
+            'u4' => $userId,
+            'u5' => $userId,
+            'u6' => $userId,
+            'u7' => $userId,
+        ]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    public function delete(int $userId): void
+    {
+        $this->db->prepare('DELETE FROM refresh_tokens WHERE user_id = :id')->execute(['id' => $userId]);
+        $this->db->prepare('DELETE FROM users WHERE id = :id')->execute(['id' => $userId]);
+    }
 }

@@ -23,7 +23,7 @@ export function isRoomBookable(room) {
   if (room.is_available === false) return false;
   if (room.selection_allowed === false) return false;
   if (room.booking_status === 'unavailable' || room.booking_status === 'maintenance') return false;
-  if ((room.housekeeping_status || '') === 'repair') return false;
+  if ((room.housekeeping_status || room.housekeepingStatus || '') === 'repair') return false;
   if (room.current_stay?.is_overdue) return false;
   const badge = room.card_badge || '';
   if (badge === 'Repair' || badge === 'Overdue' || badge === 'Booked') return false;
@@ -59,7 +59,7 @@ export function getCardDisplay(room, checkIn, checkOut) {
       badge: 'Booked',
       detail: 'Until ' + fd(checkOut),
       condition: 'reserved',
-      blockedReason: `Reserved for requested dates until ${fd(checkOut)}.`,
+      blockedReason: 'This room is already booked for these dates. Please select another room.',
       turnoverNotice: null,
     };
   }

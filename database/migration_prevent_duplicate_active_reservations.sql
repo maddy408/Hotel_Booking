@@ -19,7 +19,7 @@ BEGIN
         AND NEW.check_in_date < check_out_date
     ) THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'This room is already booked for part of those dates. Pick another room or change the dates.';
+        SET MESSAGE_TEXT = 'This room is already booked for these dates. Please select another room.';
     END IF;
   END IF;
 END$$
@@ -39,7 +39,7 @@ BEGIN
         AND NEW.check_in_date < check_out_date
     ) THEN
       SIGNAL SQLSTATE '45000'
-        SET MESSAGE_TEXT = 'This room is already booked for part of those dates. Pick another room or change the dates.';
+        SET MESSAGE_TEXT = 'This room is already booked for these dates. Please select another room.';
     END IF;
   END IF;
 END$$

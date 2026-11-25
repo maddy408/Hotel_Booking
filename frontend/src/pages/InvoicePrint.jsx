@@ -171,6 +171,13 @@ export default function InvoicePrint() {
               </tr>
             </>
           )}
+          {Number(invoice.discount_amount) > 0 && (
+            <tr style={{ color: '#BE123C' }}>
+              <td>Discount applied</td>
+              <td className="r"></td>
+              <td className="r">−{inr(invoice.discount_amount)}</td>
+            </tr>
+          )}
           <tr className="inv-total">
             <td>Invoice total</td>
             <td></td>

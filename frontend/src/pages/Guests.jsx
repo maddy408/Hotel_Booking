@@ -860,6 +860,11 @@ export default function Guests() {
           guestId={sheet.id}
           onClose={() => setSheet(null)}
           onSaved={() => refetch()}
+          onDeleted={() => {
+            setSheet(null);
+            refetch();
+          }}
+          onViewBooking={(bookingId) => setSheet({ type: 'booking', id: Number(bookingId) })}
         />
       )}
       {sheet?.type === 'booking' && (

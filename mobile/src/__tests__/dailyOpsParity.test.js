@@ -121,10 +121,10 @@ describe('Task: Make Mobile Daily Ops Match Web Daily Operations', () => {
       assert.ok(mobileContent.includes("setSheet({ type: 'checkout'"), 'Must open CheckoutSheet on Process Check-out');
     });
 
-    it('Upload Photo allows picking, previewing, and uploading guest ID photo', () => {
-      assert.ok(mobileContent.includes('PhotoUploadSheet'), 'DailyOpsScreen must integrate PhotoUploadSheet');
-      assert.ok(mobileContent.includes('📷 Upload Photo'), 'Must render Upload Photo button');
-      assert.ok(mobileContent.includes("setSheet({ type: 'upload_photo'"), 'Must open PhotoUploadSheet');
+    it('Photo upload option is cleanly removed from Daily Ops per requirements', () => {
+      assert.ok(!mobileContent.includes('PhotoUploadSheet'), 'DailyOpsScreen must not import or render PhotoUploadSheet');
+      assert.ok(!mobileContent.includes('📷 Upload Photo'), 'Must not render Upload Photo button');
+      assert.ok(!mobileContent.includes("setSheet({ type: 'upload_photo'"), 'Must not have upload_photo sheet in Daily Ops');
     });
   });
 

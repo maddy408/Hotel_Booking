@@ -1,25 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import { FormErrorBanner, FormField, Input } from '../ui/Field.jsx';
 import Button from '../ui/Button.jsx';
-import { useGuest, useUpdateGuest } from '../../api/guests';
+import { useGuest, useUpdateGuest, useDeleteGuest } from '../../api/guests';
 import { useToast } from '../ToastContext.jsx';
-import { useFormValidation, isValidEmail } from '../../lib/validation';
+import { useFormValidation, isValidEmail, validatePhone, isValidPhone, handlePhoneInputChange } from '../../lib/validation';
 import { colors, fonts, radii } from '../../theme/theme';
 
 const ID_TYPES = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport', 'Other'];
 
-export default function GuestEditSheet({ guestId, onClose, onSaved }) {
+export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, onViewBooking }) {
   const { data: guest, isLoading } = useGuest(guestId);
   const updateGuest = useUpdateGuest();
+  const deleteGuest = useDeleteGuest();
   const toast = useToast();
+  const [deletingGuest, setDeletingGuest] = useState(false);
   const scrollRef = useRef(null);
 
   const {
     errors,
     formError,
     clearError,
+    setError,
     registerInput,
     registerContainer,
     registerLayout,
@@ -71,11 +74,9 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
       if (!name.trim()) {
         errs.name = 'Guest name is required.';
       }
-      const cleanPhone = phone.replace(/\D/g, '');
-      if (!cleanPhone) {
-        errs.phone = 'Mobile number is required.';
-      } else if (!/^[6-9]\d{9}$/.test(cleanPhone)) {
-        errs.phone = 'Please enter a valid 10-digit mobile number.';
+      const phoneValidation = validatePhone(phone);
+      if (!phoneValidation.isValid) {
+        errs.phone = phoneValidation.error;
       }
       if (email.trim() && !isValidEmail(email)) {
         errs.email = 'Please enter a valid email address.';
@@ -115,6 +116,46 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
     } catch (err) {
       handleBackendError(err);
     }
+  };
+
+  const handleDelete = () => {
+    if (!guest || deletingGuest) return;
+    Alert.alert(
+      'Delete Guest',
+      `Are you sure you want to delete ${guest.name}? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingGuest(true);
+            try {
+              await deleteGuest.mutateAsync(guestId);
+              toast(`Guest ${guest.name} deleted.`);
+              onDeleted ? onDeleted() : onClose();
+            } catch (e) {
+              const msg = e.message || 'Cannot delete guest.';
+              toast(msg);
+              const bookingId = e.fields?.bookingId;
+              const buttons = [{ text: 'OK', style: 'cancel' }];
+              if (bookingId && onViewBooking) {
+                buttons.push({
+                  text: 'View Booking',
+                  onPress: () => {
+                    onClose();
+                    onViewBooking(Number(bookingId));
+                  },
+                });
+              }
+              Alert.alert('Cannot Delete Guest', msg, buttons);
+            } finally {
+              setDeletingGuest(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   const isFormDirty = Boolean(
@@ -175,12 +216,17 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
             ref={registerInput('phone')}
             value={phone}
             onChangeText={(text) => {
-              setPhone(text);
-              clearError('phone');
+              const res = handlePhoneInputChange(text, phone);
+              setPhone(res.value);
+              if (res.error) {
+                setError('phone', res.error);
+              } else {
+                clearError('phone');
+              }
             }}
             keyboardType="phone-pad"
             maxLength={10}
-            placeholder="10-digit mobile"
+            placeholder="10-digit mobile (starts with 6-9)"
             error={errors.phone}
           />
         </FormField>
@@ -322,6 +368,16 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
           loading={updateGuest.isPending}
           onPress={handleSave}
           style={{ marginTop: 8 }}
+        />
+
+        <Button
+          title={deletingGuest ? 'Deleting Guest…' : 'Delete Guest Profile'}
+          variant="danger"
+          size="lg"
+          loading={deletingGuest}
+          disabled={updateGuest.isPending || deletingGuest || deleteGuest.isPending}
+          onPress={handleDelete}
+          style={{ marginTop: 4 }}
         />
       </View>
     </Sheet>

@@ -158,7 +158,7 @@ final class BookingAvailabilityAndWorkflowTest extends TestCase
 
         // 2. Try creating an overlapping active reservation on Room 209 (today to tomorrow)
         $this->expectException(ApiException::class);
-        $this->expectExceptionMessage('This room is already booked for part of those dates.');
+        $this->expectExceptionMessage('This room is already booked for these dates. Please select another room.');
 
         $this->reservationService->create(
             self::HOTEL_ID,
@@ -194,7 +194,7 @@ final class BookingAvailabilityAndWorkflowTest extends TestCase
 
         // Trigger trg_reservations_prevent_overlap_insert must reject direct INSERT
         $this->expectException(PDOException::class);
-        $this->expectExceptionMessage('This room is already booked for part of those dates.');
+        $this->expectExceptionMessage('This room is already booked for these dates. Please select another room.');
 
         $stmt = $this->db->prepare(
             'INSERT INTO reservations (hotel_id, booking_code, room_id, guest_id, check_in_date, check_out_date, status, rate)
@@ -292,7 +292,7 @@ final class BookingAvailabilityAndWorkflowTest extends TestCase
 
         // Attempt to reassign room to Room 209 for dates overlapping BK-1002
         $this->expectException(ApiException::class);
-        $this->expectExceptionMessage('This room is already booked for part of those dates.');
+        $this->expectExceptionMessage('This room is already booked for these dates. Please select another room.');
 
         $this->reservationService->update(
             (int) $booking['id'],
@@ -342,7 +342,7 @@ final class BookingAvailabilityAndWorkflowTest extends TestCase
 
         // Updating BK-TEST-2 directly via SQL to overlap BK-TEST-1 must trigger SQLSTATE 45000
         $this->expectException(PDOException::class);
-        $this->expectExceptionMessage('This room is already booked for part of those dates.');
+        $this->expectExceptionMessage('This room is already booked for these dates. Please select another room.');
 
         $this->db->prepare(
             'UPDATE reservations SET check_in_date = :in, check_out_date = :out WHERE id = :id'

@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { StyleSheet, Switch, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import Button from '../ui/Button.jsx';
 import { Input, Segmented } from '../ui/Field.jsx';
-import { useReservation, useCancelReservation, useNoShowReservation, useCancellationPreview, useReservations } from '../../api/reservations';
+import { useReservation, useCancelReservation, useNoShowReservation, useCancellationPreview, useReservations, useReservationDocuments, useUploadReservationDocuments } from '../../api/reservations';
+import { viewOccupantDocument, useDeleteOccupantDocument } from '../../api/occupantDocuments';
 import { useRooms, useHousekeepingAction } from '../../api/rooms';
 import { useToast } from '../ToastContext.jsx';
 import { addDaysIso, fd, inr, todayIso } from '../../lib/format';
@@ -23,12 +25,16 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
   const noShow = useNoShowReservation();
   const hkAction = useHousekeepingAction();
   const { data: allReservations = [] } = useReservations();
+  const { data: bookingDocs = [], refetch: refetchDocs } = useReservationDocuments(reservationId);
+  const uploadResDocs = useUploadReservationDocuments();
+  const deleteDoc = useDeleteOccupantDocument();
   const toast = useToast();
 
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [refundNow, setRefundNow] = useState(false);
   const [refundMethod, setRefundMethod] = useState('upi');
+  const [loadingDocId, setLoadingDocId] = useState(null);
 
   if (!reservation) {
     return (
@@ -88,6 +94,69 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
     } catch (err) { toast(err.message); }
   };
 
+  const handleViewDocument = async (doc) => {
+    try {
+      setLoadingDocId(doc.id);
+      await viewOccupantDocument(doc.id, doc.original_filename);
+    } catch (e) {
+      toast(e.message || 'Could not load document.');
+    } finally {
+      setLoadingDocId(null);
+    }
+  };
+
+  const handleUploadBookingDoc = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'],
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.length) return;
+
+      const overSized = result.assets.filter((f) => f.size && f.size > 10 * 1024 * 1024);
+      if (overSized.length > 0) {
+        toast('Document must be 10 MB or smaller.');
+        return;
+      }
+
+      const files = result.assets.map((f) => ({
+        uri: f.uri,
+        name: f.name,
+        type: f.mimeType || 'application/octet-stream',
+      }));
+
+      await uploadResDocs.mutateAsync({ reservationId, files });
+      toast('ID document uploaded successfully.');
+      refetchDocs();
+    } catch (err) {
+      toast(err.message || 'Failed to upload document.');
+    }
+  };
+
+  const handleDeleteDocument = (docId) => {
+    Alert.alert(
+      'Delete Document',
+      'Are you sure you want to delete this document?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteDoc.mutateAsync({ docId });
+              toast('Document deleted.');
+              refetchDocs();
+            } catch (e) {
+              toast(e.message || 'Failed to delete document.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <Sheet onClose={onClose}>
       <SheetHeader
@@ -115,6 +184,46 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
               <Text style={styles.infoLabel}>Refundable</Text><Text style={[styles.infoValue, { color: colors.success, fontFamily: fonts.bodyBold }]}>{inr(reservation.refundable_amount || 0)}</Text>
               {reservation.cancel_reason ? (<><Text style={styles.infoLabel}>Reason</Text><Text style={styles.infoValue}>{reservation.cancel_reason}</Text></>) : null}
             </>
+          )}
+        </View>
+
+        {/* ID Documents */}
+        <View style={styles.card}>
+          <View style={[styles.rowBetween, { marginBottom: 6, flexWrap: 'wrap', gap: 6 }]}>
+            <Text style={[styles.cardTitle, { flexShrink: 1, marginBottom: 0 }]}>ID Documents ({bookingDocs.length})</Text>
+            {isPending && (
+              <Button
+                title={uploadResDocs.isPending ? 'Uploading…' : '+ Upload ID Document'}
+                variant="outline"
+                size="sm"
+                loading={uploadResDocs.isPending}
+                disabled={uploadResDocs.isPending}
+                onPress={handleUploadBookingDoc}
+              />
+            )}
+          </View>
+          {bookingDocs.length === 0 ? (
+            <Text style={styles.meta}>No ID documents attached.</Text>
+          ) : (
+            bookingDocs.map((doc) => (
+              <View key={doc.id} style={styles.docRow}>
+                <Text style={styles.docName} numberOfLines={1}>📄 {doc.original_filename}</Text>
+                <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                  <Button
+                    title={loadingDocId === doc.id ? 'Loading…' : 'View Document'}
+                    variant="outline"
+                    size="sm"
+                    disabled={loadingDocId === doc.id}
+                    onPress={() => handleViewDocument(doc)}
+                  />
+                  {isPending && (
+                    <Pressable onPress={() => handleDeleteDocument(doc.id)} hitSlop={8} accessibilityLabel="Delete Document">
+                      <Text style={{ color: colors.danger, fontSize: 15, paddingHorizontal: 4 }}>✕</Text>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
+            ))
           )}
         </View>
 
@@ -200,4 +309,9 @@ const styles = StyleSheet.create({
   billValueSub: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.textSecondary },
   billLabelTot: { fontFamily: fonts.bodyBold, fontSize: 13, color: colors.heading },
   billValueTot: { fontFamily: fonts.monoBold, fontSize: 13, color: colors.heading },
+  card: { backgroundColor: colors.card, borderRadius: radii.md, borderWidth: 1, borderColor: colors.cardBorder, padding: 12, gap: 6 },
+  cardTitle: { fontFamily: fonts.bodyBold, fontSize: 13, color: colors.heading },
+  docRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 5, paddingHorizontal: 6, backgroundColor: colors.surface, borderRadius: radii.xs },
+  docName: { fontFamily: fonts.bodyMedium, fontSize: 11.5, color: colors.text, flex: 1, marginRight: 8 },
+  meta: { fontFamily: fonts.body, fontSize: 12, color: colors.textSecondary },
 });

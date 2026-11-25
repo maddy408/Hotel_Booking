@@ -36,6 +36,7 @@ use App\Support\IdImageUploader;
 use App\Support\OccupantDocumentUploader;
 
 return static function (Router $router, PDO $db, callable $auth): void {
+    $authorizedStaff = new RoleMiddleware(['admin', 'manager', 'receptionist']);
     $audit = new AuditLogger(new AuditLogRepository($db));
     $guestRepo = new GuestRepository($db);
     $guestService = new GuestService($guestRepo, new IdImageUploader(dirname(__DIR__) . '/storage/uploads'), $audit);
@@ -46,7 +47,7 @@ return static function (Router $router, PDO $db, callable $auth): void {
     $settingsRepo = new SettingsRepository($db);
     $gstService = new GstService($settingsRepo);
     $hotelRepo = new HotelRepository($db);
-    $availability = new AvailabilityService($reservationRepo, $stayRepo);
+    $availability = new AvailabilityService($reservationRepo, $stayRepo, $settingsRepo);
     $billing = new BillingService($gstService, new StayChargeRepository($db), $paymentRepo, $settingsRepo, $hotelRepo);
     $invoiceService = new InvoiceService($db, new InvoiceRepository($db), $hotelRepo, $gstService);
 
@@ -64,7 +65,9 @@ return static function (Router $router, PDO $db, callable $auth): void {
     $router->get('/guests/{id}', [$guestController, 'show'], [$auth]);
     $router->get('/guests/{id}/referrals', [$guestController, 'referrals'], [$auth]);
     $router->put('/guests/{id}', [$guestController, 'update'], [$auth]);
-    $router->post('/guests/{id}/id-image', [$guestController, 'uploadIdImage'], [$auth]);
+    $router->delete('/guests/{id}', [$guestController, 'delete'], [$auth, $authorizedStaff]);
+    $router->post('/guests/{id}/id-image', [$guestController, 'uploadIdImage'], [$auth, $authorizedStaff]);
+    $router->delete('/guests/{id}/id-image', [$guestController, 'deleteIdImage'], [$auth, $authorizedStaff]);
     $router->get('/guests/{id}/id-image', [$guestController, 'downloadIdImage'], [$auth]);
 
     // ---- reservations (bookings) ----
@@ -113,10 +116,9 @@ return static function (Router $router, PDO $db, callable $auth): void {
     $router->post('/stays/{id}/documents', [$occupantDocController, 'uploadToStay'], [$auth]);
     $router->post('/occupants/{id}/documents', [$occupantDocController, 'uploadToOccupant'], [$auth]);
     $router->get('/occupant-documents/{id}/file', [$occupantDocController, 'download'], [$auth]);
-    $router->delete('/occupant-documents/{id}', [$occupantDocController, 'delete'], [$auth]);
+    $router->delete('/occupant-documents/{id}', [$occupantDocController, 'delete'], [$auth, $authorizedStaff]);
 
     // ---- daily operations / today checkouts (restricted to front-desk staff: admin, manager, receptionist) ----
-    $authorizedStaff = new RoleMiddleware(['admin', 'manager', 'receptionist']);
     $todayCheckoutsService = new TodayCheckoutsService($db, new HotelRepository($db), $settingsRepo);
     $todayCheckoutsController = new TodayCheckoutsController($todayCheckoutsService);
     $router->get('/today-checkouts', [$todayCheckoutsController, 'index'], [$auth, $authorizedStaff]);

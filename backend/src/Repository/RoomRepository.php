@@ -41,7 +41,11 @@ class RoomRepository
     /** Locks the room row for the duration of the caller's transaction (prevents concurrent double-booking). */
     public function lockById(int $id): ?array
     {
-        $stmt = $this->db->prepare('SELECT * FROM rooms WHERE id = :id FOR UPDATE');
+        $stmt = $this->db->prepare(
+            'SELECT r.*, rt.code AS type_code, rt.name AS type_name, rt.rate AS type_rate, rt.max_persons
+             FROM rooms r JOIN room_types rt ON rt.id = r.room_type_id
+             WHERE r.id = :id FOR UPDATE'
+        );
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch();
         return $row === false ? null : $row;
@@ -83,16 +87,20 @@ class RoomRepository
         return $byRoom;
     }
 
-    /** All pending reservations, ordered by check_in_date, grouped by room_id. */
-    public function pendingReservationsByRoom(int $hotelId): array
+    /** All pending reservations, ordered by check_in_date, grouped by room_id. Optionally filter by minimum check_out_date. */
+    public function pendingReservationsByRoom(int $hotelId, ?string $minCheckOutDate = null): array
     {
-        $stmt = $this->db->prepare(
-            "SELECT b.room_id, b.id, b.booking_code, b.check_in_date, b.check_out_date, b.check_out_time, b.guest_id, b.persons, g.name AS guest_name
-             FROM reservations b JOIN guests g ON g.id = b.guest_id
-             WHERE b.hotel_id = :hotel_id AND b.status = 'pending'
-             ORDER BY b.check_in_date"
-        );
-        $stmt->execute(['hotel_id' => $hotelId]);
+        $sql = "SELECT b.room_id, b.id, b.booking_code, b.check_in_date, b.check_out_date, b.check_out_time, b.guest_id, b.persons, g.name AS guest_name
+                FROM reservations b JOIN guests g ON g.id = b.guest_id
+                WHERE b.hotel_id = :hotel_id AND b.status = 'pending'";
+        $params = ['hotel_id' => $hotelId];
+        if ($minCheckOutDate !== null) {
+            $sql .= ' AND b.check_out_date > :min_out';
+            $params['min_out'] = $minCheckOutDate;
+        }
+        $sql .= ' ORDER BY b.check_in_date';
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
         $byRoom = [];
         foreach ($stmt->fetchAll() as $row) {
             $byRoom[(int) $row['room_id']][] = $row;
@@ -106,6 +114,17 @@ class RoomRepository
             "SELECT
                 (SELECT COUNT(*) FROM stays WHERE room_id = :id1 AND status = 'in_house')
               + (SELECT COUNT(*) FROM reservations WHERE room_id = :id2 AND status = 'pending')"
+        );
+        $stmt->execute(['id1' => $roomId, 'id2' => $roomId]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    public function totalReferenceCount(int $roomId): int
+    {
+        $stmt = $this->db->prepare(
+            "SELECT
+                (SELECT COUNT(*) FROM stays WHERE room_id = :id1)
+              + (SELECT COUNT(*) FROM reservations WHERE room_id = :id2)"
         );
         $stmt->execute(['id1' => $roomId, 'id2' => $roomId]);
         return (int) $stmt->fetchColumn();

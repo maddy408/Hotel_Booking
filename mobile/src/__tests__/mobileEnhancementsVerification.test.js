@@ -80,53 +80,42 @@ describe('Improvement 1: Search Input & Keyboard Behavior Verification', () => {
   });
 });
 
-describe('Improvement 2: Photo Upload and Save Workflow Verification', () => {
+describe('Improvement 2: Document Upload Only & Photo Upload Removal Verification', () => {
   const photoUploadSheetPath = path.join(srcDir, 'components', 'sheets', 'PhotoUploadSheet.jsx');
   const guestDetailsPath = path.join(srcDir, 'screens', 'guests', 'GuestDetailsScreen.jsx');
   const dailyOpsPath = path.join(srcDir, 'screens', 'dailyops', 'DailyOpsScreen.jsx');
   const checkInSheetPath = path.join(srcDir, 'components', 'sheets', 'CheckInSheet.jsx');
 
-  it('1. PhotoUploadSheet implements complete workflow: ImagePicker, preview, Save/Upload, Cancel/Remove, and backend confirmation', () => {
-    assert.ok(fs.existsSync(photoUploadSheetPath), 'PhotoUploadSheet.jsx must exist');
-    const content = fs.readFileSync(photoUploadSheetPath, 'utf8');
-
-    assert.ok(content.includes('ImagePicker.launchImageLibraryAsync'), 'Must launch Android image library');
-    assert.ok(content.includes('Selected Photo Preview'), 'Must render Selected Photo Preview title');
-    assert.ok(content.includes('title={uploadIdImage.isPending ? \'Uploading…\' : \'Save / Upload\'}'), 'Must have Save / Upload button with loading state');
-    assert.ok(content.includes('title="Cancel / Remove"'), 'Must have Cancel / Remove button');
-    assert.ok(content.includes('uploadIdImage.mutateAsync'), 'Must upload to backend API');
-    assert.ok(content.includes('toast(\'Guest ID photo uploaded successfully.\')'), 'Must toast success only after backend confirms');
-    assert.ok(content.includes('fetchIdImageLocalUri'), 'Must load saved photo from backend after upload');
-    assert.ok(content.includes('MAX_IMAGE_SIZE_BYTES'), 'Must enforce backend 5 MB image size limit');
+  it('1. PhotoUploadSheet component is removed after removing all callers', () => {
+    assert.ok(!fs.existsSync(photoUploadSheetPath), 'PhotoUploadSheet.jsx must be removed');
   });
 
-  it('2. GuestDetailsScreen displays photo preview with Save/Upload and Cancel/Remove buttons before backend upload', () => {
+  it('2. GuestDetailsScreen displays document upload with filename, format, and Remove Selected Document', () => {
     const content = fs.readFileSync(guestDetailsPath, 'utf8');
 
-    assert.ok(content.includes('pendingPhoto'), 'GuestDetailsScreen must hold pendingPhoto for preview');
-    assert.ok(content.includes('Selected Photo Preview'), 'Must render Selected Photo Preview section');
-    assert.ok(content.includes('title={uploadIdImage.isPending ? \'Uploading…\' : \'Save / Upload\'}'), 'Must render Save / Upload button');
-    assert.ok(content.includes('title="Cancel / Remove"'), 'Must render Cancel / Remove button');
-    assert.ok(content.includes('handleSaveUploadPhoto'), 'Must wire Save / Upload to handleSaveUploadPhoto');
-    assert.ok(content.includes('isUploadingPhotoRef'), 'Must prevent duplicate upload submissions');
-    assert.ok(content.includes('fetchIdImageLocalUri'), 'Must retrieve and display the saved photo after upload');
+    assert.ok(content.includes('selectedDoc'), 'GuestDetailsScreen must hold selectedDoc');
+    assert.ok(content.includes('Upload ID Document'), 'Must render Upload ID Document button');
+    assert.ok(content.includes('Remove Selected Document'), 'Must render Remove Selected Document button');
+    assert.ok(content.includes('handleUploadSelectedDoc'), 'Must wire upload to handleUploadSelectedDoc');
+    assert.ok(!content.includes('ImagePicker'), 'GuestDetailsScreen must not import ImagePicker');
+    assert.ok(!content.includes('📷 Upload Photo'), 'Must not display 📷 Upload Photo');
   });
 
-  it('3. DailyOpsScreen provides Photo Upload action button and integrates PhotoUploadSheet', () => {
+  it('3. DailyOpsScreen removes Photo Upload action button and does not import PhotoUploadSheet', () => {
     const content = fs.readFileSync(dailyOpsPath, 'utf8');
 
-    assert.ok(content.includes('PhotoUploadSheet'), 'DailyOpsScreen must import PhotoUploadSheet');
-    assert.ok(content.includes('📷 Upload Photo'), 'Must render 📷 Upload Photo button on checkin cards');
-    assert.ok(content.includes("setSheet({ type: 'upload_photo'"), 'Must trigger upload_photo sheet');
-    assert.ok(content.includes("<PhotoUploadSheet"), 'Must render PhotoUploadSheet inside DailyOpsScreen');
+    assert.ok(!content.includes('PhotoUploadSheet'), 'DailyOpsScreen must not import PhotoUploadSheet');
+    assert.ok(!content.includes('📷 Upload Photo'), 'Must not render 📷 Upload Photo button');
+    assert.ok(!content.includes("setSheet({ type: 'upload_photo'"), 'Must not trigger upload_photo sheet');
   });
 
-  it('4. CheckInSheet supports photo gallery upload alongside document picker', () => {
+  it('4. CheckInSheet supports document upload without separate photo gallery picker', () => {
     const content = fs.readFileSync(checkInSheetPath, 'utf8');
 
-    assert.ok(content.includes('import * as ImagePicker'), 'CheckInSheet must import ImagePicker');
-    assert.ok(content.includes('pickPhoto'), 'CheckInSheet must implement pickPhoto function');
-    assert.ok(content.includes('Upload Photo (P'), 'CheckInSheet must render Upload Photo action');
+    assert.ok(!content.includes('import * as ImagePicker'), 'CheckInSheet must not import ImagePicker');
+    assert.ok(!content.includes('pickPhoto'), 'CheckInSheet must not implement pickPhoto function');
+    assert.ok(!content.includes('Upload Photo (P'), 'CheckInSheet must not render Upload Photo action');
+    assert.ok(content.includes('Upload ID Document (P') || content.includes('Attach Document (P'), 'CheckInSheet must render Document upload action');
   });
 });
 

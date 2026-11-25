@@ -454,7 +454,7 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
         );
 
         $this->expectException(ApiException::class);
-        $this->expectExceptionMessage('This room is already booked for part of those dates.');
+        $this->expectExceptionMessage('This room is already booked for these dates. Please select another room.');
 
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500002', 'Booking B',
@@ -475,7 +475,7 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
         );
 
         $this->expectException(ApiException::class);
-        $this->expectExceptionMessage('This room is already booked for part of those dates.');
+        $this->expectExceptionMessage('This room is already booked for these dates. Please select another room.');
 
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500002', 'Booking B',
@@ -496,7 +496,7 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
         );
 
         $this->expectException(ApiException::class);
-        $this->expectExceptionMessage('This room is already booked for part of those dates.');
+        $this->expectExceptionMessage('This room is already booked for these dates. Please select another room.');
 
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500002', 'Booking B',
@@ -517,7 +517,7 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
         );
 
         $this->expectException(ApiException::class);
-        $this->expectExceptionMessage('This room is already booked for part of those dates.');
+        $this->expectExceptionMessage('This room is already booked for these dates. Please select another room.');
 
         $this->reservations->create(
             self::HOTEL_ID, self::ROOM_STD_1, '9876500002', 'Booking B',
@@ -630,7 +630,7 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
         )->execute(['cin' => $today, 'cout' => $tomorrow]);
 
         $this->expectException(PDOException::class);
-        $this->expectExceptionMessage('This room is already booked for part of those dates.');
+        $this->expectExceptionMessage('This room is already booked for these dates. Please select another room.');
 
         $this->db->prepare(
             "INSERT INTO reservations (hotel_id, booking_code, room_id, guest_id, check_in_date, check_out_date, status, rate)
@@ -891,7 +891,7 @@ final class ComprehensiveHotelBookingSuiteTest extends TestCase
 
         // Reassign Booking 2 to Room 901 overlapping with Booking 1
         $this->expectException(ApiException::class);
-        $this->expectExceptionMessage('This room is already booked for part of those dates.');
+        $this->expectExceptionMessage('This room is already booked for these dates. Please select another room.');
 
         $this->reservations->update(
             (int) $b2['id'], self::HOTEL_ID, self::ROOM_STD_1,

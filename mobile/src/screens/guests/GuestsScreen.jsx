@@ -349,6 +349,14 @@ export default function GuestsScreen({ navigation }) {
           guestId={editGuestId}
           onClose={() => setEditGuestId(null)}
           onSaved={() => refetch()}
+          onDeleted={() => {
+            setEditGuestId(null);
+            refetch();
+          }}
+          onViewBooking={() => {
+            setEditGuestId(null);
+            navigation.navigate('Bookings');
+          }}
         />
       )}
     </Screen>

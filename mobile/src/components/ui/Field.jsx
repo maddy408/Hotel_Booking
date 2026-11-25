@@ -1,4 +1,4 @@
-import { forwardRef } from 'react';
+import { forwardRef, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { colors, fonts, radii } from '../../theme/theme';
 import SearchInput from './SearchInput.jsx';
@@ -87,22 +87,85 @@ export function Segmented({ options, value, onChange, style, error }) {
   );
 }
 
-/** Replaces web's .step +/- numeric stepper (days, persons). */
-export function Stepper({ value, onChange, min = 1, max }) {
+/** Replaces web's .step +/- numeric stepper (days, persons) with manual typing support. */
+export function Stepper({ value, onChange, min = 1, max, onExceedMax }) {
+  const [text, setText] = useState(String(value ?? min));
+
+  useEffect(() => {
+    setText(String(value ?? min));
+  }, [value, min]);
+
+  const handleChangeText = (raw) => {
+    const digits = raw.replace(/[^0-9]/g, '');
+    setText(digits);
+    if (!digits) return;
+    const num = parseInt(digits, 10);
+    if (isNaN(num)) return;
+    if (max != null && num > max) {
+      if (onExceedMax) onExceedMax(max);
+      onChange(max);
+      setText(String(max));
+      return;
+    }
+    if (num >= min) {
+      onChange(num);
+    }
+  };
+
+  const handleBlur = () => {
+    const num = parseInt(text, 10);
+    if (isNaN(num) || num < min) {
+      onChange(min);
+      setText(String(min));
+    } else if (max != null && num > max) {
+      if (onExceedMax) onExceedMax(max);
+      onChange(max);
+      setText(String(max));
+    } else {
+      onChange(num);
+      setText(String(num));
+    }
+  };
+
+  const handleDecrease = () => {
+    const cur = typeof value === 'number' && !isNaN(value) ? value : min;
+    const next = Math.max(min, cur - 1);
+    onChange(next);
+  };
+
+  const handleIncrease = () => {
+    const cur = typeof value === 'number' && !isNaN(value) ? value : min;
+    if (max != null && cur >= max) {
+      if (onExceedMax) onExceedMax(max);
+      return;
+    }
+    const next = max != null ? Math.min(max, cur + 1) : cur + 1;
+    onChange(next);
+  };
+
   return (
     <View style={styles.stepper}>
       <Pressable
         style={styles.stepBtn}
         disabled={value <= min}
-        onPress={() => onChange(Math.max(min, value - 1))}
+        onPress={handleDecrease}
+        accessibilityLabel="Decrease"
       >
         <Text style={[styles.stepBtnText, value <= min && { opacity: 0.4 }]}>−</Text>
       </Pressable>
-      <Text style={styles.stepValue}>{value}</Text>
+      <TextInput
+        style={styles.stepValueInput}
+        keyboardType="number-pad"
+        value={text}
+        onChangeText={handleChangeText}
+        onBlur={handleBlur}
+        selectTextOnFocus
+      />
       <Pressable
         style={styles.stepBtn}
         disabled={max != null && value >= max}
-        onPress={() => onChange(max != null ? Math.min(max, value + 1) : value + 1)}
+        onPress={handleIncrease}
+        accessibilityLabel="Increase"
       >
         <Text style={[styles.stepBtnText, max != null && value >= max && { opacity: 0.4 }]}>+</Text>
       </Pressable>
@@ -191,5 +254,14 @@ const styles = StyleSheet.create({
     color: colors.heading,
     minWidth: 30,
     textAlign: 'center',
+  },
+  stepValueInput: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 15,
+    color: colors.heading,
+    minWidth: 40,
+    textAlign: 'center',
+    paddingVertical: 2,
+    paddingHorizontal: 4,
   },
 });

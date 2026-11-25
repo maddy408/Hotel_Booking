@@ -17,7 +17,7 @@ import { useReservations } from '../../api/reservations';
 import { useDoneStays } from '../../api/stays';
 import { useSettings } from '../../api/settings';
 import { isRoomOverdue } from '../../lib/overdue';
-import { todayIso, fdWithYear } from '../../lib/format';
+import { todayIso, fdWithYear, addDaysIso } from '../../lib/format';
 import { colors, fonts, radii } from '../../theme/theme';
 
 const STATUS_ORDER = ['free', 'booked', 'occupied', 'cleaning', 'repair', 'overdue'];
@@ -65,7 +65,7 @@ export default function RoomsScreen({ navigation }) {
     } else {
       const isPast = selectedDateIso < today;
 
-    return baseRooms.map((room) => {
+      computedRooms = baseRooms.map((room) => {
       const roomId = Number(room.id);
 
       // 1. Check if occupied on selectedDateIso
@@ -362,7 +362,12 @@ export default function RoomsScreen({ navigation }) {
           below are fully functional against the live backend. */}
 
       {sheet?.type === 'direct' && (
-        <DirectCheckInPicker rooms={baseRooms} onClose={() => setSheet(null)} onPick={(room) => setSheet({ type: 'checkin', room })} />
+        <DirectCheckInPicker rooms={baseRooms}
+          checkIn={selectedDateIso || today}
+          checkOut={addDaysIso(selectedDateIso || today, 1)}
+          onClose={() => setSheet(null)}
+          onPick={(room) => setSheet({ type: 'checkin', room })}
+        />
       )}
       {sheet?.type === 'roomDetails' && (
         <RoomDetailsSheet
@@ -427,7 +432,12 @@ export default function RoomsScreen({ navigation }) {
       )}
       {sheet?.type === 'housekeeping' && <HousekeepingSheet room={sheet.room} onClose={() => setSheet(null)} />}
       {(sheet?.type === 'newBooking' || sheet?.type === 'editBooking') && (
-        <NewBookingSheet preSelectedRoom={sheet.preSelectedRoom} editReservation={sheet.editReservation} onClose={() => setSheet(null)} />
+        <NewBookingSheet
+          initialCheckIn={selectedDateIso || today}
+          preSelectedRoom={sheet.preSelectedRoom}
+          editReservation={sheet.editReservation}
+          onClose={() => setSheet(null)}
+        />
       )}
     </Screen>
   );

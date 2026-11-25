@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
-import { useGuest, useUpdateGuest } from '../../api/guests';
+import { useGuest, useUpdateGuest, useDeleteGuest } from '../../api/guests';
 import { useToast } from '../../context/ToastContext.jsx';
+import { validatePhone, isValidPhone, handlePhoneInputChange } from '../../lib/validation.js';
 
 const ID_TYPES = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport', 'Other'];
 
-export default function GuestEditSheet({ guestId, onClose, onSaved }) {
+export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, onViewBooking }) {
   const { data: guest, isLoading } = useGuest(guestId);
   const updateGuest = useUpdateGuest();
+  const deleteGuest = useDeleteGuest();
   const toast = useToast();
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
   const [form, setForm] = useState({
     name: '',
@@ -53,9 +57,9 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
     if (!form.name.trim()) {
       errs.name = 'Guest name is required.';
     }
-    const cleanPhone = form.phone.replace(/\D/g, '');
-    if (!/^\d{10}$/.test(cleanPhone)) {
-      errs.phone = 'Enter a valid 10-digit mobile number.';
+    const phoneValidation = validatePhone(form.phone);
+    if (!phoneValidation.isValid) {
+      errs.phone = phoneValidation.error;
     }
     if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       errs.email = 'Enter a valid email address.';
@@ -150,8 +154,16 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
                 maxLength={10}
                 required
                 value={form.phone}
-                onChange={(e) => handleFieldChange('phone', e.target.value)}
-                placeholder="10-digit mobile number"
+                onChange={(e) => {
+                  const res = handlePhoneInputChange(e.target.value, form.phone);
+                  handleFieldChange('phone', res.value);
+                  if (res.error) {
+                    setFormErrors((prev) => ({ ...prev, phone: res.error }));
+                  } else {
+                    setFormErrors((prev) => ({ ...prev, phone: null }));
+                  }
+                }}
+                placeholder="10-digit mobile (starts with 6-9)"
               />
               {formErrors.phone && <span className="err">{formErrors.phone}</span>}
             </div>
@@ -259,17 +271,79 @@ export default function GuestEditSheet({ guestId, onClose, onSaved }) {
             )}
 
             <div className="row2" style={{ marginTop: 12, gap: 10 }}>
-              <button className="btn dark" type="submit" disabled={updateGuest.isPending} style={{ flex: 1 }}>
+              <button className="btn dark" type="submit" disabled={updateGuest.isPending || deleting} style={{ flex: 1 }}>
                 {updateGuest.isPending ? 'Saving changes…' : 'Save changes'}
               </button>
               <button
                 className="btn"
                 type="button"
-                disabled={updateGuest.isPending}
+                disabled={updateGuest.isPending || deleting}
                 onClick={onClose}
                 style={{ flex: 1 }}
               >
                 Cancel
+              </button>
+            </div>
+
+            <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+              {deleteError && (
+                <div
+                  role="alert"
+                  style={{
+                    background: 'var(--red-subtle, #fef2f2)',
+                    border: '1px solid var(--red-border, #fecaca)',
+                    color: 'var(--red-text, #991b1b)',
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    marginBottom: 10,
+                    fontSize: 13,
+                  }}
+                >
+                  <div style={{ marginBottom: deleteError.bookingId ? 8 : 0 }}>
+                    ⚠️ {deleteError.message}
+                  </div>
+                  {deleteError.bookingId && (
+                    <button
+                      type="button"
+                      className="btn sm red"
+                      style={{ width: '100%', fontWeight: 600 }}
+                      onClick={() => {
+                        onClose();
+                        onViewBooking?.(deleteError.bookingId);
+                      }}
+                    >
+                      View Booking {deleteError.bookingCode ? `(${deleteError.bookingCode})` : ''}
+                    </button>
+                  )}
+                </div>
+              )}
+              <button
+                className="btn red"
+                type="button"
+                style={{ width: '100%' }}
+                disabled={updateGuest.isPending || deleting}
+                onClick={async () => {
+                  if (!window.confirm(`Are you sure you want to delete ${guest?.name || 'this guest'}? This action cannot be undone.`)) return;
+                  setDeleting(true);
+                  setDeleteError(null);
+                  try {
+                    await deleteGuest.mutateAsync(guestId);
+                    toast(`Guest ${guest?.name || ''} deleted.`);
+                    onDeleted ? onDeleted() : onClose();
+                  } catch (err) {
+                    toast(err.message || 'Cannot delete guest.');
+                    setDeleteError({
+                      message: err.message || 'Cannot delete guest.',
+                      code: err.code || null,
+                      bookingId: err.fields?.bookingId || null,
+                      bookingCode: err.fields?.bookingCode || null,
+                    });
+                  } finally {
+                    setDeleting(false);
+                  }
+                }}
+              >
+                {deleting ? 'Deleting guest…' : '🗑️ Delete Guest Profile'}
               </button>
             </div>
           </form>

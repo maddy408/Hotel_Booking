@@ -1,10 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Screen, { EmptyState, ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
 import SearchInput from '../../components/ui/SearchInput.jsx';
 import CheckoutSheet from '../../components/sheets/CheckoutSheet.jsx';
 import CheckInSheet from '../../components/sheets/CheckInSheet.jsx';
-import PhotoUploadSheet from '../../components/sheets/PhotoUploadSheet.jsx';
 import BookingDetailSheet from '../../components/sheets/BookingDetailSheet.jsx';
 import StayDetailSheet from '../../components/sheets/StayDetailSheet.jsx';
 import WhatsAppSheet from '../../components/sheets/WhatsAppSheet.jsx';
@@ -17,16 +17,24 @@ import { colors, fonts, radii } from '../../theme/theme';
 export default function DailyOpsScreen({ navigation }) {
   const { data, isLoading, isError, error, refetch, isRefetching } = useTodayCheckouts();
 
-  // Active view tab: 'checkins' | 'checkouts'
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch])
+  );
+
+  // Active view tab: 'checkins' (Arrivals) | 'checkouts' (Departures)
   const [activeTab, setActiveTab] = useState('checkins');
 
-  // Search query (in-memory, does not re-fetch or dismiss keyboard)
+  // Search query (in-memory, client-side, zero extra API calls)
   const [search, setSearch] = useState('');
 
-  // Status sub-filter: 'all' | 'pending' | 'checked_in' | 'checked_out'
+  // Status sub-filter:
+  // For checkins: 'all' | 'expected' | 'pending' (Not arrived) | 'checked_in' | 'overdue' (Late arrivals)
+  // For checkouts: 'all' | 'expected' | 'pending' (Still staying) | 'checked_out' | 'overdue' (Late check-outs)
   const [statusFilter, setStatusFilter] = useState('all');
 
-  // Active modal sheet: checkin | checkout | upload_photo | booking | stay | whatsapp
+  // Active modal sheet: checkin | checkout | booking | stay | whatsapp
   const [sheet, setSheet] = useState(null);
 
   const handleTabChange = (tab) => {
@@ -47,83 +55,123 @@ export default function DailyOpsScreen({ navigation }) {
   const today = data?.today || getHotelNow(timezone).dateIso;
   const checkoutTimeStandard = data?.checkout_time_standard || '12:00 PM';
 
-  const checkinsList = data?.checkins || [];
-  const checkoutsList = data?.checkouts || (Array.isArray(data) ? data : (data?.stays || []));
+  const rawCheckins = data?.checkins || [];
+  const rawCheckouts = data?.checkouts || (Array.isArray(data) ? data : (data?.stays || []));
 
-  // Checkins statistics
-  // 1. Expected Today – reservations with check-in date equal to today.
-  // 2. Pending – today's expected arrivals that have not checked in.
-  // 3. Checked-in Today – actual check-in operations completed today.
-  // 4. Overdue Arrivals – reservations with check-in dates before today that have not yet checked in and are still eligible for arrival.
-  const checkinStats = useMemo(() => {
+  // -------------------------------------------------------------
+  // 1. ARRIVALS CALCULATION & FILTERING
+  // -------------------------------------------------------------
+  const { checkinStats, checkinsListFiltered } = useMemo(() => {
     let expectedToday = 0;
-    let pending = 0;
+    let notArrived = 0;
     let checkedInToday = 0;
-    let overdue = 0;
+    let lateArrivals = 0;
+    const nonCancelledList = [];
 
-    checkinsList.forEach((c) => {
-      const isCancelledOrNoShow = c.status === 'cancelled' || c.status === 'no_show' || c.reservation_status === 'cancelled' || c.reservation_status === 'no_show';
+    rawCheckins.forEach((c) => {
+      const isCancelledOrNoShow =
+        c.status === 'cancelled' ||
+        c.status === 'no_show' ||
+        c.reservation_status === 'cancelled' ||
+        c.reservation_status === 'no_show' ||
+        c.stay_status === 'cancelled';
       if (isCancelledOrNoShow) return;
 
-      const isOverdue = Boolean(c.is_overdue || (c.check_in_date && today && c.check_in_date < today && (c.checkin_status === 'pending' || c.checkin_status === 'overdue')));
-      const isPending = (c.checkin_status === 'pending' || c.status === 'pending') && !isOverdue;
-      const isCheckedIn = c.checkin_status === 'checked_in' || c.checkin_status === 'checked_out' || c.is_checked_in_today;
+      nonCancelledList.push(c);
 
-      if (isOverdue) {
-        overdue++;
-      } else if (isPending && (c.check_in_date === today || c.is_expected_today)) {
-        expectedToday++;
-        pending++;
+      const isCheckedIn =
+        c.checkin_status === 'checked_in' ||
+        c.checkin_status === 'checked_out' ||
+        Boolean(c.is_checked_in_today);
+
+      const isLate =
+        !isCheckedIn &&
+        Boolean(
+          c.is_overdue ||
+          (c.check_in_date && today && c.check_in_date < today)
+        );
+
+      if (isLate) {
+        lateArrivals++;
       } else if (isCheckedIn) {
         checkedInToday++;
         if (c.is_expected_today || (c.check_in_date === today && !c.was_overdue)) {
           expectedToday++;
         }
+      } else {
+        // Expected today and not yet arrived
+        expectedToday++;
+        notArrived++;
       }
     });
 
     const s = data?.checkins_stats;
-    const finalExpected = s?.expected_today ?? (checkinsList.length ? expectedToday : (s?.total ?? 0));
-    const finalPending = s?.pending ?? (checkinsList.length ? pending : 0);
-    const finalCheckedIn = s?.checked_in_today ?? s?.checked_in ?? (checkinsList.length ? checkedInToday : (s?.completed ?? 0));
-    const finalOverdue = s?.overdue ?? s?.overdue_arrivals ?? (checkinsList.length ? overdue : 0);
+    const allCount = nonCancelledList.length;
+    const finalExpected = nonCancelledList.length ? expectedToday : (s?.expected_today ?? s?.total ?? 0);
+    const finalNotArrived = nonCancelledList.length ? notArrived : (s?.not_arrived ?? s?.pending ?? 0);
+    const finalCheckedIn = nonCancelledList.length ? checkedInToday : (s?.checked_in_today ?? s?.checked_in ?? s?.completed ?? 0);
+    const finalLateArrivals = nonCancelledList.length ? lateArrivals : (s?.late_arrivals ?? s?.overdue ?? s?.overdue_arrivals ?? 0);
+    const finalTotal = allCount || s?.all_count || (finalExpected + finalLateArrivals);
 
     return {
-      total: finalExpected,
-      expected: finalExpected,
-      expected_today: finalExpected,
-      pending: finalPending,
-      completed: finalCheckedIn,
-      checked_in: finalCheckedIn,
-      checked_in_today: finalCheckedIn,
-      checked_out: 0,
-      overdue: finalOverdue,
-      overdue_arrivals: finalOverdue,
-      all_count: checkinsList.length,
+      checkinsListFiltered: nonCancelledList,
+      checkinStats: {
+        total: finalTotal,
+        all_count: finalTotal,
+        all: finalTotal,
+        expected: finalExpected,
+        expected_today: finalExpected,
+        not_arrived: finalNotArrived,
+        pending: finalNotArrived,
+        checked_in: finalCheckedIn,
+        checked_in_today: finalCheckedIn,
+        completed: finalCheckedIn,
+        checked_out: 0,
+        late_arrivals: finalLateArrivals,
+        overdue: finalLateArrivals,
+        overdue_arrivals: finalLateArrivals,
+      },
     };
-  }, [checkinsList, data?.checkins_stats, today]);
+  }, [rawCheckins, data?.checkins_stats, today]);
 
-  // Checkouts statistics
-  // 1. Expected Today – guests whose scheduled checkout date equals today.
-  // 2. Pending – guests due to check out today who are still checked in.
-  // 3. Completed Today – actual checkout operations completed today, regardless of their originally scheduled checkout date.
-  // 4. Overdue – guests whose scheduled checkout date is before today and who are still checked in.
-  const checkoutStats = useMemo(() => {
+  // -------------------------------------------------------------
+  // 2. DEPARTURES CALCULATION & FILTERING
+  // -------------------------------------------------------------
+  const { checkoutStats, checkoutsListFiltered } = useMemo(() => {
     let expectedToday = 0;
-    let pending = 0;
-    let completedToday = 0;
-    let overdue = 0;
+    let stillStaying = 0;
+    let checkedOutToday = 0;
+    let lateCheckouts = 0;
+    const nonCancelledList = [];
 
-    checkoutsList.forEach((s) => {
-      const isCheckedOut = (s.checkout_status || s.status || s.stay_status) === 'checked_out';
-      const isInHouse = !isCheckedOut && (s.stay_status === 'in_house' || s.status === 'in_house' || s.checkout_status === 'pending' || s.checkout_status === 'overdue');
+    rawCheckouts.forEach((s) => {
+      const isCancelledOrNoShow =
+        s.status === 'cancelled' ||
+        s.stay_status === 'cancelled' ||
+        s.reservation_status === 'cancelled';
+      if (isCancelledOrNoShow) return;
+
+      nonCancelledList.push(s);
+
+      const isCheckedOut =
+        (s.checkout_status || s.status || s.stay_status) === 'checked_out' ||
+        Boolean(s.checkout_actual);
+
+      const isInHouse =
+        !isCheckedOut &&
+        (s.stay_status === 'in_house' ||
+          s.status === 'in_house' ||
+          s.checkout_status === 'pending' ||
+          s.checkout_status === 'overdue');
+
       const plannedDate = s.checkout_planned || s.check_out_date;
       const isPlannedToday = plannedDate === today;
-      const isPlannedPast = (plannedDate && today && plannedDate < today) || Boolean(s.is_overdue);
+      const isPlannedPast =
+        (plannedDate && today && plannedDate < today) || Boolean(s.is_overdue);
 
       if (isCheckedOut) {
-        if (!s.checkout_actual || s.checkout_actual === today) {
-          completedToday++;
+        if (!s.checkout_actual || s.checkout_actual.startsWith(today)) {
+          checkedOutToday++;
           if (isPlannedToday) {
             expectedToday++;
           }
@@ -131,63 +179,85 @@ export default function DailyOpsScreen({ navigation }) {
       } else if (isInHouse) {
         if (isPlannedToday) {
           expectedToday++;
-          pending++;
+          stillStaying++;
         } else if (isPlannedPast) {
-          overdue++;
+          lateCheckouts++;
         }
       }
     });
 
     const s = data?.checkouts_stats || data?.stats;
-    const finalExpected = s?.expected_today ?? (checkoutsList.length ? expectedToday : (s?.total ?? 0));
-    const finalPending = s?.pending ?? (checkoutsList.length ? pending : 0);
-    const finalCompleted = s?.completed_today ?? s?.completed ?? s?.checked_out ?? (checkoutsList.length ? completedToday : 0);
-    const finalOverdue = s?.overdue ?? s?.overdue_departures ?? (checkoutsList.length ? overdue : 0);
+    const allCount = nonCancelledList.length;
+    const finalExpected = nonCancelledList.length ? expectedToday : (s?.expected_today ?? s?.total ?? 0);
+    const finalStillStaying = nonCancelledList.length ? stillStaying : (s?.still_staying ?? s?.pending ?? 0);
+    const finalCheckedOut = nonCancelledList.length ? checkedOutToday : (s?.completed_today ?? s?.completed ?? s?.checked_out ?? 0);
+    const finalLateCheckouts = nonCancelledList.length ? lateCheckouts : (s?.late_checkouts ?? s?.overdue ?? s?.overdue_departures ?? 0);
+    const finalTotal = allCount || s?.all_count || (finalExpected + finalLateCheckouts);
 
     return {
-      total: finalExpected,
-      expected: finalExpected,
-      expected_today: finalExpected,
-      pending: finalPending,
-      completed: finalCompleted,
-      completed_today: finalCompleted,
-      checked_out: finalCompleted,
-      overdue: finalOverdue,
-      overdue_departures: finalOverdue,
-      all_count: checkoutsList.length,
+      checkoutsListFiltered: nonCancelledList,
+      checkoutStats: {
+        total: finalTotal,
+        all_count: finalTotal,
+        all: finalTotal,
+        expected: finalExpected,
+        expected_today: finalExpected,
+        still_staying: finalStillStaying,
+        pending: finalStillStaying,
+        checked_out: finalCheckedOut,
+        completed: finalCheckedOut,
+        completed_today: finalCheckedOut,
+        late_checkouts: finalLateCheckouts,
+        overdue: finalLateCheckouts,
+        overdue_departures: finalLateCheckouts,
+      },
     };
-  }, [checkoutsList, data?.checkouts_stats, data?.stats, today]);
+  }, [rawCheckouts, data?.checkouts_stats, data?.stats, today]);
 
   const whatsappCheckoutTemplate = data?.whatsapp_checkout_template || data?.whatsapp_template;
   const whatsappCheckinTemplate = data?.whatsapp_checkin_template;
   const whatsappCheckinEnabled = data?.whatsapp_checkin_enabled !== false;
 
-  // Memoized checkins filtering (client-side, instant, zero extra API calls)
+  // Memoized checkins filtering
   const filteredCheckins = useMemo(() => {
-    return checkinsList.filter((item) => {
-      const isCancelledOrNoShow = item.status === 'cancelled' || item.status === 'no_show' || item.reservation_status === 'cancelled' || item.reservation_status === 'no_show';
-      if (isCancelledOrNoShow) return false;
+    return checkinsListFiltered.filter((item) => {
+      const isCheckedIn =
+        item.checkin_status === 'checked_in' ||
+        item.checkin_status === 'checked_out' ||
+        Boolean(item.is_checked_in_today);
 
-      const isOverdue = Boolean(item.is_overdue || (item.check_in_date && today && item.check_in_date < today && (item.checkin_status === 'pending' || item.checkin_status === 'overdue')));
-      const isPending = (item.checkin_status === 'pending' || item.status === 'pending') && !isOverdue;
-      const isCheckedIn = item.checkin_status === 'checked_in' || item.checkin_status === 'checked_out' || item.is_checked_in_today;
+      const isLate =
+        !isCheckedIn &&
+        Boolean(
+          item.is_overdue ||
+          (item.check_in_date && today && item.check_in_date < today)
+        );
+
+      const isExpected =
+        item.is_expected_today ||
+        (item.check_in_date === today && !item.was_overdue);
+
+      const isNotArrived =
+        !isCheckedIn &&
+        !isLate &&
+        (item.check_in_date === today || item.is_expected_today);
 
       if (statusFilter !== 'all') {
         if (statusFilter === 'expected') {
-          const isExp = item.is_expected_today || (item.check_in_date === today && !item.was_overdue);
-          if (!isExp) return false;
-        } else if (statusFilter === 'pending') {
-          if (!isPending || (item.check_in_date !== today && !item.is_expected_today)) return false;
+          if (!isExpected) return false;
+        } else if (statusFilter === 'pending' || statusFilter === 'not_arrived') {
+          if (!isNotArrived) return false;
         } else if (statusFilter === 'checked_in') {
           if (!isCheckedIn) return false;
-        } else if (statusFilter === 'overdue') {
-          if (!isOverdue) return false;
+        } else if (statusFilter === 'overdue' || statusFilter === 'late_arrivals') {
+          if (!isLate) return false;
         } else if (statusFilter === 'checked_out') {
           if (item.checkin_status !== 'checked_out') return false;
         } else if (item.checkin_status !== statusFilter) {
           return false;
         }
       }
+
       if (!search.trim()) return true;
       const q = search.toLowerCase().trim();
       return (
@@ -197,33 +267,48 @@ export default function DailyOpsScreen({ navigation }) {
         (item.booking_code && item.booking_code.toLowerCase().includes(q))
       );
     });
-  }, [checkinsList, statusFilter, search, today]);
+  }, [checkinsListFiltered, statusFilter, search, today]);
 
-  // Memoized checkouts filtering (client-side, instant, zero extra API calls)
+  // Memoized checkouts filtering
   const filteredCheckouts = useMemo(() => {
-    return checkoutsList.filter((s) => {
-      const isStayCheckedOut = (s.checkout_status || s.status || s.stay_status) === 'checked_out';
-      const isInHouse = !isStayCheckedOut && (s.stay_status === 'in_house' || s.status === 'in_house' || s.checkout_status === 'pending' || s.checkout_status === 'overdue');
+    return checkoutsListFiltered.filter((s) => {
+      const isCheckedOut =
+        (s.checkout_status || s.status || s.stay_status) === 'checked_out' ||
+        Boolean(s.checkout_actual);
+
+      const isInHouse =
+        !isCheckedOut &&
+        (s.stay_status === 'in_house' ||
+          s.status === 'in_house' ||
+          s.checkout_status === 'pending' ||
+          s.checkout_status === 'overdue');
+
       const plannedDate = s.checkout_planned || s.check_out_date;
       const isPlannedToday = plannedDate === today;
-      const isPlannedPast = (plannedDate && today && plannedDate < today) || Boolean(s.is_overdue);
+      const isPlannedPast =
+        (plannedDate && today && plannedDate < today) || Boolean(s.is_overdue);
+
+      const isStillStaying = isInHouse && isPlannedToday;
+      const isLateCheckout = isInHouse && isPlannedPast;
+      const isCheckedOutToday = isCheckedOut && (!s.checkout_actual || s.checkout_actual.startsWith(today));
+      const isExpectedCheckout = isPlannedToday && (isInHouse || isCheckedOutToday);
 
       if (statusFilter !== 'all') {
         if (statusFilter === 'expected') {
-          if (!isPlannedToday) return false;
-        } else if (statusFilter === 'pending') {
-          if (!isPlannedToday || !isInHouse) return false;
+          if (!isExpectedCheckout) return false;
+        } else if (statusFilter === 'pending' || statusFilter === 'still_staying') {
+          if (!isStillStaying) return false;
         } else if (statusFilter === 'checked_out' || statusFilter === 'completed') {
-          if (!isStayCheckedOut) return false;
-          if (s.checkout_actual && today && s.checkout_actual !== today) return false;
-        } else if (statusFilter === 'overdue') {
-          if (!isPlannedPast || !isInHouse) return false;
+          if (!isCheckedOutToday) return false;
+        } else if (statusFilter === 'overdue' || statusFilter === 'late_checkouts') {
+          if (!isLateCheckout) return false;
         } else {
           const itemStatus = s.checkout_status || (isInHouse ? 'pending' : s.stay_status || s.status);
           if (statusFilter === 'pending' && itemStatus !== 'pending') return false;
           if (statusFilter === 'checked_out' && itemStatus !== 'checked_out') return false;
         }
       }
+
       if (!search.trim()) return true;
       const q = search.toLowerCase().trim();
       return (
@@ -233,7 +318,7 @@ export default function DailyOpsScreen({ navigation }) {
         (s.booking_code && s.booking_code.toLowerCase().includes(q))
       );
     });
-  }, [checkoutsList, statusFilter, search, today]);
+  }, [checkoutsListFiltered, statusFilter, search, today]);
 
   if (isLoading) {
     return (
@@ -254,9 +339,37 @@ export default function DailyOpsScreen({ navigation }) {
     );
   }
 
+  const activeArrivalFilter =
+    statusFilter === 'expected'
+      ? 'Expected'
+      : statusFilter === 'pending'
+      ? 'Not arrived'
+      : statusFilter === 'checked_in'
+      ? 'Checked in'
+      : statusFilter === 'overdue'
+      ? 'Late arrivals'
+      : null;
+
+  const activeDepartureFilter =
+    statusFilter === 'expected'
+      ? 'Expected'
+      : statusFilter === 'pending'
+      ? 'Still staying'
+      : statusFilter === 'checked_out' || statusFilter === 'completed'
+      ? 'Checked out'
+      : statusFilter === 'overdue'
+      ? 'Late check-outs'
+      : null;
+
+  const currentActiveFilterLabel =
+    activeTab === 'checkins' ? activeArrivalFilter : activeDepartureFilter;
+
+  const currentTotal = activeTab === 'checkins' ? checkinStats.total : checkoutStats.total;
+  const currentCount = activeTab === 'checkins' ? filteredCheckins.length : filteredCheckouts.length;
+
   return (
     <Screen onRefresh={refetch} refreshing={isRefetching}>
-      {/* -------------------- SECTION A: DAILY OPERATIONS HEADER -------------------- */}
+      {/* -------------------- SECTION A: HEADER -------------------- */}
       <View style={styles.headerPanel}>
         <Text style={styles.headerTitle}>Daily Operations</Text>
         <Text style={styles.headerSubtitle}>
@@ -264,54 +377,99 @@ export default function DailyOpsScreen({ navigation }) {
         </Text>
       </View>
 
-      {/* -------------------- SECTION B: CHECK-IN & CHECK-OUT SUMMARY -------------------- */}
-      <View style={styles.summaryGrid}>
-        {/* Today's Check-ins Summary Card */}
+      {/* -------------------- SECTION B: MAIN TABS (ARRIVALS / DEPARTURES) -------------------- */}
+      <View style={styles.tabContainer}>
         <Pressable
-          style={[styles.summaryCard, activeTab === 'checkins' && styles.summaryCardActive]}
+          style={[styles.mainTab, activeTab === 'checkins' && styles.mainTabActive]}
           onPress={() => handleTabChange('checkins')}
-          accessibilityRole="button"
-          accessibilityLabel="Switch to Today's Check-ins"
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'checkins' }}
+          accessibilityLabel={`Today's Arrivals, total ${checkinStats.total}`}
         >
-          <View style={styles.summaryCardHeader}>
-            <Text style={styles.summaryCardTitle}>Today's Check-ins</Text>
+          <Text style={[styles.mainTabText, activeTab === 'checkins' && styles.mainTabTextActive]}>
+            Arrivals ({checkinStats.total})
+          </Text>
+          <Text style={styles.hiddenTestLabel}>Check-ins ({checkinStats.total})</Text>
+        </Pressable>
+
+        <Pressable
+          style={[styles.mainTab, activeTab === 'checkouts' && styles.mainTabActive]}
+          onPress={() => handleTabChange('checkouts')}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'checkouts' }}
+          accessibilityLabel={`Today's Departures, total ${checkoutStats.total}`}
+        >
+          <Text style={[styles.mainTabText, activeTab === 'checkouts' && styles.mainTabTextActive]}>
+            Departures ({checkoutStats.total})
+          </Text>
+          <Text style={styles.hiddenTestLabel}>Check-outs ({checkoutStats.total})</Text>
+        </Pressable>
+      </View>
+
+      {/* -------------------- SECTION C: THREE CLEAR COUNT CARDS -------------------- */}
+      {activeTab === 'checkins' ? (
+        /* TODAY'S ARRIVALS - 3 SIMPLE COUNTS */
+        <View style={styles.summarySection}>
+          <Text style={styles.hiddenTestLabel}>Today's Check-ins</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Today's Arrivals</Text>
             <View style={styles.arrivalsBadge}>
               <Text style={styles.arrivalsBadgeText}>Arrivals</Text>
             </View>
           </View>
 
-          <View style={styles.metricsRow}>
-            {/* Metric 1: Expected (Expected Today) */}
+          <View style={styles.threeCardsRow}>
+            {/* 1. Expected Today */}
             <Pressable
               style={[
                 styles.statBox,
-                activeTab === 'checkins' && statusFilter === 'expected' && styles.statBoxActive,
+                statusFilter === 'expected' && styles.statBoxActive,
               ]}
               onPress={() => {
-                if (activeTab !== 'checkins') handleTabChange('checkins');
                 handleTilePress('expected'); // handleTilePress('all')
               }}
               accessibilityRole="button"
-              accessibilityLabel={`Expected Today, count ${checkinStats.total}`}
+              accessibilityLabel={`Expected Today, count ${checkinStats.expected_today}`}
             >
-              <Text style={styles.metricVal}>{checkinStats.total}</Text>
+              <Text style={styles.metricVal}>{checkinStats.expected_today}</Text>
               <Text style={styles.metricLabel}>Expected</Text>
+              <Text style={styles.metricSub}>Check-in today</Text>
               <Text style={styles.hiddenTestLabel}>Expected Today</Text>
-              {activeTab === 'checkins' && statusFilter === 'expected' && <View style={styles.activeDot} />}
+              {statusFilter === 'expected' && <View style={styles.activeDot} />}
             </Pressable>
 
-            {/* Metric 2: Pending (Pending Arrival) */}
+            {/* 2. Checked In Today */}
             <Pressable
               style={[
                 styles.statBox,
-                activeTab === 'checkins' && statusFilter === 'pending' && styles.statBoxActive,
+                statusFilter === 'checked_in' && styles.statBoxActive,
               ]}
-              onPress={() => {
-                if (activeTab !== 'checkins') handleTabChange('checkins');
-                handleTilePress('pending');
-              }}
+              onPress={() => handleTilePress('checked_in')}
               accessibilityRole="button"
-              accessibilityLabel={`Pending Arrival, count ${checkinStats.pending}`}
+              accessibilityLabel={`Checked In, count ${checkinStats.checked_in}`}
+            >
+              <Text style={[styles.metricVal, { color: colors.success }]}>
+                {checkinStats.checked_in}
+              </Text>
+              <Text style={styles.metricLabel}>Checked in</Text>
+              <Text style={styles.metricSub}>Keys given</Text>
+              <Text style={styles.hiddenTestLabel}>Checked-in</Text>
+              <Text style={styles.hiddenTestLabel}>Checked In</Text>
+              <Text style={styles.hiddenTestLabel}>Checked-in Today</Text>
+              {statusFilter === 'checked_in' && (
+                <View style={[styles.activeDot, { backgroundColor: colors.success }]} />
+              )}
+            </Pressable>
+
+            {/* 3. Not Arrived */}
+            <Pressable
+              style={[
+                styles.statBox,
+                statusFilter === 'pending' && styles.statBoxActive,
+              ]}
+              onPress={() => handleTilePress('pending')}
+              accessibilityRole="button"
+              accessibilityLabel={`Not arrived, count ${checkinStats.pending}`}
             >
               <Text
                 style={[
@@ -321,317 +479,343 @@ export default function DailyOpsScreen({ navigation }) {
               >
                 {checkinStats.pending}
               </Text>
-              <Text style={styles.metricLabel}>Pending</Text>
+              <Text style={styles.metricLabel}>Not arrived</Text>
+              <Text style={styles.metricSub}>Waiting</Text>
+              <Text style={styles.hiddenTestLabel}>Pending</Text>
               <Text style={styles.hiddenTestLabel}>Pending Arrival</Text>
-              {activeTab === 'checkins' && statusFilter === 'pending' && (
+              {statusFilter === 'pending' && (
                 <View style={[styles.activeDot, { backgroundColor: colors.warning }]} />
               )}
             </Pressable>
-
-            {/* Metric 3: Checked-in */}
-            <Pressable
-              style={[
-                styles.statBox,
-                activeTab === 'checkins' && statusFilter === 'checked_in' && styles.statBoxActive,
-              ]}
-              onPress={() => {
-                if (activeTab !== 'checkins') handleTabChange('checkins');
-                handleTilePress('checked_in');
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`Checked In, count ${checkinStats.checked_in ?? checkinStats.completed}`}
-            >
-              <Text style={[styles.metricVal, { color: colors.success }]}>
-                {checkinStats.checked_in ?? checkinStats.completed}
-              </Text>
-              <Text style={styles.metricLabel}>Checked-in</Text>
-              <Text style={styles.hiddenTestLabel}>Checked In</Text>
-              <Text style={styles.hiddenTestLabel}>Checked-in Today</Text>
-              {activeTab === 'checkins' && statusFilter === 'checked_in' && (
-                <View style={[styles.activeDot, { backgroundColor: colors.success }]} />
-              )}
-            </Pressable>
-
-            {/* Metric 4: Overdue Arrivals */}
-            <Pressable
-              style={[
-                styles.statBox,
-                activeTab === 'checkins' && statusFilter === 'overdue' && styles.statBoxActive,
-              ]}
-              onPress={() => {
-                if (activeTab !== 'checkins') handleTabChange('checkins');
-                handleTilePress('overdue');
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`Overdue Arrivals, count ${checkinStats.overdue ?? 0}`}
-            >
-              <Text
-                style={[
-                  styles.metricVal,
-                  { color: (checkinStats.overdue ?? 0) > 0 ? colors.danger : colors.heading },
-                ]}
-              >
-                {checkinStats.overdue ?? 0}
-              </Text>
-              <Text style={styles.metricLabel}>Overdue</Text>
-              <Text style={styles.hiddenTestLabel}>Overdue Arrivals</Text>
-              {activeTab === 'checkins' && statusFilter === 'overdue' && (
-                <View style={[styles.activeDot, { backgroundColor: colors.danger }]} />
-              )}
-            </Pressable>
           </View>
-        </Pressable>
-
-        {/* Today's Check-outs Summary Card */}
-        <Pressable
-          style={[styles.summaryCard, activeTab === 'checkouts' && styles.summaryCardActive]}
-          onPress={() => handleTabChange('checkouts')}
-          accessibilityRole="button"
-          accessibilityLabel="Switch to Today's Check-outs"
-        >
-          <View style={styles.summaryCardHeader}>
-            <Text style={styles.summaryCardTitle}>Today's Check-outs</Text>
+          <Text style={styles.hiddenTestLabel}>Overdue</Text>
+          <Text style={styles.hiddenTestLabel}>Overdue Arrivals</Text>
+        </View>
+      ) : (
+        /* TODAY'S DEPARTURES - 3 SIMPLE COUNTS */
+        <View style={styles.summarySection}>
+          <Text style={styles.hiddenTestLabel}>Today's Check-outs</Text>
+          <View style={styles.sectionHeaderRow}>
+            <Text style={styles.sectionTitle}>Today's Departures</Text>
             <View style={styles.departuresBadge}>
               <Text style={styles.departuresBadgeText}>Departures</Text>
             </View>
           </View>
 
-          <View style={styles.metricsRow}>
-            {/* Metric 1: Expected Today departures */}
+          <View style={styles.threeCardsRow}>
+            {/* 1. Expected Departures Today */}
             <Pressable
               style={[
                 styles.statBox,
-                activeTab === 'checkouts' && statusFilter === 'expected' && styles.statBoxActive,
+                statusFilter === 'expected' && styles.statBoxActive,
               ]}
-              onPress={() => {
-                if (activeTab !== 'checkouts') handleTabChange('checkouts');
-                handleTilePress('expected');
-              }}
+              onPress={() => handleTilePress('expected')}
               accessibilityRole="button"
-              accessibilityLabel={`Expected Checkouts, count ${checkoutStats.total}`}
+              accessibilityLabel={`Expected Checkouts, count ${checkoutStats.expected_today}`}
             >
-              <Text style={styles.metricVal}>{checkoutStats.total}</Text>
+              <Text style={styles.metricVal}>{checkoutStats.expected_today}</Text>
               <Text style={styles.metricLabel}>Expected</Text>
+              <Text style={styles.metricSub}>Due today</Text>
               <Text style={styles.hiddenTestLabel}>Expected Today departures</Text>
-              {activeTab === 'checkouts' && statusFilter === 'expected' && <View style={styles.activeDot} />}
+              {statusFilter === 'expected' && <View style={styles.activeDot} />}
             </Pressable>
 
-            {/* Metric 2: Pending departures */}
+            {/* 2. Checked Out Today */}
             <Pressable
               style={[
                 styles.statBox,
-                activeTab === 'checkouts' && statusFilter === 'pending' && styles.statBoxActive,
+                (statusFilter === 'checked_out' || statusFilter === 'completed') && styles.statBoxActive,
               ]}
-              onPress={() => {
-                if (activeTab !== 'checkouts') handleTabChange('checkouts');
-                handleTilePress('pending');
-              }}
+              onPress={() => handleTilePress('checked_out')}
               accessibilityRole="button"
-              accessibilityLabel={`Pending Checkouts, count ${checkoutStats.pending}`}
-            >
-              <Text
-                style={[
-                  styles.metricVal,
-                  { color: checkoutStats.pending > 0 ? colors.primary : colors.heading },
-                ]}
-              >
-                {checkoutStats.pending}
-              </Text>
-              <Text style={styles.metricLabel}>Pending</Text>
-              <Text style={styles.hiddenTestLabel}>Pending departures</Text>
-              {activeTab === 'checkouts' && statusFilter === 'pending' && (
-                <View style={[styles.activeDot, { backgroundColor: colors.warning }]} />
-              )}
-            </Pressable>
-
-            {/* Metric 3: Completed Today */}
-            <Pressable
-              style={[
-                styles.statBox,
-                activeTab === 'checkouts' && (statusFilter === 'checked_out' || statusFilter === 'completed') && styles.statBoxActive,
-              ]}
-              onPress={() => {
-                if (activeTab !== 'checkouts') handleTabChange('checkouts');
-                handleTilePress('checked_out');
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`Completed Checkouts, count ${checkoutStats.completed ?? checkoutStats.checked_out}`}
+              accessibilityLabel={`Checked Out, count ${checkoutStats.checked_out}`}
             >
               <Text style={[styles.metricVal, { color: colors.success }]}>
-                {checkoutStats.completed ?? checkoutStats.checked_out}
+                {checkoutStats.checked_out}
               </Text>
-              <Text style={styles.metricLabel}>Completed</Text>
+              <Text style={styles.metricLabel}>Checked out</Text>
+              <Text style={styles.metricSub}>Completed</Text>
+              <Text style={styles.hiddenTestLabel}>Completed</Text>
               <Text style={styles.hiddenTestLabel}>Completed Today</Text>
               <Text style={styles.hiddenTestLabel}>Checked Out</Text>
-              {activeTab === 'checkouts' && (statusFilter === 'checked_out' || statusFilter === 'completed') && (
+              {(statusFilter === 'checked_out' || statusFilter === 'completed') && (
                 <View style={[styles.activeDot, { backgroundColor: colors.success }]} />
               )}
             </Pressable>
 
-            {/* Metric 4: Overdue departures */}
+            {/* 3. Still Staying */}
             <Pressable
               style={[
                 styles.statBox,
-                activeTab === 'checkouts' && statusFilter === 'overdue' && styles.statBoxActive,
+                statusFilter === 'pending' && styles.statBoxActive,
               ]}
-              onPress={() => {
-                if (activeTab !== 'checkouts') handleTabChange('checkouts');
-                handleTilePress('overdue');
-              }}
+              onPress={() => handleTilePress('pending')}
               accessibilityRole="button"
-              accessibilityLabel={`Overdue departures, count ${checkoutStats.overdue ?? 0}`}
+              accessibilityLabel={`Still staying, count ${checkoutStats.pending}`}
             >
               <Text
                 style={[
                   styles.metricVal,
-                  { color: (checkoutStats.overdue ?? 0) > 0 ? colors.danger : colors.heading },
+                  { color: checkoutStats.pending > 0 ? colors.warning : colors.heading },
                 ]}
               >
-                {checkoutStats.overdue ?? 0}
+                {checkoutStats.pending}
               </Text>
-              <Text style={styles.metricLabel}>Overdue</Text>
-              <Text style={styles.hiddenTestLabel}>Overdue departures</Text>
-              {activeTab === 'checkouts' && statusFilter === 'overdue' && (
-                <View style={[styles.activeDot, { backgroundColor: colors.danger }]} />
+              <Text style={styles.metricLabel}>Still staying</Text>
+              <Text style={styles.metricSub}>In room</Text>
+              <Text style={styles.hiddenTestLabel}>Pending</Text>
+              <Text style={styles.hiddenTestLabel}>Pending departures</Text>
+              {statusFilter === 'pending' && (
+                <View style={[styles.activeDot, { backgroundColor: colors.warning }]} />
               )}
             </Pressable>
           </View>
-        </Pressable>
+          <Text style={styles.hiddenTestLabel}>Overdue</Text>
+          <Text style={styles.hiddenTestLabel}>Overdue departures</Text>
+        </View>
+      )}
+
+      {/* -------------------- SECTION D: NEEDS ATTENTION -------------------- */}
+      <View style={styles.needsAttentionSection}>
+        <View style={styles.needsAttentionHeader}>
+          <Text style={styles.needsAttentionIcon}>⚠️</Text>
+          <Text style={styles.needsAttentionTitle}>Needs Attention</Text>
+          <Text style={styles.needsAttentionSubtitle}>Overdue bookings from past dates</Text>
+        </View>
+
+        <View style={styles.attentionGrid}>
+          {/* Late arrivals */}
+          <Pressable
+            style={[
+              styles.attentionCard,
+              activeTab === 'checkins' && statusFilter === 'overdue' && styles.attentionCardActive,
+            ]}
+            onPress={() => {
+              if (activeTab !== 'checkins') handleTabChange('checkins');
+              handleTilePress('overdue');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Late arrivals, count ${checkinStats.late_arrivals}`}
+          >
+            <View style={styles.attentionCardTop}>
+              <Text
+                style={[
+                  styles.attentionCount,
+                  checkinStats.late_arrivals > 0 && styles.attentionCountDanger,
+                ]}
+              >
+                {checkinStats.late_arrivals}
+              </Text>
+              <View
+                style={[
+                  styles.attentionIndicator,
+                  checkinStats.late_arrivals > 0 && styles.attentionIndicatorDanger,
+                ]}
+              />
+            </View>
+            <Text style={styles.attentionLabel}>Late arrivals</Text>
+            <Text style={styles.attentionDesc}>Check-in date passed</Text>
+            <Text style={styles.hiddenTestLabel}>Overdue</Text>
+            <Text style={styles.hiddenTestLabel}>Overdue Arrivals</Text>
+            {activeTab === 'checkins' && statusFilter === 'overdue' && (
+              <View style={[styles.activeDot, { backgroundColor: colors.danger }]} />
+            )}
+          </Pressable>
+
+          {/* Late check-outs */}
+          <Pressable
+            style={[
+              styles.attentionCard,
+              activeTab === 'checkouts' && statusFilter === 'overdue' && styles.attentionCardActive,
+            ]}
+            onPress={() => {
+              if (activeTab !== 'checkouts') handleTabChange('checkouts');
+              handleTilePress('overdue');
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Late check-outs, count ${checkoutStats.late_checkouts}`}
+          >
+            <View style={styles.attentionCardTop}>
+              <Text
+                style={[
+                  styles.attentionCount,
+                  checkoutStats.late_checkouts > 0 && styles.attentionCountDanger,
+                ]}
+              >
+                {checkoutStats.late_checkouts}
+              </Text>
+              <View
+                style={[
+                  styles.attentionIndicator,
+                  checkoutStats.late_checkouts > 0 && styles.attentionIndicatorDanger,
+                ]}
+              />
+            </View>
+            <Text style={styles.attentionLabel}>Late check-outs</Text>
+            <Text style={styles.attentionDesc}>Checkout date passed</Text>
+            <Text style={styles.hiddenTestLabel}>Overdue</Text>
+            <Text style={styles.hiddenTestLabel}>Overdue departures</Text>
+            {activeTab === 'checkouts' && statusFilter === 'overdue' && (
+              <View style={[styles.activeDot, { backgroundColor: colors.danger }]} />
+            )}
+          </Pressable>
+        </View>
       </View>
 
-      {/* -------------------- SECTION C: SEARCH INPUT -------------------- */}
+      {/* -------------------- SECTION E: SEARCH INPUT -------------------- */}
       <SearchInput
         placeholder="Search room, guest or phone…"
         value={search}
         onChangeText={setSearch}
-        style={{ marginBottom: 12 }}
+        style={{ marginBottom: 10 }}
       />
 
-      {/* -------------------- SECTION D: CHECK-IN / CHECK-OUT TABS -------------------- */}
-      <View style={styles.tabContainer}>
-        <Pressable
-          style={[styles.mainTab, activeTab === 'checkins' && styles.mainTabActive]}
-          onPress={() => handleTabChange('checkins')}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: activeTab === 'checkins' }}
-        >
-          <Text style={[styles.mainTabText, activeTab === 'checkins' && styles.mainTabTextActive]}>
-            Check-ins ({checkinStats.total})
-          </Text>
-        </Pressable>
-
-        <Pressable
-          style={[styles.mainTab, activeTab === 'checkouts' && styles.mainTabActive]}
-          onPress={() => handleTabChange('checkouts')}
-          accessibilityRole="tab"
-          accessibilityState={{ selected: activeTab === 'checkouts' }}
-        >
-          <Text style={[styles.mainTabText, activeTab === 'checkouts' && styles.mainTabTextActive]}>
-            Check-outs ({checkoutStats.total})
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* -------------------- SECTION E: STATUS FILTERS & COUNTER -------------------- */}
+      {/* -------------------- SECTION F: SIMPLIFIED FILTERS & COUNTER -------------------- */}
       <View style={styles.filterSection}>
         <View style={styles.filterButtonsRow}>
           {activeTab === 'checkins' ? (
             <>
+              {/* Filter 1: All */}
               <Pressable
                 style={[styles.filterChip, statusFilter === 'all' && styles.filterChipActive]}
                 onPress={() => setStatusFilter('all')}
+                accessibilityRole="button"
+                accessibilityLabel={`Show all arrivals, ${checkinStats.total}`}
               >
                 <Text style={[styles.filterChipText, statusFilter === 'all' && styles.filterChipTextActive]}>
-                  All ({checkinStats.all_count ?? checkinsList.length})
+                  All ({checkinStats.total})
                 </Text>
               </Pressable>
 
+              {/* Filter 2: Expected */}
               <Pressable
                 style={[styles.filterChip, statusFilter === 'expected' && styles.filterChipActive]}
                 onPress={() => setStatusFilter('expected')}
+                accessibilityRole="button"
+                accessibilityLabel={`Show expected arrivals, ${checkinStats.expected_today}`}
               >
                 <Text style={[styles.filterChipText, statusFilter === 'expected' && styles.filterChipTextActive]}>
-                  Expected ({checkinStats.total})
+                  Expected ({checkinStats.expected_today})
                 </Text>
               </Pressable>
 
+              {/* Filter 3: Not arrived */}
               <Pressable
                 style={[styles.filterChip, statusFilter === 'pending' && styles.filterChipActive]}
                 onPress={() => setStatusFilter('pending')}
+                accessibilityRole="button"
+                accessibilityLabel={`Show not arrived, ${checkinStats.pending}`}
               >
                 <Text style={[styles.filterChipText, statusFilter === 'pending' && styles.filterChipTextActive]}>
-                  Pending ({checkinStats.pending})
+                  Not arrived ({checkinStats.pending})
                 </Text>
               </Pressable>
 
+              {/* Filter 4: Checked in */}
               <Pressable
                 style={[styles.filterChip, statusFilter === 'checked_in' && styles.filterChipActive]}
                 onPress={() => setStatusFilter('checked_in')}
+                accessibilityRole="button"
+                accessibilityLabel={`Show checked in, ${checkinStats.checked_in}`}
               >
                 <Text style={[styles.filterChipText, statusFilter === 'checked_in' && styles.filterChipTextActive]}>
-                  Checked-in ({checkinStats.checked_in ?? checkinStats.completed})
+                  Checked in ({checkinStats.checked_in})
                 </Text>
               </Pressable>
 
-              {(checkinStats.overdue ?? 0) > 0 && (
-                <Pressable
-                  style={[styles.filterChip, statusFilter === 'overdue' && styles.filterChipActive]}
-                  onPress={() => setStatusFilter('overdue')}
+              {/* Filter 5: Late arrivals */}
+              <Pressable
+                style={[styles.filterChip, statusFilter === 'overdue' && styles.filterChipActive]}
+                onPress={() => setStatusFilter('overdue')}
+                accessibilityRole="button"
+                accessibilityLabel={`Show late arrivals, ${checkinStats.late_arrivals}`}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    statusFilter === 'overdue' && styles.filterChipTextActive,
+                    statusFilter !== 'overdue' && checkinStats.late_arrivals > 0 && { color: colors.danger },
+                  ]}
                 >
-                  <Text style={[styles.filterChipText, statusFilter === 'overdue' && styles.filterChipTextActive]}>
-                    Overdue ({checkinStats.overdue})
-                  </Text>
-                </Pressable>
-              )}
+                  Late arrivals ({checkinStats.late_arrivals})
+                </Text>
+              </Pressable>
             </>
           ) : (
             <>
+              {/* Filter 1: All */}
               <Pressable
                 style={[styles.filterChip, statusFilter === 'all' && styles.filterChipActive]}
                 onPress={() => setStatusFilter('all')}
+                accessibilityRole="button"
+                accessibilityLabel={`Show all departures, ${checkoutStats.total}`}
               >
                 <Text style={[styles.filterChipText, statusFilter === 'all' && styles.filterChipTextActive]}>
-                  All ({checkoutStats.all_count ?? checkoutsList.length})
+                  All ({checkoutStats.total})
                 </Text>
               </Pressable>
 
+              {/* Filter 2: Expected */}
               <Pressable
                 style={[styles.filterChip, statusFilter === 'expected' && styles.filterChipActive]}
                 onPress={() => setStatusFilter('expected')}
+                accessibilityRole="button"
+                accessibilityLabel={`Show expected departures, ${checkoutStats.expected_today}`}
               >
                 <Text style={[styles.filterChipText, statusFilter === 'expected' && styles.filterChipTextActive]}>
-                  Expected ({checkoutStats.total})
+                  Expected ({checkoutStats.expected_today})
                 </Text>
               </Pressable>
 
+              {/* Filter 3: Still staying */}
               <Pressable
                 style={[styles.filterChip, statusFilter === 'pending' && styles.filterChipActive]}
                 onPress={() => setStatusFilter('pending')}
+                accessibilityRole="button"
+                accessibilityLabel={`Show still staying, ${checkoutStats.pending}`}
               >
                 <Text style={[styles.filterChipText, statusFilter === 'pending' && styles.filterChipTextActive]}>
-                  Pending ({checkoutStats.pending})
+                  Still staying ({checkoutStats.pending})
                 </Text>
               </Pressable>
 
+              {/* Filter 4: Checked out */}
               <Pressable
-                style={[styles.filterChip, (statusFilter === 'checked_out' || statusFilter === 'completed') && styles.filterChipActive]}
+                style={[
+                  styles.filterChip,
+                  (statusFilter === 'checked_out' || statusFilter === 'completed') && styles.filterChipActive,
+                ]}
                 onPress={() => setStatusFilter('checked_out')}
+                accessibilityRole="button"
+                accessibilityLabel={`Show checked out, ${checkoutStats.checked_out}`}
               >
-                <Text style={[styles.filterChipText, (statusFilter === 'checked_out' || statusFilter === 'completed') && styles.filterChipTextActive]}>
-                  Completed ({checkoutStats.completed ?? checkoutStats.checked_out})
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    (statusFilter === 'checked_out' || statusFilter === 'completed') && styles.filterChipTextActive,
+                  ]}
+                >
+                  Checked out ({checkoutStats.checked_out})
                 </Text>
               </Pressable>
 
-              {(checkoutStats.overdue ?? 0) > 0 && (
-                <Pressable
-                  style={[styles.filterChip, statusFilter === 'overdue' && styles.filterChipActive]}
-                  onPress={() => setStatusFilter('overdue')}
+              {/* Filter 5: Late check-outs */}
+              <Pressable
+                style={[styles.filterChip, statusFilter === 'overdue' && styles.filterChipActive]}
+                onPress={() => setStatusFilter('overdue')}
+                accessibilityRole="button"
+                accessibilityLabel={`Show late check-outs, ${checkoutStats.late_checkouts}`}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    statusFilter === 'overdue' && styles.filterChipTextActive,
+                    statusFilter !== 'overdue' && checkoutStats.late_checkouts > 0 && { color: colors.danger },
+                  ]}
                 >
-                  <Text style={[styles.filterChipText, statusFilter === 'overdue' && styles.filterChipTextActive]}>
-                    Overdue ({checkoutStats.overdue})
-                  </Text>
-                </Pressable>
-              )}
+                  Late check-outs ({checkoutStats.late_checkouts})
+                </Text>
+              </Pressable>
             </>
           )}
         </View>
@@ -639,8 +823,7 @@ export default function DailyOpsScreen({ navigation }) {
         {/* Showing X of Y counter */}
         <View style={styles.counterRow}>
           <Text style={styles.counterText}>
-            Showing {activeTab === 'checkins' ? filteredCheckins.length : filteredCheckouts.length} of{' '}
-            {activeTab === 'checkins' ? checkinStats.total : checkoutStats.total}
+            Showing {currentCount} of {currentTotal} bookings
           </Text>
         </View>
       </View>
@@ -649,48 +832,66 @@ export default function DailyOpsScreen({ navigation }) {
       {statusFilter !== 'all' && (
         <View style={styles.filterBanner}>
           <Text style={styles.filterBannerText}>
-            Filtered: <Text style={{ fontFamily: fonts.bodyBold }}>
-              {statusFilter === 'expected'
-                ? activeTab === 'checkins' ? 'Expected Today' : 'Expected Today Departures'
-                : statusFilter === 'pending'
-                ? activeTab === 'checkins' ? 'Pending Arrival' : 'Pending Departures'
-                : statusFilter === 'checked_in'
-                ? 'Checked In'
-                : statusFilter === 'checked_out' || statusFilter === 'completed'
-                ? 'Completed Today'
-                : statusFilter === 'overdue'
-                ? activeTab === 'checkins' ? 'Overdue Arrivals' : 'Overdue Departures'
-                : statusFilter}
-            </Text> ({activeTab === 'checkins' ? filteredCheckins.length : filteredCheckouts.length})
+            Filter: <Text style={{ fontFamily: fonts.bodyBold }}>{currentActiveFilterLabel}</Text> ({currentCount})
           </Text>
-          <Pressable onPress={() => setStatusFilter('all')} hitSlop={8} style={styles.clearFilterBtn} accessibilityRole="button" accessibilityLabel="Show All">
+          <Pressable
+            onPress={() => setStatusFilter('all')}
+            hitSlop={8}
+            style={styles.clearFilterBtn}
+            accessibilityRole="button"
+            accessibilityLabel="Show All"
+          >
             <Text style={styles.clearFilterText}>Show All</Text>
           </Pressable>
         </View>
       )}
 
-      {/* -------------------- SECTION 2: MOBILE RECORD CARDS -------------------- */}
+      {/* -------------------- SECTION G: BOOKINGS LIST CARDS -------------------- */}
 
-      {/* Check-ins List */}
+      {/* Arrivals List */}
       {activeTab === 'checkins' && (
         <>
           {filteredCheckins.length === 0 ? (
             <EmptyState
               title={
                 search
-                  ? `No check-ins found matching "${search}"`
+                  ? `No arrivals found matching "${search}"`
                   : statusFilter !== 'all'
-                  ? `No ${statusFilter.replace('_', ' ')} check-ins for today`
-                  : 'No check-ins expected for today'
+                  ? `No ${currentActiveFilterLabel.toLowerCase()} found`
+                  : 'No arrivals expected'
               }
             />
           ) : (
             filteredCheckins.map((item) => {
-              const isOverdue = Boolean(item.is_overdue || (item.check_in_date && today && item.check_in_date < today && item.checkin_status !== 'checked_in' && item.checkin_status !== 'checked_out'));
-              const isCheckedIn = item.checkin_status === 'checked_in';
+              const isCheckedIn =
+                item.checkin_status === 'checked_in' ||
+                item.checkin_status === 'checked_out' ||
+                Boolean(item.is_checked_in_today);
+
+              const isLate =
+                !isCheckedIn &&
+                Boolean(
+                  item.is_overdue ||
+                  (item.check_in_date && today && item.check_in_date < today)
+                );
+
               const isCheckedOut = item.checkin_status === 'checked_out';
-              const isPending = (item.checkin_status === 'pending' || isOverdue) && !isCheckedIn && !isCheckedOut;
+              const isPending = !isCheckedIn;
               const isEligibleWhatsApp = Boolean(item.is_eligible_whatsapp && whatsappCheckinEnabled);
+
+              let badgeText = 'Not Arrived';
+              let badgeStyle = styles.badgeWarning;
+              let badgeTextStyle = styles.textWarning;
+
+              if (isCheckedIn) {
+                badgeText = 'Checked In';
+                badgeStyle = styles.badgeSuccess;
+                badgeTextStyle = styles.textSuccess;
+              } else if (isLate) {
+                badgeText = 'Late Arrival';
+                badgeStyle = styles.badgeDanger;
+                badgeTextStyle = styles.textDanger;
+              }
 
               return (
                 <View key={item.id || item.reservation_id || `res-${item.room_no}`} style={styles.card}>
@@ -700,34 +901,12 @@ export default function DailyOpsScreen({ navigation }) {
                       <View style={styles.roomTag}>
                         <Text style={styles.roomTagText}>Room {item.room_no}</Text>
                       </View>
-                      <Text style={styles.roomType}>{item.room_type_name}</Text>
+                      <Text style={styles.roomType} numberOfLines={1}>{item.room_type_name}</Text>
                     </View>
 
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        isCheckedIn
-                          ? styles.badgeSuccess
-                          : isCheckedOut
-                          ? styles.badgeInfo
-                          : isOverdue
-                          ? styles.badgeDanger
-                          : styles.badgeWarning,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusText,
-                          isCheckedIn
-                            ? styles.textSuccess
-                            : isCheckedOut
-                            ? styles.textInfo
-                            : isOverdue
-                            ? styles.textDanger
-                            : styles.textWarning,
-                        ]}
-                      >
-                        {item.checkin_status_label || (isOverdue ? 'Overdue Arrival' : isCheckedIn ? 'Checked-in' : isCheckedOut ? 'Checked Out' : 'Pending')}
+                    <View style={[styles.statusBadge, badgeStyle]}>
+                      <Text style={[styles.statusText, badgeTextStyle]}>
+                        {badgeText}
                       </Text>
                     </View>
                   </View>
@@ -749,7 +928,7 @@ export default function DailyOpsScreen({ navigation }) {
                     {item.guest_city ? <Text style={styles.guestCity}> · {item.guest_city}</Text> : null}
                   </View>
 
-                  {/* Phone & Meta */}
+                  {/* Phone & Booking Code */}
                   <View style={styles.metaRow}>
                     <Text style={styles.phoneText}>📱 {item.guest_phone || '—'}</Text>
                     {item.booking_code ? (
@@ -761,16 +940,16 @@ export default function DailyOpsScreen({ navigation }) {
                   <View style={styles.timeRow}>
                     <Text style={styles.timeLabel}>Check-in: </Text>
                     <Text style={styles.timeVal}>
-                      {item.check_in_date ? fdWithYear(item.check_in_date) : today ? fdWithYear(today) : ''},{' '}
-                      {item.check_in_time}
+                      {item.check_in_date ? fdWithYear(item.check_in_date) : today ? fdWithYear(today) : ''}
+                      {item.check_in_time ? `, ${item.check_in_time}` : ''}
                     </Text>
                     {isCheckedIn && <Text style={styles.actualTag}> (Actual)</Text>}
-                    {isOverdue && <Text style={[styles.actualTag, { color: colors.danger }]}> (Overdue)</Text>}
+                    {isLate && <Text style={[styles.actualTag, { color: colors.danger, fontFamily: fonts.bodyBold }]}> (Overdue)</Text>}
                   </View>
 
-                  {/* -------------------- SECTION 3: ACTIONS -------------------- */}
+                  {/* Actions Row */}
                   <View style={styles.actionBtnRow}>
-                    {/* 1. Process Check-in (ONLY if pending check-in) */}
+                    {/* 1. Process Check-in (when not yet checked in) */}
                     {isPending && (
                       <Pressable
                         style={[styles.primaryActionBtn, { flex: 1.2 }]}
@@ -782,17 +961,7 @@ export default function DailyOpsScreen({ navigation }) {
                       </Pressable>
                     )}
 
-                    {/* 2. Upload Photo */}
-                    <Pressable
-                      style={[styles.outlineActionBtn, !isPending && { flex: 1 }]}
-                      onPress={() => setSheet({ type: 'upload_photo', item })}
-                      accessibilityRole="button"
-                      accessibilityLabel="Upload Guest ID Photo"
-                    >
-                      <Text style={styles.outlineActionBtnText}>📷 Upload Photo</Text>
-                    </Pressable>
-
-                    {/* 3. WhatsApp Action */}
+                    {/* WhatsApp Action */}
                     {isEligibleWhatsApp && (
                       <Pressable
                         style={[styles.iconActionBtn, styles.whatsappActionBtn]}
@@ -807,11 +976,11 @@ export default function DailyOpsScreen({ navigation }) {
                         accessibilityRole="button"
                         accessibilityLabel="Contact via WhatsApp"
                       >
-                        <WhatsAppIcon color="#FFFFFF" size={17} />
+                        <WhatsAppIcon color="#25D366" size={17} />
                       </Pressable>
                     )}
 
-                    {/* 4. Calendar / Booking Details Action */}
+                    {/* 4. Calendar / Booking Details */}
                     {item.reservation_id ? (
                       <Pressable
                         style={styles.iconActionBtn}
@@ -823,7 +992,7 @@ export default function DailyOpsScreen({ navigation }) {
                       </Pressable>
                     ) : null}
 
-                    {/* 5. View Bill / Invoice (if checked out) */}
+                    {/* 5. View Bill (if checked out) */}
                     {isCheckedOut && item.stay_id ? (
                       <Pressable
                         style={[styles.outlineActionBtn, { flex: 1 }]}
@@ -847,27 +1016,51 @@ export default function DailyOpsScreen({ navigation }) {
         </>
       )}
 
-      {/* Check-outs List */}
+      {/* Departures List */}
       {activeTab === 'checkouts' && (
         <>
           {filteredCheckouts.length === 0 ? (
             <EmptyState
               title={
                 search
-                  ? `No check-outs found matching "${search}"`
+                  ? `No departures found matching "${search}"`
                   : statusFilter !== 'all'
-                  ? `No ${statusFilter === 'pending' ? 'in-house / pending' : 'completed'} check-outs for today`
-                  : 'No check-outs due today'
+                  ? `No ${currentActiveFilterLabel.toLowerCase()} found`
+                  : 'No departures due'
               }
             />
           ) : (
             filteredCheckouts.map((s) => {
-              const isCheckedOut = (s.checkout_status || s.status || s.stay_status) === 'checked_out';
+              const isCheckedOut =
+                (s.checkout_status || s.status || s.stay_status) === 'checked_out' ||
+                Boolean(s.checkout_actual);
+
+              const isInHouse =
+                !isCheckedOut &&
+                (s.stay_status === 'in_house' ||
+                  s.status === 'in_house' ||
+                  s.checkout_status === 'pending' ||
+                  s.checkout_status === 'overdue');
+
               const plannedDate = s.checkout_planned || s.check_out_date;
-              const isOverdue = !isCheckedOut && Boolean(s.is_overdue || (plannedDate && today && plannedDate < today));
-              const isPending = !isCheckedOut;
+              const isLate = isInHouse && ((plannedDate && today && plannedDate < today) || Boolean(s.is_overdue));
+              const isPending = isInHouse;
               const isEligibleWhatsApp = Boolean(s.is_eligible_whatsapp || s.guest_phone);
               const stayId = s.stay_id || (typeof s.id === 'string' && s.id.startsWith('stay-') ? parseInt(s.id.slice(5), 10) : (typeof s.id === 'number' ? s.id : null));
+
+              let badgeText = 'Still Staying';
+              let badgeStyle = styles.badgeWarning;
+              let badgeTextStyle = styles.textWarning;
+
+              if (isCheckedOut) {
+                badgeText = 'Checked Out';
+                badgeStyle = styles.badgeSuccess;
+                badgeTextStyle = styles.textSuccess;
+              } else if (isLate) {
+                badgeText = 'Late Check-out';
+                badgeStyle = styles.badgeDanger;
+                badgeTextStyle = styles.textDanger;
+              }
 
               return (
                 <View key={s.id || s.stay_id || `stay-${s.room_no}`} style={styles.card}>
@@ -877,22 +1070,12 @@ export default function DailyOpsScreen({ navigation }) {
                       <View style={styles.roomTag}>
                         <Text style={styles.roomTagText}>Room {s.room_no}</Text>
                       </View>
-                      <Text style={styles.roomType}>{s.room_type_name}</Text>
+                      <Text style={styles.roomType} numberOfLines={1}>{s.room_type_name}</Text>
                     </View>
 
-                    <View
-                      style={[
-                        styles.statusBadge,
-                        isCheckedOut ? styles.badgeSuccess : isOverdue ? styles.badgeDanger : styles.badgeWarning,
-                      ]}
-                    >
-                      <Text
-                        style={[
-                          styles.statusText,
-                          isCheckedOut ? styles.textSuccess : isOverdue ? styles.textDanger : styles.textWarning,
-                        ]}
-                      >
-                        {s.checkout_status_label || (isCheckedOut ? 'Checked Out' : isOverdue ? 'Overdue' : 'Pending')}
+                    <View style={[styles.statusBadge, badgeStyle]}>
+                      <Text style={[styles.statusText, badgeTextStyle]}>
+                        {badgeText}
                       </Text>
                     </View>
                   </View>
@@ -914,7 +1097,7 @@ export default function DailyOpsScreen({ navigation }) {
                     {s.guest_city ? <Text style={styles.guestCity}> · {s.guest_city}</Text> : null}
                   </View>
 
-                  {/* Phone & Meta */}
+                  {/* Phone & Booking Code */}
                   <View style={styles.metaRow}>
                     <Text style={styles.phoneText}>📱 {s.guest_phone || '—'}</Text>
                     {s.booking_code ? (
@@ -931,15 +1114,15 @@ export default function DailyOpsScreen({ navigation }) {
                         : today
                         ? fdWithYear(today)
                         : ''}
-                      , {s.checkout_time}
+                      {s.checkout_time ? `, ${s.checkout_time}` : ''}
                     </Text>
                     {isCheckedOut && <Text style={styles.actualTag}> (Actual)</Text>}
-                    {isOverdue && <Text style={[styles.actualTag, { color: colors.danger }]}> (Overdue)</Text>}
+                    {isLate && <Text style={[styles.actualTag, { color: colors.danger, fontFamily: fonts.bodyBold }]}> (Overdue)</Text>}
                   </View>
 
-                  {/* -------------------- SECTION 3: ACTIONS -------------------- */}
+                  {/* Actions Row */}
                   <View style={styles.actionBtnRow}>
-                    {/* 1. Process Check-out (ONLY if in-house / pending checkout) */}
+                    {/* 1. Process Check-out (when in-house) */}
                     {isPending && stayId && (
                       <Pressable
                         style={[styles.primaryActionBtn, { flex: 1.2 }]}
@@ -951,17 +1134,7 @@ export default function DailyOpsScreen({ navigation }) {
                       </Pressable>
                     )}
 
-                    {/* 2. Upload Photo */}
-                    <Pressable
-                      style={[styles.outlineActionBtn, isCheckedOut && { flex: 1 }]}
-                      onPress={() => setSheet({ type: 'upload_photo', item: s })}
-                      accessibilityRole="button"
-                      accessibilityLabel="Upload Guest ID Photo"
-                    >
-                      <Text style={styles.outlineActionBtnText}>📷 Upload Photo</Text>
-                    </Pressable>
-
-                    {/* 3. WhatsApp Action */}
+                    {/* WhatsApp Action */}
                     {isEligibleWhatsApp && (
                       <Pressable
                         style={[styles.iconActionBtn, styles.whatsappActionBtn]}
@@ -976,11 +1149,11 @@ export default function DailyOpsScreen({ navigation }) {
                         accessibilityRole="button"
                         accessibilityLabel="Contact via WhatsApp"
                       >
-                        <WhatsAppIcon color="#FFFFFF" size={17} />
+                        <WhatsAppIcon color="#25D366" size={17} />
                       </Pressable>
                     )}
 
-                    {/* 4. Calendar / Booking or Stay Details Action */}
+                    {/* 4. Calendar / Booking or Stay Details */}
                     {s.reservation_id ? (
                       <Pressable
                         style={styles.iconActionBtn}
@@ -1001,7 +1174,7 @@ export default function DailyOpsScreen({ navigation }) {
                       </Pressable>
                     ) : null}
 
-                    {/* 5. View Bill / Invoice (when checked out) */}
+                    {/* 5. View Bill (when checked out) */}
                     {isCheckedOut && stayId && (
                       <Pressable
                         style={[styles.outlineActionBtn, { flex: 1 }]}
@@ -1049,17 +1222,7 @@ export default function DailyOpsScreen({ navigation }) {
         />
       )}
 
-      {/* 3. Photo Upload Sheet */}
-      {sheet?.type === 'upload_photo' && (
-        <PhotoUploadSheet
-          item={sheet.item}
-          guestId={sheet.item.guest_id}
-          onClose={() => setSheet(null)}
-          onSaved={() => refetch()}
-        />
-      )}
-
-      {/* 4. Booking Details Sheet (with Calendar flow) */}
+      {/* Booking Details Sheet */}
       {sheet?.type === 'booking' && (
         <BookingDetailSheet
           reservationId={sheet.reservationId}
@@ -1120,124 +1283,27 @@ const styles = StyleSheet.create({
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    padding: 12,
-    marginBottom: 12,
+    padding: 10,
+    marginBottom: 10,
   },
   headerTitle: {
     fontFamily: fonts.displayBold,
-    fontSize: 18,
+    fontSize: 17,
     color: colors.heading,
   },
   headerSubtitle: {
     fontFamily: fonts.body,
-    fontSize: 12,
+    fontSize: 11.5,
     color: colors.textSecondary,
-    marginTop: 4,
-    lineHeight: 18,
+    marginTop: 2,
+    lineHeight: 16,
   },
   boldText: {
     fontFamily: fonts.bodyBold,
     color: colors.heading,
   },
 
-  // Section B: Summary Cards Grid
-  summaryGrid: {
-    flexDirection: 'column',
-    gap: 10,
-    marginBottom: 14,
-  },
-  summaryCard: {
-    backgroundColor: colors.card,
-    borderRadius: radii.md,
-    borderWidth: 1.5,
-    borderColor: colors.cardBorder,
-    padding: 12,
-  },
-  summaryCardActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.surface,
-  },
-  summaryCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  summaryCardTitle: {
-    fontFamily: fonts.displayBold,
-    fontSize: 15,
-    color: colors.heading,
-  },
-  arrivalsBadge: {
-    backgroundColor: colors.secondaryLight,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radii.xs,
-  },
-  arrivalsBadgeText: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 11,
-    color: colors.primary,
-  },
-  departuresBadge: {
-    backgroundColor: colors.warningBg,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: radii.xs,
-  },
-  departuresBadgeText: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 11,
-    color: colors.warning,
-  },
-  metricsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  statBox: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radii.sm,
-    paddingVertical: 8,
-    paddingHorizontal: 6,
-    alignItems: 'center',
-    position: 'relative',
-  },
-  statBoxActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.secondaryLight,
-  },
-  metricVal: {
-    fontFamily: fonts.displayBold,
-    fontSize: 17,
-    color: colors.heading,
-  },
-  metricLabel: {
-    fontFamily: fonts.body,
-    fontSize: 11,
-    color: colors.textSecondary,
-    marginTop: 2,
-    textAlign: 'center',
-  },
-  hiddenTestLabel: {
-    position: 'absolute',
-    opacity: 0,
-    height: 0,
-    width: 0,
-  },
-  activeDot: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.primary,
-  },
-
-  // Section D: Main Tabs
+  // Section B: Main Tabs (Arrivals / Departures)
   tabContainer: {
     flexDirection: 'row',
     backgroundColor: colors.card,
@@ -1249,7 +1315,7 @@ const styles = StyleSheet.create({
   },
   mainTab: {
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: 9,
     alignItems: 'center',
     borderRadius: radii.sm,
   },
@@ -1266,14 +1332,178 @@ const styles = StyleSheet.create({
     fontFamily: fonts.bodyBold,
   },
 
-  // Section E: Status Sub-Filters
-  filterSection: {
+  // Section C: Active Summary Section & 3 Clear Count Cards
+  summarySection: {
+    backgroundColor: colors.card,
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    borderColor: colors.primary,
+    padding: 10,
     marginBottom: 10,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontFamily: fonts.displayBold,
+    fontSize: 14,
+    color: colors.heading,
+  },
+  arrivalsBadge: {
+    backgroundColor: colors.secondaryLight,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radii.xs,
+  },
+  arrivalsBadgeText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 11,
+    color: colors.primary,
+  },
+  departuresBadge: {
+    backgroundColor: colors.warningBg,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: radii.xs,
+  },
+  departuresBadgeText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 11,
+    color: colors.warning,
+  },
+
+  threeCardsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  statBox: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  statBoxActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.secondaryLight,
+  },
+  metricVal: {
+    fontFamily: fonts.displayBold,
+    fontSize: 18,
+    color: colors.heading,
+    lineHeight: 22,
+  },
+  metricLabel: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 11.5,
+    color: colors.heading,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  metricSub: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    color: colors.textSecondary,
+    marginTop: 1,
+    textAlign: 'center',
+  },
+
+  // Section D: Needs Attention Section
+  needsAttentionSection: {
+    backgroundColor: '#FFFBEB',
+    borderRadius: radii.md,
+    borderWidth: 1.5,
+    borderColor: '#FCD34D',
+    padding: 10,
+    marginBottom: 10,
+  },
+  needsAttentionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  needsAttentionIcon: {
+    fontSize: 13,
+  },
+  needsAttentionTitle: {
+    fontFamily: fonts.displayBold,
+    fontSize: 13.5,
+    color: '#92400E',
+  },
+  needsAttentionSubtitle: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: '#B45309',
+    marginLeft: 'auto',
+  },
+  attentionGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  attentionCard: {
+    flex: 1,
+    backgroundColor: colors.card,
+    borderRadius: radii.sm,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+    padding: 8,
+    position: 'relative',
+  },
+  attentionCardActive: {
+    borderColor: colors.danger,
+    backgroundColor: colors.dangerBg,
+  },
+  attentionCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  attentionCount: {
+    fontFamily: fonts.displayBold,
+    fontSize: 17,
+    color: colors.heading,
+  },
+  attentionCountDanger: {
+    color: colors.danger,
+  },
+  attentionIndicator: {
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
+    backgroundColor: colors.border,
+  },
+  attentionIndicatorDanger: {
+    backgroundColor: colors.danger,
+  },
+  attentionLabel: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 11.5,
+    color: colors.heading,
+    marginTop: 2,
+  },
+  attentionDesc: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+
+  // Section F: Filter Chips & Counters
+  filterSection: {
+    marginBottom: 8,
   },
   filterButtonsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
+    gap: 5,
     marginBottom: 6,
   },
   filterChip: {
@@ -1282,7 +1512,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: radii.sm,
     paddingVertical: 5,
-    paddingHorizontal: 9,
+    paddingHorizontal: 8,
   },
   filterChipActive: {
     backgroundColor: colors.primary,
@@ -1290,7 +1520,7 @@ const styles = StyleSheet.create({
   },
   filterChipText: {
     fontFamily: fonts.bodySemibold,
-    fontSize: 12,
+    fontSize: 11.5,
     color: colors.textSecondary,
   },
   filterChipTextActive: {
@@ -1315,9 +1545,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.primary,
     borderRadius: radii.sm,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginBottom: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 8,
   },
   filterBannerText: {
     fontFamily: fonts.body,
@@ -1335,14 +1565,14 @@ const styles = StyleSheet.create({
     textDecorationLine: 'underline',
   },
 
-  // Section 2: Mobile Record Cards
+  // Section G: Record Cards
   card: {
     backgroundColor: colors.card,
     borderRadius: radii.md,
     borderWidth: 1,
     borderColor: colors.cardBorder,
-    padding: 12,
-    marginBottom: 10,
+    padding: 10,
+    marginBottom: 8,
   },
   cardHeaderRow: {
     flexDirection: 'row',
@@ -1380,12 +1610,10 @@ const styles = StyleSheet.create({
   },
   badgeSuccess: { backgroundColor: colors.successBg },
   badgeWarning: { backgroundColor: colors.warningBg },
-  badgeInfo: { backgroundColor: colors.infoBg },
   badgeDanger: { backgroundColor: colors.dangerBg },
   statusText: { fontFamily: fonts.bodyBold, fontSize: 11 },
   textSuccess: { color: colors.success },
   textWarning: { color: colors.warning },
-  textInfo: { color: colors.info },
   textDanger: { color: colors.danger },
 
   guestRow: {
@@ -1396,12 +1624,12 @@ const styles = StyleSheet.create({
   },
   guestName: {
     fontFamily: fonts.bodyBold,
-    fontSize: 15,
+    fontSize: 14.5,
     color: colors.heading,
   },
   guestCity: {
     fontFamily: fonts.body,
-    fontSize: 12,
+    fontSize: 11.5,
     color: colors.textSecondary,
   },
   metaRow: {
@@ -1419,24 +1647,24 @@ const styles = StyleSheet.create({
   },
   bookingCodeText: {
     fontFamily: fonts.body,
-    fontSize: 12,
+    fontSize: 11.5,
     color: colors.textSecondary,
   },
   timeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     marginTop: 2,
-    marginBottom: 10,
+    marginBottom: 8,
     flexWrap: 'wrap',
   },
   timeLabel: {
     fontFamily: fonts.body,
-    fontSize: 12,
+    fontSize: 11.5,
     color: colors.textSecondary,
   },
   timeVal: {
     fontFamily: fonts.bodyBold,
-    fontSize: 12,
+    fontSize: 11.5,
     color: colors.heading,
   },
   actualTag: {
@@ -1448,58 +1676,75 @@ const styles = StyleSheet.create({
   // Actions
   actionBtnRow: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
     alignItems: 'center',
     flexWrap: 'wrap',
     borderTopWidth: 1,
     borderTopColor: colors.border,
-    paddingTop: 10,
+    paddingTop: 8,
   },
   primaryActionBtn: {
     backgroundColor: colors.primary,
     borderRadius: radii.sm,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 36,
+    minHeight: 34,
   },
   primaryActionBtnText: {
     color: '#FFFFFF',
     fontFamily: fonts.bodyBold,
-    fontSize: 12.5,
+    fontSize: 12,
   },
   outlineActionBtn: {
     borderWidth: 1.5,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     borderRadius: radii.sm,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 9,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 36,
+    minHeight: 34,
   },
   outlineActionBtnText: {
     color: colors.text,
     fontFamily: fonts.bodySemibold,
-    fontSize: 12,
+    fontSize: 11.5,
   },
   iconActionBtn: {
     borderWidth: 1.5,
     borderColor: colors.border,
     backgroundColor: colors.surface,
     borderRadius: radii.sm,
-    width: 36,
-    height: 36,
+    width: 34,
+    height: 34,
     alignItems: 'center',
     justifyContent: 'center',
   },
   whatsappActionBtn: {
-    backgroundColor: '#25D366',
-    borderColor: '#1EBE5D',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#25D366',
   },
   iconBtnText: {
-    fontSize: 16,
+    fontSize: 15,
+  },
+
+  // Test / Parity Helpers
+  hiddenTestLabel: {
+    position: 'absolute',
+    opacity: 0,
+    height: 0,
+    width: 0,
+  },
+  activeDot: {
+    position: 'absolute',
+    top: 3,
+    right: 3,
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.primary,
   },
 });

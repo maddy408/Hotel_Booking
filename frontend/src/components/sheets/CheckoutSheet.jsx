@@ -70,6 +70,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
   const [pay, setPay] = useState('cash');
   const [refundReason, setRefundReason] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [completedResult, setCompletedResult] = useState(null);
   const [showRefundModal, setShowRefundModal] = useState(false);
 
@@ -177,6 +178,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
   const bal = bill.balance;
 
   const doCheckout = async () => {
+    if (isSubmitting || checkout.isPending) return;
     if (isDateInvalid) {
       toast(
         !actualCheckoutDate
@@ -185,6 +187,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
       );
       return;
     }
+    setIsSubmitting(true);
     try {
       const amtToPass = bal > 0 ? bal : 0;
       const defaultRefundReason = isEarly
@@ -209,8 +212,12 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
       );
     } catch (err) {
       toast(err.message || 'Checkout failed.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
+
+  const isCheckoutBusy = checkout.isPending || isSubmitting;
 
   return (
     <>
@@ -558,7 +565,10 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                         className="rm"
                         type="button"
                         aria-label="Remove"
-                        onClick={() => removeExtra.mutate({ stayId, chargeId: x.id })}
+                        onClick={() => {
+                          if (!window.confirm(`Are you sure you want to remove extra charge "${x.label}"?`)) return;
+                          removeExtra.mutate({ stayId, chargeId: x.id });
+                        }}
                       >
                         ×
                       </button>
@@ -775,16 +785,16 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                       <b>Bill is fully paid. Complete checkout for Room {stay.room_no}?</b>
                       <span className="muted">Room {stay.room_no} will go for cleaning.</span>
                       <div className="row2">
-                        <button className="btn blue" type="button" disabled={checkout.isPending || isDateInvalid} onClick={doCheckout}>
-                          {checkout.isPending ? 'Checking out...' : 'Yes, check out'}
+                        <button className="btn blue" type="button" disabled={isCheckoutBusy || isDateInvalid} onClick={doCheckout}>
+                          {isCheckoutBusy ? 'Checking out...' : 'Yes, check out'}
                         </button>
-                        <button className="btn" type="button" disabled={checkout.isPending} onClick={() => setConfirming(false)}>
+                        <button className="btn" type="button" disabled={isCheckoutBusy} onClick={() => setConfirming(false)}>
                           Cancel
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <button className="btn blue big" type="button" disabled={isDateInvalid} onClick={() => setConfirming(true)}>
+                    <button className="btn blue big" type="button" disabled={isCheckoutBusy || isDateInvalid} onClick={() => setConfirming(true)}>
                       Complete checkout (Fully paid)
                     </button>
                   )}
@@ -809,16 +819,16 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                         Full payment of {inr(bal)} is required before checkout. Room {stay.room_no} will go for cleaning.
                       </span>
                       <div className="row2">
-                        <button className="btn blue" type="button" disabled={checkout.isPending || isDateInvalid} onClick={doCheckout}>
-                          {checkout.isPending ? 'Processing payment...' : 'Yes, collect & check out'}
+                        <button className="btn blue" type="button" disabled={isCheckoutBusy || isDateInvalid} onClick={doCheckout}>
+                          {isCheckoutBusy ? 'Processing payment...' : 'Yes, collect & check out'}
                         </button>
-                        <button className="btn" type="button" disabled={checkout.isPending} onClick={() => setConfirming(false)}>
+                        <button className="btn" type="button" disabled={isCheckoutBusy} onClick={() => setConfirming(false)}>
                           Cancel
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <button className="btn blue big" type="button" disabled={isDateInvalid} onClick={() => setConfirming(true)}>
+                    <button className="btn blue big" type="button" disabled={isCheckoutBusy || isDateInvalid} onClick={() => setConfirming(true)}>
                       Check out · Collect {inr(bal)}
                     </button>
                   )}
@@ -878,16 +888,16 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
                       <b>Refund {inr(Math.abs(bal))} by {pay.toUpperCase()} to complete checkout?</b>
                       <span className="muted">Room {stay.room_no} will go for cleaning.</span>
                       <div className="row2">
-                        <button className="btn blue" type="button" disabled={checkout.isPending || isDateInvalid} onClick={doCheckout}>
-                          {checkout.isPending ? 'Processing refund...' : 'Yes, refund & check out'}
+                        <button className="btn blue" type="button" disabled={isCheckoutBusy || isDateInvalid} onClick={doCheckout}>
+                          {isCheckoutBusy ? 'Processing refund...' : 'Yes, refund & check out'}
                         </button>
-                        <button className="btn" type="button" disabled={checkout.isPending} onClick={() => setConfirming(false)}>
+                        <button className="btn" type="button" disabled={isCheckoutBusy} onClick={() => setConfirming(false)}>
                           Cancel
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <button className="btn blue big" type="button" disabled={isDateInvalid} onClick={() => setConfirming(true)}>
+                    <button className="btn blue big" type="button" disabled={isCheckoutBusy || isDateInvalid} onClick={() => setConfirming(true)}>
                       Check out · Refund {inr(Math.abs(bal))}
                     </button>
                   )}

@@ -98,8 +98,8 @@ describe('Daily Ops Checkout Stay Details Loading Fix', () => {
       !dailyOpsContent.includes('💬'),
       'DailyOpsScreen must not use generic message emoji'
     );
-    // Ensure other actions are preserved untouched
-    assert.ok(dailyOpsContent.includes('📷 Upload Photo'), 'Upload Photo action must be preserved');
+    // Ensure other actions are preserved untouched and Photo Upload is removed
+    assert.ok(!dailyOpsContent.includes('📷 Upload Photo'), 'Upload Photo action must be removed');
     assert.ok(dailyOpsContent.includes('Process Check-out →'), 'Process Check-out action must be preserved');
     assert.ok(dailyOpsContent.includes('📅'), 'Calendar action must be preserved');
     assert.ok(dailyOpsContent.includes('📋'), 'Stay Details action must be preserved');

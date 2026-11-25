@@ -28,6 +28,26 @@ export function useUploadIdImage() {
   });
 }
 
+export function useDeleteIdImage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ guestId }) => {
+      const tokens = getTokens();
+      const res = await fetch(idImageUrl(guestId), {
+        method: 'DELETE',
+        headers: tokens?.accessToken ? { Authorization: `Bearer ${tokens.accessToken}` } : {},
+      });
+      const payload = await res.json();
+      if (!payload.success) throw new Error(payload.error?.message || 'Delete failed.');
+      return payload.data;
+    },
+    onSuccess: (_data, { guestId }) => {
+      qc.invalidateQueries({ queryKey: ['guest', guestId] });
+      qc.invalidateQueries({ queryKey: ['guests'] });
+    },
+  });
+}
+
 /** Fetches the protected image as a blob URL (the <img> tag can't send an Authorization header). */
 export async function fetchIdImageBlobUrl(guestId) {
   const tokens = getTokens();

@@ -1,14 +1,14 @@
 import { useState, useMemo, useRef } from 'react';
-import { Image, Pressable, StyleSheet, Text, View, Alert } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
+import { Pressable, StyleSheet, Text, View, Alert } from 'react-native';
+import * as DocumentPicker from 'expo-document-picker';
 import Screen, { ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
 import Button from '../../components/ui/Button.jsx';
 import GuestEditSheet from '../../components/sheets/GuestEditSheet.jsx';
 import NewBookingSheet from '../../components/sheets/NewBookingSheet.jsx';
 import BookingDetailSheet from '../../components/sheets/BookingDetailSheet.jsx';
 import CheckoutSheet from '../../components/sheets/CheckoutSheet.jsx';
-import { useGuest } from '../../api/guests';
-import { useUploadIdImage, fetchIdImageLocalUri } from '../../api/idImage';
+import { useGuest, useDeleteGuest } from '../../api/guests';
+import { useUploadIdImage, useDeleteIdImage } from '../../api/idImage';
 import { viewOccupantDocument, useDeleteOccupantDocument } from '../../api/occupantDocuments';
 import DocumentViewerSheet from '../../components/sheets/DocumentViewerSheet.jsx';
 import { useToast } from '../../components/ToastContext.jsx';
@@ -19,16 +19,17 @@ export default function GuestDetailsScreen({ route, navigation }) {
   const { guestId } = route.params;
   const { data: guest, isLoading, isError, error, refetch, isRefetching } = useGuest(guestId);
   const uploadIdImage = useUploadIdImage();
+  const deleteIdImage = useDeleteIdImage();
   const deleteDoc = useDeleteOccupantDocument();
+  const deleteGuest = useDeleteGuest();
   const toast = useToast();
 
   const [activeTab, setActiveTab] = useState('personal');
   const [sheet, setSheet] = useState(null);
   const [loadingDocId, setLoadingDocId] = useState(null);
-  const [idPhotoUri, setIdPhotoUri] = useState(null);
-  const [loadingPhoto, setLoadingPhoto] = useState(false);
-  const [pendingPhoto, setPendingPhoto] = useState(null);
-  const isUploadingPhotoRef = useRef(false);
+  const [selectedDoc, setSelectedDoc] = useState(null);
+  const [deletingGuest, setDeletingGuest] = useState(false);
+  const isUploadingDocRef = useRef(false);
 
   const bookings = guest?.bookings || [];
   const stays = guest?.stays || [];
@@ -94,91 +95,79 @@ export default function GuestDetailsScreen({ route, navigation }) {
     outstandingBalance,
   };
 
-  const handlePickIdPhoto = async () => {
+  const handlePickDocument = async () => {
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        allowsEditing: true,
-        quality: 0.8,
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'],
+        copyToCacheDirectory: true,
       });
 
-      if (!result.canceled && result.assets && result.assets[0]) {
-        const asset = result.assets[0];
+      if (result.canceled || !result.assets || !result.assets[0]) return;
+      const asset = result.assets[0];
 
-        // Size check (5 MB)
-        if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
-          const msg = 'Image must be 5 MB or smaller.';
-          toast(msg);
-          Alert.alert('File Too Large', msg);
-          return;
-        }
-
-        // Format check
-        const mime = asset.mimeType || 'image/jpeg';
-        if (!mime.includes('image/jpeg') && !mime.includes('image/png') && !mime.includes('image/webp') && !mime.includes('image/jpg')) {
-          const msg = 'Only JPEG, PNG, or WebP images are allowed.';
-          toast(msg);
-          Alert.alert('Unsupported Format', msg);
-          return;
-        }
-
-        setPendingPhoto({
-          uri: asset.uri,
-          name: asset.fileName || `guest-${guestId}-id.jpg`,
-          type: mime,
-          size: asset.fileSize,
-        });
+      // Size check (10 MB)
+      if (asset.size && asset.size > 10 * 1024 * 1024) {
+        const msg = 'Document must be 10 MB or smaller.';
+        toast(msg);
+        Alert.alert('File Too Large', msg);
+        return;
       }
+
+      // Format check
+      const ext = (asset.name || '').split('.').pop().toLowerCase();
+      const MIME_MAP = {
+        pdf: 'application/pdf',
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        webp: 'image/webp',
+      };
+      const mime = MIME_MAP[ext] || asset.mimeType || 'application/pdf';
+
+      setSelectedDoc({
+        uri: asset.uri,
+        name: asset.name || `guest-${guestId}-id.${ext}`,
+        type: mime,
+        size: asset.size,
+      });
     } catch (e) {
-      toast(e.message || 'Could not pick photo from gallery.');
+      toast(e.message || 'Could not attach document.');
     }
   };
 
-  const handleSaveUploadPhoto = async () => {
-    if (!pendingPhoto || !guestId) return;
-    if (isUploadingPhotoRef.current || uploadIdImage.isPending) return;
+  const handleUploadSelectedDoc = async () => {
+    if (!selectedDoc || !guestId) return;
+    if (isUploadingDocRef.current || uploadIdImage.isPending) return;
 
-    isUploadingPhotoRef.current = true;
+    isUploadingDocRef.current = true;
     try {
       const file = {
-        uri: pendingPhoto.uri,
-        name: pendingPhoto.name || `guest-${guestId}-id.jpg`,
-        type: pendingPhoto.type || 'image/jpeg',
+        uri: selectedDoc.uri,
+        name: selectedDoc.name,
+        type: selectedDoc.type,
       };
       await uploadIdImage.mutateAsync({ guestId, file });
-      toast('Guest ID photo uploaded successfully.');
-      setPendingPhoto(null);
-
-      // Load and display the saved photo directly from backend
-      setLoadingPhoto(true);
-      try {
-        const loadedUri = await fetchIdImageLocalUri(guestId);
-        setIdPhotoUri(loadedUri);
-      } catch {
-        // Fallback to local URI
-        setIdPhotoUri(pendingPhoto.uri);
-      } finally {
-        setLoadingPhoto(false);
-      }
-
+      toast('Guest ID document uploaded successfully.');
+      setSelectedDoc(null);
       refetch();
     } catch (e) {
-      toast(e.message || 'Photo upload failed. Check connection.');
+      toast(e.message || 'Document upload failed. Check connection.');
     } finally {
-      isUploadingPhotoRef.current = false;
+      isUploadingDocRef.current = false;
     }
   };
 
-  const handleViewIdPhoto = async () => {
-    try {
-      setLoadingPhoto(true);
-      const uri = await fetchIdImageLocalUri(guestId);
-      setIdPhotoUri(uri);
-    } catch (e) {
-      toast(e.message || 'Could not load ID photo.');
-    } finally {
-      setLoadingPhoto(false);
-    }
+  const handleViewPrimaryDoc = () => {
+    setSheet({
+      type: 'document',
+      doc: {
+        id: null,
+        isGuestIdDoc: true,
+        guestId,
+        original_filename: `${guest.name || 'Guest'} ID Document`,
+        document_type: guest.id_proof_type || 'Identity Proof',
+      },
+    });
   };
 
   const handleOpenDoc = (doc) => {
@@ -201,6 +190,66 @@ export default function GuestDetailsScreen({ route, navigation }) {
               refetch();
             } catch (e) {
               toast(e.message || 'Failed to delete document.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeletePrimaryDoc = () => {
+    Alert.alert(
+      'Delete Primary ID Document',
+      `Are you sure you want to delete the ID document for ${guest.name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteIdImage.mutateAsync({ guestId });
+              toast('Primary ID document deleted.');
+              refetch();
+            } catch (e) {
+              toast(e.message || 'Failed to delete document.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteGuest = () => {
+    if (!guest || deletingGuest) return;
+    Alert.alert(
+      'Delete Guest',
+      `Are you sure you want to delete ${guest.name}? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingGuest(true);
+            try {
+              await deleteGuest.mutateAsync(guestId);
+              toast(`Guest ${guest.name} deleted.`);
+              navigation.navigate('Guests');
+            } catch (e) {
+              const msg = e.message || 'Cannot delete guest.';
+              toast(msg);
+              const bookingId = e.fields?.bookingId;
+              const buttons = [{ text: 'OK', style: 'cancel' }];
+              if (bookingId) {
+                buttons.push({
+                  text: 'View Booking',
+                  onPress: () => setSheet({ type: 'booking', id: Number(bookingId) }),
+                });
+              }
+              Alert.alert('Cannot Delete Guest', msg, buttons);
+            } finally {
+              setDeletingGuest(false);
             }
           },
         },
@@ -291,6 +340,14 @@ export default function GuestDetailsScreen({ route, navigation }) {
               onPress={() => setSheet({ type: 'checkout', stayId: guest.now.stayId })}
             />
           )}
+          <Button
+            title={deletingGuest ? 'Deleting…' : '🗑️ Delete Guest'}
+            variant="danger"
+            size="sm"
+            loading={deletingGuest}
+            disabled={deletingGuest || deleteGuest.isPending}
+            onPress={handleDeleteGuest}
+          />
         </View>
       </View>
 
@@ -446,63 +503,53 @@ export default function GuestDetailsScreen({ route, navigation }) {
             </>
           )}
 
-          {/* Photo ID preview / upload */}
-          <View style={styles.photoSection}>
-            <Text style={styles.fieldLabel}>Photo ID Document</Text>
+          {/* Identity Document upload & view */}
+          <View style={styles.docSection}>
+            <Text style={styles.fieldLabel}>Identity Document</Text>
 
-            {/* Pending unuploaded photo preview */}
-            {pendingPhoto ? (
-              <View style={styles.pendingPreviewBox}>
-                <Text style={styles.pendingPreviewTitle}>Selected Photo Preview</Text>
-                <Image source={{ uri: pendingPhoto.uri }} style={styles.idPhotoImage} resizeMode="contain" />
-                <Text style={styles.previewMeta}>
-                  {pendingPhoto.name} {pendingPhoto.size ? `· ${(pendingPhoto.size / 1024).toFixed(1)} KB` : ''}
+            {/* Staged unuploaded document */}
+            {selectedDoc ? (
+              <View style={styles.selectedDocBox}>
+                <Text style={styles.selectedDocName} numberOfLines={1}>{selectedDoc.name}</Text>
+                <Text style={styles.selectedDocMeta}>
+                  {selectedDoc.type === 'application/pdf' ? 'PDF Document' : 'Scanned ID'} {selectedDoc.size ? `· ${formatFileSize(selectedDoc.size)}` : ''}
                 </Text>
-                <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
                   <Button
-                    title={uploadIdImage.isPending ? 'Uploading…' : 'Save / Upload'}
+                    title={uploadIdImage.isPending ? 'Uploading…' : 'Upload ID Document'}
                     variant="primary"
                     size="sm"
                     loading={uploadIdImage.isPending}
                     disabled={uploadIdImage.isPending}
-                    onPress={handleSaveUploadPhoto}
+                    onPress={handleUploadSelectedDoc}
                   />
                   <Button
-                    title="Cancel / Remove"
+                    title="Remove Selected Document"
                     variant="outline"
                     size="sm"
                     disabled={uploadIdImage.isPending}
-                    onPress={() => setPendingPhoto(null)}
+                    onPress={() => setSelectedDoc(null)}
                   />
                 </View>
               </View>
             ) : null}
 
-            {/* Current saved photo preview */}
-            {!pendingPhoto && idPhotoUri ? (
-              <View style={{ alignItems: 'center', gap: 8, marginVertical: 8 }}>
-                <Image source={{ uri: idPhotoUri }} style={styles.idPhotoImage} resizeMode="contain" />
-                <Button title="Hide Photo" variant="outline" size="sm" onPress={() => setIdPhotoUri(null)} />
-              </View>
-            ) : null}
-
-            {!pendingPhoto && (
-              <View style={{ flexDirection: 'row', gap: 8, marginTop: 6 }}>
-                {(guest.hasIdImage || guest.id_image_path) && (
-                  <Button
-                    title={loadingPhoto ? 'Loading…' : '👁️ View ID Photo'}
-                    variant="outline"
-                    size="sm"
-                    loading={loadingPhoto}
-                    onPress={handleViewIdPhoto}
-                  />
-                )}
+            {!selectedDoc && (
+              <View style={{ flexDirection: 'row', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
                 <Button
-                  title="📷 Upload Photo"
+                  title="Attach Document"
                   variant="outline"
                   size="sm"
-                  onPress={handlePickIdPhoto}
+                  onPress={handlePickDocument}
                 />
+                {(guest.hasIdImage || guest.id_image_path) && (
+                  <Button
+                    title="View Document"
+                    variant="outline"
+                    size="sm"
+                    onPress={handleViewPrimaryDoc}
+                  />
+                )}
               </View>
             )}
           </View>
@@ -631,7 +678,70 @@ export default function GuestDetailsScreen({ route, navigation }) {
       {/* 4. DOCUMENTS */}
       {activeTab === 'documents' && (
         <View style={styles.tabContent}>
-          {documents.length === 0 ? (
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <Text style={styles.sectionHeading}>ID Proof Documents ({totalDocumentsCount})</Text>
+            <Button
+              title="Attach Document"
+              variant="outline"
+              size="sm"
+              onPress={handlePickDocument}
+            />
+          </View>
+
+          {/* Staged unuploaded document */}
+          {selectedDoc ? (
+            <View style={[styles.selectedDocBox, { marginBottom: 12 }]}>
+              <Text style={styles.selectedDocName} numberOfLines={1}>{selectedDoc.name}</Text>
+              <Text style={styles.selectedDocMeta}>
+                {selectedDoc.type === 'application/pdf' ? 'PDF Document' : 'Scanned ID'} {selectedDoc.size ? `· ${formatFileSize(selectedDoc.size)}` : ''}
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
+                <Button
+                  title={uploadIdImage.isPending ? 'Uploading…' : 'Upload ID Document'}
+                  variant="primary"
+                  size="sm"
+                  loading={uploadIdImage.isPending}
+                  disabled={uploadIdImage.isPending}
+                  onPress={handleUploadSelectedDoc}
+                />
+                <Button
+                  title="Remove Selected Document"
+                  variant="outline"
+                  size="sm"
+                  disabled={uploadIdImage.isPending}
+                  onPress={() => setSelectedDoc(null)}
+                />
+              </View>
+            </View>
+          ) : null}
+
+          {/* Primary Guest ID Document if present */}
+          {(guest.hasIdImage || guest.id_image_path) && (
+            <View style={[styles.docItem, { borderColor: colors.primary }]}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.docBadge, { backgroundColor: colors.primaryBg, color: colors.primary }]}>
+                    {guest.id_proof_type || 'Primary ID'}
+                  </Text>
+                  <Text style={styles.docName} numberOfLines={1}>{guest.name} ID Document</Text>
+                </View>
+                <Text style={styles.docMeta}>Profile Document · Primary Guest</Text>
+              </View>
+              <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                <Button
+                  title="View Document"
+                  variant="outline"
+                  size="sm"
+                  onPress={handleViewPrimaryDoc}
+                />
+                <Pressable onPress={handleDeletePrimaryDoc} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Delete Primary ID Document">
+                  <Text style={{ color: colors.danger, fontSize: 16 }}>🗑️</Text>
+                </Pressable>
+              </View>
+            </View>
+          )}
+
+          {documents.length === 0 && !(guest.hasIdImage || guest.id_image_path) ? (
             <Text style={styles.emptyText}>No ID proof documents uploaded yet.</Text>
           ) : (
             documents.map((doc) => (
@@ -648,13 +758,13 @@ export default function GuestDetailsScreen({ route, navigation }) {
                 </View>
                 <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
                   <Button
-                    title={loadingDocId === doc.id ? 'Loading…' : 'Open'}
+                    title={loadingDocId === doc.id ? 'Loading…' : 'View Document'}
                     variant="outline"
                     size="sm"
                     loading={loadingDocId === doc.id}
                     onPress={() => handleOpenDoc(doc)}
                   />
-                  <Pressable onPress={() => handleDeleteDoc(doc.id)} style={{ padding: 4 }}>
+                  <Pressable onPress={() => handleDeleteDoc(doc.id)} style={{ padding: 4 }} accessibilityRole="button" accessibilityLabel="Delete Document">
                     <Text style={{ color: colors.danger, fontSize: 16 }}>🗑️</Text>
                   </Pressable>
                 </View>
@@ -725,6 +835,11 @@ export default function GuestDetailsScreen({ route, navigation }) {
           guestId={guest.id}
           onClose={() => setSheet(null)}
           onSaved={() => refetch()}
+          onDeleted={() => {
+            setSheet(null);
+            navigation.navigate('Guests');
+          }}
+          onViewBooking={(bookingId) => setSheet({ type: 'booking', id: Number(bookingId) })}
         />
       )}
       {sheet?.type === 'newBooking' && (
@@ -749,6 +864,10 @@ export default function GuestDetailsScreen({ route, navigation }) {
         <DocumentViewerSheet
           doc={sheet.doc}
           onClose={() => setSheet(null)}
+          onDelete={(docId) => {
+            setSheet(null);
+            handleDeleteDoc(docId);
+          }}
         />
       )}
     </Screen>
@@ -809,11 +928,17 @@ const styles = StyleSheet.create({
   fieldLabel: { fontFamily: fonts.bodySemibold, fontSize: 12.5, color: colors.textSecondary },
   fieldVal: { fontFamily: fonts.bodyMedium, fontSize: 12.5, color: colors.heading, maxWidth: '60%', textAlign: 'right' },
   fieldValMono: { fontFamily: fonts.monoBold, fontSize: 12.5, color: colors.heading },
-  photoSection: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.borderSubtle },
-  pendingPreviewBox: { marginVertical: 8, padding: 10, backgroundColor: colors.surfaceSecondary, borderRadius: radii.md, borderWidth: 1, borderColor: colors.primary, alignItems: 'center', gap: 6 },
-  pendingPreviewTitle: { fontFamily: fonts.bodyBold, fontSize: 13, color: colors.primary, alignSelf: 'flex-start' },
-  previewMeta: { fontFamily: fonts.mono, fontSize: 11, color: colors.textSecondary },
-  idPhotoImage: { width: '100%', height: 180, borderRadius: radii.sm, backgroundColor: '#000' },
+  docSection: { marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: colors.borderSubtle },
+  selectedDocBox: {
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radii.sm,
+    padding: 10,
+    marginVertical: 6,
+  },
+  selectedDocName: { fontFamily: fonts.bodySemibold, fontSize: 13, color: colors.text },
+  selectedDocMeta: { fontFamily: fonts.mono, fontSize: 11.5, color: colors.textSecondary, marginTop: 2 },
   cardItem: { backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.sm, padding: 10, gap: 4 },
   cardItemTitle: { fontFamily: fonts.bodyBold, fontSize: 13.5, color: colors.heading },
   cardItemSub: { fontFamily: fonts.monoBold, fontSize: 12, color: colors.primary },

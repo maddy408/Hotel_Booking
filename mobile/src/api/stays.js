@@ -51,12 +51,22 @@ export function useDoneStays(range = EMPTY_RANGE) {
 
 function invalidateStayStuff(qc, stayId) {
   qc.invalidateQueries({ queryKey: ['rooms'] });
-  qc.invalidateQueries({ queryKey: ['stay', stayId] });
-  qc.invalidateQueries({ queryKey: ['stay-bill', stayId] });
+  if (stayId) {
+    qc.invalidateQueries({ queryKey: ['stay', stayId] });
+    qc.invalidateQueries({ queryKey: ['stay-bill', stayId] });
+    qc.invalidateQueries({ queryKey: ['invoice-by-stay', stayId] });
+    qc.invalidateQueries({ queryKey: ['stay-refund-summary', stayId] });
+    qc.invalidateQueries({ queryKey: ['early-checkout-preview', stayId] });
+  }
   qc.invalidateQueries({ queryKey: ['stays-done'] });
   qc.invalidateQueries({ queryKey: ['reservations'] });
   qc.invalidateQueries({ queryKey: ['today-checkouts'] });
   qc.invalidateQueries({ queryKey: ['all-referrals'] });
+  qc.invalidateQueries({ queryKey: ['report-today'] });
+  qc.invalidateQueries({ queryKey: ['report-day-end'] });
+  qc.invalidateQueries({ queryKey: ['report-occupancy'] });
+  qc.invalidateQueries({ queryKey: ['report-revenue'] });
+  qc.invalidateQueries({ queryKey: ['invoice'] });
 }
 
 export function useDirectCheckIn() {
@@ -72,6 +82,7 @@ export function useDirectCheckIn() {
       qc.invalidateQueries({ queryKey: ['guests'] });
       qc.invalidateQueries({ queryKey: ['guest'] });
       qc.invalidateQueries({ queryKey: ['guest-referrals'] });
+      qc.invalidateQueries({ queryKey: ['report-today'] });
     },
   });
 }
@@ -124,6 +135,62 @@ export function useCheckout() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ stayId, ...payload }) => api.post(`/stays/${stayId}/checkout`, payload),
-    onSuccess: (_data, { stayId }) => invalidateStayStuff(qc, stayId),
+    onSuccess: (data, variables) => {
+      const stayId = variables?.stayId;
+      const paymentMethod = variables?.paymentMethod || data?.stay?.payment_method || 'cash';
+      const invoiceTotal = Number(data?.invoice?.total_amount ?? data?.bill?.total ?? 0);
+
+      // 1. Immediately update Today's report in cache (counts and billed at checkout)
+      qc.setQueryData(['report-today'], (old) => {
+        if (!old) return old;
+        return {
+          ...old,
+          checkouts: (Number(old.checkouts) || 0) + 1,
+          billedAtCheckout: (Number(old.billedAtCheckout) || 0) + invoiceTotal,
+          occupancy: old.occupancy ? {
+            ...old.occupancy,
+            occupied: Math.max(0, (Number(old.occupancy.occupied) || 0) - 1),
+            percent: old.occupancy.total > 0
+              ? Math.round((Math.max(0, (Number(old.occupancy.occupied) || 0) - 1) / old.occupancy.total) * 1000) / 10
+              : 0,
+          } : old.occupancy,
+        };
+      });
+
+      // 2. Immediately prepend/update the newly checked-out stay in 'stays-done' cache
+      if (data?.stay) {
+        const newBillEntry = {
+          ...data.stay,
+          invoice_id: data.invoice?.id ?? data.stay?.invoice_id,
+          invoice_number: data.invoice?.invoice_number ?? data.stay?.invoice_number,
+          invoice_total: invoiceTotal,
+          payment_method: data.stay.payment_method || paymentMethod,
+          checkout_actual: data.stay.checkout_actual || variables?.actualCheckoutDate || new Date().toISOString().slice(0, 10),
+        };
+
+        const updateStaysList = (old) => {
+          if (!Array.isArray(old)) return old;
+          const filtered = old.filter((s) => s.id !== stayId);
+          return [newBillEntry, ...filtered];
+        };
+
+        qc.setQueriesData({ queryKey: ['stays-done'] }, updateStaysList);
+        qc.setQueryData(['stays-done', EMPTY_RANGE], updateStaysList);
+      }
+
+      // 3. Immediately set invoice queries if invoice object is returned
+      if (data?.invoice) {
+        qc.setQueryData(['invoice-by-stay', stayId], data.invoice);
+        if (data.invoice.id) {
+          qc.setQueryData(['invoice', data.invoice.id], data.invoice);
+        }
+      }
+
+      // 4. Invalidate and trigger active/background refetches
+      invalidateStayStuff(qc, stayId);
+      qc.refetchQueries({ queryKey: ['report-today'] });
+      qc.refetchQueries({ queryKey: ['stays-done'] });
+      qc.refetchQueries({ queryKey: ['today-checkouts'] });
+    },
   });
 }

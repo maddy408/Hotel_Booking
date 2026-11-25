@@ -50,6 +50,21 @@ final class SchemaManager
                 if (!in_array('other_source', $resCols, true)) {
                     $db->exec('ALTER TABLE reservations ADD COLUMN other_source VARCHAR(150) NULL AFTER referred_by_guest_id');
                 }
+                try {
+                    $db->exec("ALTER TABLE reservations MODIFY COLUMN status ENUM('pending','checked_in','checked_out','cancelled','no_show') NOT NULL DEFAULT 'pending'");
+                } catch (\Throwable) {}
+                try {
+                    // Safe correction for historical data: any reservation marked 'checked_in' whose stay is checked_out should be 'checked_out'
+                    $db->exec("UPDATE reservations r JOIN stays s ON s.reservation_id = r.id SET r.status = 'checked_out' WHERE r.status = 'checked_in' AND s.status = 'checked_out'");
+                    // Any reservation marked 'checked_in' without an active in_house stay should be 'checked_out'
+                    $db->exec("UPDATE reservations r LEFT JOIN stays s ON s.reservation_id = r.id AND s.status = 'in_house' SET r.status = 'checked_out' WHERE r.status = 'checked_in' AND s.id IS NULL");
+                } catch (\Throwable) {}
+                if (!in_array('active_checked_in_room_id', $resCols, true)) {
+                    try {
+                        $db->exec("ALTER TABLE reservations ADD COLUMN active_checked_in_room_id INT UNSIGNED GENERATED ALWAYS AS (CASE WHEN status = 'checked_in' THEN room_id ELSE NULL END) VIRTUAL");
+                        $db->exec("ALTER TABLE reservations ADD UNIQUE KEY uq_reservations_active_room (active_checked_in_room_id)");
+                    } catch (\Throwable) {}
+                }
             }
 
             $stayCols = self::getColumns($db, 'stays');

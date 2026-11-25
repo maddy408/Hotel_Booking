@@ -891,4 +891,150 @@ final class GuestRepository
             'total_count' => count($filteredItems),
         ];
     }
+
+    public function findActiveStay(int $guestId): ?array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT s.id, s.room_id, r.room_no, s.status
+             FROM stays s
+             LEFT JOIN rooms r ON r.id = s.room_id
+             WHERE (s.guest_id = :g1 OR EXISTS (SELECT 1 FROM occupants o WHERE o.stay_id = s.id AND o.guest_id = :g2))
+               AND s.status = 'in_house'
+             LIMIT 1"
+        );
+        $stmt->execute(['g1' => $guestId, 'g2' => $guestId]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    public function findActiveBooking(int $guestId): ?array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT res.id, res.booking_code, res.room_id, r.room_no, res.check_in_date, res.status
+             FROM reservations res
+             LEFT JOIN rooms r ON r.id = res.room_id
+             WHERE res.guest_id = :guest_id
+               AND res.status IN ('pending', 'checked_in')
+             ORDER BY res.check_in_date ASC, res.id ASC
+             LIMIT 1"
+        );
+        $stmt->execute(['guest_id' => $guestId]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        return $row ?: null;
+    }
+
+    public function hasInvoices(int $guestId): bool
+    {
+        try {
+            $stmt = $this->db->prepare(
+                "SELECT 1
+                 FROM invoices i
+                 JOIN stays s ON s.id = i.stay_id
+                 WHERE (s.guest_id = :g1 OR EXISTS (SELECT 1 FROM occupants o WHERE o.stay_id = s.id AND o.guest_id = :g2))
+                 LIMIT 1"
+            );
+            $stmt->execute(['g1' => $guestId, 'g2' => $guestId]);
+            return (bool) $stmt->fetchColumn();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    public function hasPayments(int $guestId): bool
+    {
+        try {
+            $stmt = $this->db->prepare(
+                "SELECT 1
+                 FROM payments p
+                 WHERE (
+                     p.reservation_id IN (SELECT id FROM reservations WHERE guest_id = :g1)
+                     OR p.stay_id IN (
+                         SELECT id FROM stays
+                         WHERE guest_id = :g2
+                            OR EXISTS (SELECT 1 FROM occupants o WHERE o.stay_id = stays.id AND o.guest_id = :g3)
+                     )
+                 )
+                 LIMIT 1"
+            );
+            $stmt->execute(['g1' => $guestId, 'g2' => $guestId, 'g3' => $guestId]);
+            return (bool) $stmt->fetchColumn();
+        } catch (\Throwable) {
+            return false;
+        }
+    }
+
+    public function hasCompletedStays(int $guestId): bool
+    {
+        $stmt = $this->db->prepare(
+            "SELECT 1
+             FROM stays s
+             WHERE (s.guest_id = :g1 OR EXISTS (SELECT 1 FROM occupants o WHERE o.stay_id = s.id AND o.guest_id = :g2))
+               AND s.status = 'checked_out'
+             LIMIT 1"
+        );
+        $stmt->execute(['g1' => $guestId, 'g2' => $guestId]);
+        return (bool) $stmt->fetchColumn();
+    }
+
+    public function referenceCount(int $guestId): int
+    {
+        $stmt = $this->db->prepare(
+            "SELECT
+                (SELECT COUNT(*) FROM reservations WHERE guest_id = :g1)
+              + (SELECT COUNT(*) FROM stays WHERE guest_id = :g2)
+              + (SELECT COUNT(*) FROM reservations WHERE referred_by_guest_id = :g3)
+              + (SELECT COUNT(*) FROM stays WHERE referred_by_guest_id = :g4)
+              + (SELECT COUNT(*) FROM occupants WHERE guest_id = :g5)"
+        );
+        $stmt->execute([
+            'g1' => $guestId,
+            'g2' => $guestId,
+            'g3' => $guestId,
+            'g4' => $guestId,
+            'g5' => $guestId,
+        ]);
+        return (int) $stmt->fetchColumn();
+    }
+
+    public function delete(int $guestId): void
+    {
+        $inTx = $this->db->inTransaction();
+        if (!$inTx) {
+            $this->db->beginTransaction();
+        }
+        try {
+            // Clear referred_by references if any
+            $this->db->prepare('UPDATE reservations SET referred_by_guest_id = NULL WHERE referred_by_guest_id = :g1')
+                ->execute(['g1' => $guestId]);
+            $this->db->prepare('UPDATE stays SET referred_by_guest_id = NULL WHERE referred_by_guest_id = :g2')
+                ->execute(['g2' => $guestId]);
+
+            // Clear occupant links for this guest if any
+            try {
+                $this->db->prepare('DELETE FROM occupant_documents WHERE occupant_id IN (SELECT id FROM occupants WHERE guest_id = :g3)')
+                    ->execute(['g3' => $guestId]);
+            } catch (\Throwable) {
+                // Table might not exist in SQLite unit tests
+            }
+            $this->db->prepare('DELETE FROM occupants WHERE guest_id = :g4')
+                ->execute(['g4' => $guestId]);
+
+            // Clean up unfulfilled cancelled / no_show reservations for this guest
+            $this->db->prepare('DELETE FROM reservations WHERE guest_id = :g5 AND status IN ("cancelled", "no_show")')
+                ->execute(['g5' => $guestId]);
+
+            // Delete guest
+            $this->db->prepare('DELETE FROM guests WHERE id = :id')
+                ->execute(['id' => $guestId]);
+
+            if (!$inTx) {
+                $this->db->commit();
+            }
+        } catch (\Throwable $e) {
+            if (!$inTx && $this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+    }
 }

@@ -10,6 +10,7 @@ import { useSettings } from '../../api/settings';
 import { useToast } from '../../context/ToastContext.jsx';
 import { fetchOccupantDocumentBlob } from '../../api/occupantDocuments';
 import { addDaysIso, estimateGstRate, formatGstBreakup, fd, formatCheckoutHour, inr, todayIso } from '../../lib/format';
+import { validatePhone, isValidPhone, handlePhoneInputChange, cleanPhone10 } from '../../lib/validation.js';
 
 const IDS = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport'];
 const ADVANCE_REQUIRED_MSG = 'Please enter and collect the advance amount before check-in.';
@@ -107,6 +108,13 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
   const advance = watch('advance');
   const persons = watch('persons');
   const pay = watch('pay');
+  const [phoneError, setPhoneError] = useState('');
+
+  const onPhoneChange = (e) => {
+    const res = handlePhoneInputChange(e.target.value, phone || '');
+    setValue('phone', res.value, { shouldValidate: true });
+    setPhoneError(res.error);
+  };
 
   const initialPersonsCount = isFromReservation
     ? Math.max(1, Math.min(Number(roomMaxPersons) || 2, Number(reservation.persons) || 1))
@@ -183,7 +191,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
     }
 
     if (roomMaxPersons != null && num > Number(roomMaxPersons)) {
-      setServerPersonsError(`This room allows a maximum of ${roomMaxPersons} persons.`);
+      setServerPersonsError(`Maximum ${roomMaxPersons} ${Number(roomMaxPersons) === 1 ? 'person' : 'persons'} allowed for this room.`);
       return;
     }
 
@@ -191,20 +199,6 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
     if (num === currentCount) return;
 
     if (num < currentCount) {
-      const removedEntries = occupants.slice(num);
-      const hasData = removedEntries.some(
-        (o) => (o.name && o.name.trim() !== '') || (o.phone && o.phone.trim() !== '') || (o.gender && o.gender.trim() !== '')
-      );
-
-      if (hasData) {
-        const confirmed = window.confirm(
-          `Changing persons count from ${currentCount} to ${num} will remove details for Person ${num + 1}${currentCount > num + 1 ? ` to ${currentCount}` : ''}. Are you sure you want to proceed?`
-        );
-        if (!confirmed) {
-          return;
-        }
-      }
-
       setOccupants((prev) => prev.slice(0, num));
       setValue('persons', num);
       setOccupantErrors((prev) => {
@@ -241,7 +235,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
   const [serverPersonsError, setServerPersonsError] = useState('');
   const personCount = occupants.length;
   const isPersonsExceeded = roomMaxPersons != null && personCount > Number(roomMaxPersons);
-  const maxPersonsMsg = roomMaxPersons != null ? `This room allows a maximum of ${roomMaxPersons} persons.` : '';
+  const maxPersonsMsg = roomMaxPersons != null ? `Maximum ${roomMaxPersons} ${Number(roomMaxPersons) === 1 ? 'person' : 'persons'} allowed for this room.` : '';
   const personsError = isPersonsExceeded ? maxPersonsMsg : (serverPersonsError || '');
 
   const [advanceSubmitted, setAdvanceSubmitted] = useState(triggerAdvanceError);
@@ -479,11 +473,33 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
           type="number"
           min="1"
           max={roomMaxPersons}
+          step="1"
+          inputMode="numeric"
           value={occupants.length}
+          onKeyDown={(e) => {
+            if (['-', '+', '.', 'e', 'E'].includes(e.key)) {
+              e.preventDefault();
+            }
+          }}
           onChange={(e) => {
-            const val = parseInt(e.target.value, 10);
+            const raw = e.target.value.replace(/[^0-9]/g, '');
+            if (raw === '') return;
+            const val = parseInt(raw, 10);
             if (!isNaN(val)) {
-              handlePersonsChange(val);
+              if (roomMaxPersons != null && val > Number(roomMaxPersons)) {
+                setServerPersonsError(`Maximum ${roomMaxPersons} ${Number(roomMaxPersons) === 1 ? 'person' : 'persons'} allowed for this room.`);
+                handlePersonsChange(Number(roomMaxPersons));
+              } else {
+                handlePersonsChange(val);
+              }
+            }
+          }}
+          onBlur={(e) => {
+            const val = parseInt(e.target.value, 10);
+            if (isNaN(val) || val < 1) {
+              handlePersonsChange(1);
+            } else if (roomMaxPersons != null && val > Number(roomMaxPersons)) {
+              handlePersonsChange(Number(roomMaxPersons));
             }
           }}
           style={{ textAlign: 'center', fontWeight: 600 }}
@@ -494,7 +510,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
             if (roomMaxPersons == null || occupants.length < Number(roomMaxPersons)) {
               handlePersonsChange(occupants.length + 1);
             } else {
-              setServerPersonsError(`This room allows a maximum of ${roomMaxPersons} persons.`);
+              setServerPersonsError(`Maximum ${roomMaxPersons} ${Number(roomMaxPersons) === 1 ? 'person' : 'persons'} allowed for this room.`);
             }
           }}
           disabled={roomMaxPersons != null && occupants.length >= Number(roomMaxPersons)}
@@ -503,7 +519,13 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
           +
         </button>
       </div>
-      {personsError && <span className="err" style={{ display: 'block', marginTop: 4 }}>{personsError}</span>}
+      {personsError ? (
+        <span className="err" style={{ display: 'block', marginTop: 4 }}>{personsError}</span>
+      ) : (roomMaxPersons != null && occupants.length >= Number(roomMaxPersons)) ? (
+        <span className="muted" style={{ display: 'block', marginTop: 4, fontSize: 12 }}>
+          Maximum {roomMaxPersons} {Number(roomMaxPersons) === 1 ? 'person' : 'persons'} allowed for this room.
+        </span>
+      ) : null}
     </div>
   );
 
@@ -632,7 +654,14 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
                     maxLength={10}
                     placeholder="10-digit mobile"
                     value={occ.phone || ''}
-                    onChange={(e) => handleOccupantFieldChange(idx, 'phone', e.target.value.replace(/\D/g, '').slice(0, 10))}
+                    onChange={(e) => {
+                      const res = handlePhoneInputChange(e.target.value, occ.phone || '');
+                      handleOccupantFieldChange(idx, 'phone', res.value);
+                      setOccupantErrors((prev) => ({
+                        ...prev,
+                        [idx]: { ...(prev[idx] || {}), phone: res.error || null },
+                      }));
+                    }}
                     style={{ fontSize: 12.5, padding: '5px 8px' }}
                   />
                   {occErr.phone && <span className="err" style={{ fontSize: 11 }}>{occErr.phone}</span>}
@@ -950,9 +979,9 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
         errs.gender = 'Gender is required.';
         hasOccErrors = true;
       }
-      const rawPhone = (occ.phone || '').replace(/\D/g, '');
-      if (!rawPhone || rawPhone.length !== 10) {
-        errs.phone = '10-digit phone number is required.';
+      const occPhoneValidation = validatePhone(occ.phone);
+      if (!occPhoneValidation.isValid) {
+        errs.phone = occPhoneValidation.error;
         hasOccErrors = true;
       }
       if (Object.keys(errs).length > 0) {
@@ -979,6 +1008,11 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
         return;
       }
     } else {
+      const phoneValidation = validatePhone(values.phone);
+      if (!phoneValidation.isValid) {
+        setPhoneError(phoneValidation.error);
+        return;
+      }
       if (bookingSource === 'Reference – Existing Member' && (!referredByGuestId || referredByGuestId <= 0)) {
         setSourceError('Please select an existing member as reference.');
         return;
@@ -1249,7 +1283,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
           </div>
         ) : (
           <div className="fg">
-            <div className={`f full ${errors.phone ? 'bad' : ''}`}>
+            <div className={`f full ${errors.phone || phoneError ? 'bad' : ''}`}>
               <label htmlFor="ci-phone">
                 Mobile number <i>*</i>
               </label>
@@ -1260,9 +1294,10 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
                 maxLength={10}
                 placeholder="10 digits (6-9)"
                 autoComplete="off"
-                {...register('phone', { required: true, pattern: /^[6-9]\d{9}$/ })}
+                value={phone || ''}
+                onChange={onPhoneChange}
               />
-              {errors.phone && <span className="err">Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.</span>}
+              {(phoneError || errors.phone) && <span className="err">{phoneError || 'Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.'}</span>}
             </div>
             {matchedGuestId && <div className="found f full">Old guest found. Details filled in.</div>}
             <div className={`f full ${errors.name ? 'bad' : ''}`}>
@@ -1350,11 +1385,49 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
             <div className="f">
               <label>Days *</label>
               <div className="step">
-                <button type="button" onClick={() => setValue('days', Math.max(1, (Number(days) || 1) - 1))} aria-label="Less">
+                <button
+                  type="button"
+                  onClick={() => setValue('days', Math.max(1, (Number(days) || 1) - 1), { shouldValidate: true })}
+                  disabled={(Number(days) || 1) <= 1}
+                  aria-label="Less"
+                >
                   −
                 </button>
-                <input type="number" readOnly {...register('days')} />
-                <button type="button" onClick={() => setValue('days', (Number(days) || 1) + 1)} aria-label="More">
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  inputMode="numeric"
+                  onKeyDown={(e) => {
+                    if (['-', '+', '.', 'e', 'E'].includes(e.key)) {
+                      e.preventDefault();
+                    }
+                  }}
+                  {...register('days', {
+                    min: 1,
+                    onChange: (e) => {
+                      const raw = e.target.value.replace(/[^0-9]/g, '');
+                      if (raw === '') return;
+                      const val = parseInt(raw, 10);
+                      if (!isNaN(val) && val >= 1) {
+                        setValue('days', val, { shouldValidate: true });
+                      }
+                    },
+                    onBlur: (e) => {
+                      const val = parseInt(e.target.value, 10);
+                      if (isNaN(val) || val < 1) {
+                        setValue('days', 1, { shouldValidate: true });
+                      } else {
+                        setValue('days', val, { shouldValidate: true });
+                      }
+                    },
+                  })}
+                />
+                <button
+                  type="button"
+                  onClick={() => setValue('days', (Number(days) || 1) + 1, { shouldValidate: true })}
+                  aria-label="More"
+                >
                   +
                 </button>
               </div>

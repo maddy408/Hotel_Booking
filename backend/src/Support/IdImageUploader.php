@@ -11,8 +11,9 @@ namespace App\Support;
  */
 final class IdImageUploader
 {
-    private const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
-    private const ALLOWED_MIME = [
+    public const MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+    public const ALLOWED_MIME = [
+        'application/pdf' => 'pdf',
         'image/jpeg' => 'jpg',
         'image/png' => 'png',
         'image/webp' => 'webp',
@@ -35,12 +36,16 @@ final class IdImageUploader
             throw ApiException::validation(['image' => 'Invalid upload.']);
         }
         if ($file['size'] <= 0 || $file['size'] > self::MAX_BYTES) {
-            throw ApiException::validation(['image' => 'Image must be 5 MB or smaller.']);
+            throw ApiException::validation(['image' => 'Document must be 10 MB or smaller.']);
         }
 
-        $mime = (string) mime_content_type($file['tmp_name']);
+        $finfo = new \finfo(FILEINFO_MIME_TYPE);
+        $mime = (string) $finfo->file($file['tmp_name']);
         if (!isset(self::ALLOWED_MIME[$mime])) {
-            throw ApiException::validation(['image' => 'Only JPEG, PNG, or WEBP images are allowed.']);
+            $mime = (string) @mime_content_type($file['tmp_name']);
+        }
+        if (!isset(self::ALLOWED_MIME[$mime])) {
+            throw ApiException::validation(['image' => 'Only PDF, JPEG, PNG, or WEBP documents are allowed.']);
         }
 
         $dir = rtrim($this->storageDir, '/\\') . '/guests';
@@ -51,7 +56,7 @@ final class IdImageUploader
         $filename = $guestId . '-' . bin2hex(random_bytes(8)) . '.' . self::ALLOWED_MIME[$mime];
         $destination = $dir . '/' . $filename;
         if (!move_uploaded_file($file['tmp_name'], $destination)) {
-            throw new \RuntimeException('Could not save the uploaded image.');
+            throw new \RuntimeException('Could not save the uploaded document.');
         }
 
         return 'guests/' . $filename;
@@ -65,5 +70,13 @@ final class IdImageUploader
     public function mimeFor(string $absolutePath): string
     {
         return (string) mime_content_type($absolutePath) ?: 'application/octet-stream';
+    }
+
+    public function delete(string $relativePath): void
+    {
+        $path = $this->absolutePath($relativePath);
+        if (is_file($path)) {
+            @unlink($path);
+        }
     }
 }

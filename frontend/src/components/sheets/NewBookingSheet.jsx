@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import ReferredBySelect from '../ReferredBySelect.jsx';
@@ -9,6 +9,7 @@ import { useSettings } from '../../api/settings';
 import { useToast } from '../../context/ToastContext.jsx';
 import { addDaysIso, estimateGstRate, formatGstBreakup, fd, formatCheckoutHour, inr, nightsBetween, todayIso } from '../../lib/format';
 import { BADGE_THEME, getCardDisplay } from '../../lib/roomAvailability.js';
+import { validatePhone, isValidPhone, handlePhoneInputChange, getRoomConfiguredRate } from '../../lib/validation.js';
 
 export default function NewBookingSheet({ editReservation, presetGuest, preSelectedRoom, onClose }) {
   const isEdit = Boolean(editReservation?.id || editReservation?.booking_code);
@@ -19,8 +20,16 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
   const create = useCreateReservation();
   const update = useUpdateReservation();
   const toast = useToast();
+  const prevRoomIdRef = useRef(initialRoomId);
+  const [phoneError, setPhoneError] = useState('');
 
-  
+  const targetRoomObj = preSelectedRoom
+    || (roomsData?.rooms && roomsData.rooms.find((r) => r.id === initialRoomId))
+    || null;
+  const initialRate = isEdit
+    ? editReservation.rate
+    : (targetRoomObj ? (getRoomConfiguredRate(targetRoomObj, roomTypes) || targetRoomObj.type_rate || targetRoomObj.roomType?.rate || '') : '');
+
   const { register, watch, setValue, handleSubmit, formState: { errors } } = useForm({
     defaultValues: isEdit
       ? {
@@ -44,7 +53,7 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
           persons: 1,
           typeFilter: 'all',
           roomId: initialRoomId,
-          rate: preSelectedRoom ? Number(preSelectedRoom.type_rate || preSelectedRoom.roomType?.rate || '') : '',
+          rate: initialRate,
           advance: '',
           pay: 'cash',
           notes: '',
@@ -110,6 +119,41 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
     }
   }, [freeRooms, roomId, setValue]);
 
+  // Automatically populate and update Room Master rate for pre-book and room changes
+  useEffect(() => {
+    if (isEdit) {
+      if (roomId && prevRoomIdRef.current && prevRoomIdRef.current !== roomId) {
+        const room = (freeRooms && freeRooms.find((r) => r.id === roomId))
+          || (roomsData?.rooms && roomsData.rooms.find((r) => r.id === roomId))
+          || null;
+        if (room) {
+          const configuredRate = getRoomConfiguredRate(room, roomTypes);
+          if (configuredRate > 0) {
+            setValue('rate', configuredRate, { shouldValidate: true });
+          }
+        }
+        prevRoomIdRef.current = roomId;
+      }
+      return;
+    }
+
+    if (roomId) {
+      const isRoomChanged = prevRoomIdRef.current !== roomId;
+      const room = (freeRooms && freeRooms.find((r) => r.id === roomId))
+        || (roomsData?.rooms && roomsData.rooms.find((r) => r.id === roomId))
+        || (preSelectedRoom && preSelectedRoom.id === roomId ? preSelectedRoom : null)
+        || null;
+
+      if (room) {
+        const configuredRate = getRoomConfiguredRate(room, roomTypes);
+        if (configuredRate > 0 && (!rate || Number(rate) <= 0 || isRoomChanged)) {
+          setValue('rate', configuredRate, { shouldValidate: true });
+        }
+      }
+      prevRoomIdRef.current = roomId;
+    }
+  }, [isEdit, roomId, roomsData, freeRooms, preSelectedRoom, roomTypes, setValue]);
+
   const readyCount = freeRooms?.filter((r) => (r.card_badge || (r.booking_status === 'available_ready' ? 'Ready' : '')) === 'Ready').length || 0;
   const occupiedCount = freeRooms?.filter((r) => (r.card_badge || '') === 'Occupied').length || 0;
   const cleaningCount = freeRooms?.filter((r) => (r.card_badge || (r.booking_status === 'available_not_ready' ? 'Cleaning' : '')) === 'Cleaning').length || 0;
@@ -154,11 +198,22 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
     }
   }, [personCount, roomMaxPersons, serverPersonsError]);
 
+  useEffect(() => {
+    if (roomId && roomMaxPersons != null && personCount > Number(roomMaxPersons)) {
+      setValue('persons', Number(roomMaxPersons));
+    }
+  }, [roomId, roomMaxPersons, personCount, setValue]);
+
   const displayRoom = (inspectedRoomId && freeRooms?.find((r) => r.id === inspectedRoomId))
     || selectedRoom;
   const displayRoomCardData = displayRoom ? getCardDisplay(displayRoom, checkIn, checkOut) : null;
 
   const onSubmit = async (values) => {
+    const phoneValidation = validatePhone(values.phone);
+    if (!phoneValidation.isValid) {
+      setPhoneError(phoneValidation.error);
+      return;
+    }
     if (!values.roomId) {
       toast('Pick a room.');
       return;
@@ -174,9 +229,9 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
       } else if (chosenRoom && chosenRoom.booking_status === 'maintenance') {
         toast(`Room ${chosenRoom.room_no} is under maintenance and cannot be booked.`);
       } else if (chosenRoom) {
-        toast(`Room ${chosenRoom.room_no} is already booked for these dates.`);
+        toast('This room is already booked for these dates. Please select another room.');
       } else {
-        toast('Selected room is not available for these dates.');
+        toast('This room is already booked for these dates. Please select another room.');
       }
       return;
     }
@@ -244,12 +299,24 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
       <SheetHeader status="booked" badge={isEdit ? editReservation.booking_code : 'NEW'} title={isEdit ? 'Change booking' : 'New booking'} subtitle={isEdit ? 'Update reservation details' : 'Phone call or walk-in booking'} onClose={onClose} />
       <form className="sb" onSubmit={handleSubmit(onSubmit)}>
         <div className="fg">
-          <div className={`f full ${errors.phone ? 'bad' : ''}`}>
+          <div className={`f full ${errors.phone || phoneError ? 'bad' : ''}`}>
             <label htmlFor="bk-phone">
               Mobile number <i>*</i>
             </label>
-            <input id="bk-phone" type="tel" inputMode="numeric" maxLength={10} placeholder="10 digits (6-9)" {...register('phone', { required: true, pattern: /^[6-9]\d{9}$/ })} />
-            {errors.phone && <span className="err">Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.</span>}
+            <input
+              id="bk-phone"
+              type="tel"
+              inputMode="numeric"
+              maxLength={10}
+              placeholder="10-digit mobile (starts with 6-9)"
+              value={phone || ''}
+              onChange={(e) => {
+                const res = handlePhoneInputChange(e.target.value, phone || '');
+                setValue('phone', res.value, { shouldValidate: true });
+                setPhoneError(res.error);
+              }}
+            />
+            {(phoneError || errors.phone) && <span className="err">{phoneError || 'Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9.'}</span>}
           </div>
           {!isEdit && matchedGuestId && <div className="found f full">Old guest found. Name filled in.</div>}
           <div className={`f full ${errors.name ? 'bad' : ''}`}>
@@ -327,11 +394,49 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
           <div className="f">
             <label>Days *</label>
             <div className="step">
-              <button type="button" onClick={() => setValue('days', Math.max(1, (Number(days) || 1) - 1))}>
+              <button
+                type="button"
+                onClick={() => setValue('days', Math.max(1, (Number(days) || 1) - 1), { shouldValidate: true })}
+                disabled={(Number(days) || 1) <= 1}
+                aria-label="Decrease days"
+              >
                 −
               </button>
-              <input type="number" readOnly {...register('days')} />
-              <button type="button" onClick={() => setValue('days', (Number(days) || 1) + 1)}>
+              <input
+                type="number"
+                min="1"
+                step="1"
+                inputMode="numeric"
+                onKeyDown={(e) => {
+                  if (['-', '+', '.', 'e', 'E'].includes(e.key)) {
+                    e.preventDefault();
+                  }
+                }}
+                {...register('days', {
+                  min: 1,
+                  onChange: (e) => {
+                    const raw = e.target.value.replace(/[^0-9]/g, '');
+                    if (raw === '') return;
+                    const val = parseInt(raw, 10);
+                    if (!isNaN(val) && val >= 1) {
+                      setValue('days', val, { shouldValidate: true });
+                    }
+                  },
+                  onBlur: (e) => {
+                    const val = parseInt(e.target.value, 10);
+                    if (isNaN(val) || val < 1) {
+                      setValue('days', 1, { shouldValidate: true });
+                    } else {
+                      setValue('days', val, { shouldValidate: true });
+                    }
+                  },
+                })}
+              />
+              <button
+                type="button"
+                onClick={() => setValue('days', (Number(days) || 1) + 1, { shouldValidate: true })}
+                aria-label="Increase days"
+              >
                 +
               </button>
             </div>
@@ -353,13 +458,39 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
               <input
                 type="number"
                 min="1"
+                max={roomMaxPersons || 20}
+                step="1"
+                inputMode="numeric"
+                onKeyDown={(e) => {
+                  if (['-', '+', '.', 'e', 'E'].includes(e.key)) {
+                    e.preventDefault();
+                  }
+                }}
                 {...register('persons', {
                   min: 1,
-                  onChange: () => setServerPersonsError(''),
+                  onChange: (e) => {
+                    setServerPersonsError('');
+                    const raw = e.target.value.replace(/[^0-9]/g, '');
+                    if (raw === '') return;
+                    const val = parseInt(raw, 10);
+                    if (!isNaN(val)) {
+                      if (roomMaxPersons != null && val > Number(roomMaxPersons)) {
+                        setValue('persons', Number(roomMaxPersons));
+                        setServerPersonsError(maxPersonsMsg);
+                      } else if (val >= 1) {
+                        setValue('persons', val);
+                      }
+                    }
+                  },
                   onBlur: (e) => {
                     const val = parseInt(e.target.value, 10);
                     if (isNaN(val) || val < 1) {
                       setValue('persons', 1);
+                    } else if (roomMaxPersons != null && val > Number(roomMaxPersons)) {
+                      setValue('persons', Number(roomMaxPersons));
+                      setServerPersonsError(maxPersonsMsg);
+                    } else {
+                      setValue('persons', val);
                     }
                   },
                 })}
@@ -368,15 +499,25 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
                 type="button"
                 onClick={() => {
                   setServerPersonsError('');
-                  setValue('persons', (Number(persons) || 1) + 1);
+                  if (roomMaxPersons == null || (Number(persons) || 1) < Number(roomMaxPersons)) {
+                    setValue('persons', (Number(persons) || 1) + 1);
+                  } else {
+                    setServerPersonsError(maxPersonsMsg);
+                  }
                 }}
-                disabled={(Number(persons) || 1) >= 20}
+                disabled={roomMaxPersons != null ? (Number(persons) || 1) >= Number(roomMaxPersons) : (Number(persons) || 1) >= 20}
                 aria-label="Increase persons count"
               >
                 +
               </button>
             </div>
-            {personsError && <span className="err">{personsError}</span>}
+            {personsError ? (
+              <span className="err">{personsError}</span>
+            ) : (roomMaxPersons != null && (Number(persons) || 1) >= Number(roomMaxPersons)) ? (
+              <span className="muted" style={{ display: 'block', marginTop: 4, fontSize: 12 }}>
+                {maxPersonsMsg}
+              </span>
+            ) : null}
           </div>
           <div className="f">
             <label>Leaves on</label>
@@ -451,7 +592,10 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
                         setInspectedRoomId(r.id);
                         if (isBookable) {
                           setValue('roomId', r.id);
-                          if (!rateTouched) setValue('rate', Number(r.type_rate));
+                          const configuredRate = getRoomConfiguredRate(r, roomTypes);
+                          if (configuredRate > 0) {
+                            setValue('rate', configuredRate, { shouldValidate: true });
+                          }
                         }
                       }}
                       style={{

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
-import { useCreateUser, useUpdateUser, useResetPassword, useRoles } from '../../api/users';
+import { useCreateUser, useUpdateUser, useDeleteUser, useResetPassword, useRoles } from '../../api/users';
 import { useToast } from '../../context/ToastContext.jsx';
 
 export default function UserFormSheet({ user, onClose }) {
@@ -8,8 +8,10 @@ export default function UserFormSheet({ user, onClose }) {
   const { data: roles } = useRoles();
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
+  const deleteUser = useDeleteUser();
   const resetPassword = useResetPassword();
   const toast = useToast();
+  const [deleting, setDeleting] = useState(false);
 
   const [form, setForm] = useState({
     name: user?.name || '',
@@ -57,7 +59,21 @@ export default function UserFormSheet({ user, onClose }) {
     }
   };
 
-  const isPending = createUser.isPending || updateUser.isPending;
+  const handleDelete = async () => {
+    if (!window.confirm(`Are you sure you want to delete user ${user.name} (${user.username})? This action cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await deleteUser.mutateAsync(user.id);
+      toast(`User ${user.username} deleted.`);
+      onClose();
+    } catch (err) {
+      toast(err.message || 'Cannot delete user.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const isPending = createUser.isPending || updateUser.isPending || deleting;
 
   return (
     <Sheet onClose={onClose}>
@@ -126,6 +142,18 @@ export default function UserFormSheet({ user, onClose }) {
                   Reset
                 </button>
               </div>
+            </div>
+
+            <div style={{ marginTop: 24, paddingTop: 16, borderTop: '1px solid var(--border)' }}>
+              <button
+                className="btn red"
+                type="button"
+                style={{ width: '100%' }}
+                disabled={isPending}
+                onClick={handleDelete}
+              >
+                {deleting ? 'Deleting user…' : 'Delete user'}
+              </button>
             </div>
           </>
         )}

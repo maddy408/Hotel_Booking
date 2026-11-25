@@ -8,13 +8,18 @@ import { useRooms } from '../api/rooms';
 import { fd, inr } from '../lib/format';
 
 export default function Bills() {
-  const { data: stays, isLoading, isError, error, refetch } = useDoneStays();
+  const { data: stays, isLoading, isError, error, refetch: refetchStays } = useDoneStays();
   // Reuses the same /reports/today the Reports screen shows, rather than re-deriving
   // "today" from the browser's clock — keeps the two screens' numbers identical and
   // avoids a client/server timezone mismatch at the day boundary.
-  const { data: today } = useTodayReport();
+  const { data: today, refetch: refetchToday } = useTodayReport();
   const { data: roomsData } = useRooms();
   const [sheet, setSheet] = useState(null);
+
+  const refetchAll = () => {
+    refetchStays();
+    refetchToday();
+  };
 
   if (isLoading) {
     return (
@@ -30,7 +35,7 @@ export default function Bills() {
       <div className="panel empty">
         Could not load bills: {error.message}
         <div style={{ marginTop: 10 }}>
-          <button className="btn sm" type="button" onClick={() => refetch()}>
+          <button className="btn sm" type="button" onClick={refetchAll}>
             Retry
           </button>
         </div>

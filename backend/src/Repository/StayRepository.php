@@ -57,19 +57,32 @@ class StayRepository
     }
 
     /**
-     * Overlapping in-house/checked-out-in-the-future stays for a room within [checkIn, checkOut).
+     * Overlapping in-house or past checked-out stays for a room within [checkIn, checkOut).
      * An in-house stay whose planned checkout has already slipped into the past (overstay)
-     * is treated as blocking through "today + 1" — matching the prototype's roomFree() rule.
+     * is treated as blocking through "today + 1" — continuing to block the room while in-house.
+     * Checked-out stays block only their occupied past interval and never block new stays on or after checkout.
+     * Cancelled stays never block.
      * @return array<int,array<string,mixed>>
      */
     public function overlapping(int $roomId, string $checkIn, string $checkOut, string $today, ?int $excludeId = null): array
     {
         $sql = "SELECT *,
-                    CASE WHEN checkout_planned >= :today1 THEN checkout_planned ELSE DATE_ADD(:today2, INTERVAL 1 DAY) END AS effective_out
+                    CASE 
+                        WHEN status = 'in_house' AND checkout_planned < :today1 THEN DATE_ADD(:today2, INTERVAL 1 DAY)
+                        WHEN status = 'checked_out' THEN COALESCE(checkout_actual, checkout_planned)
+                        ELSE checkout_planned 
+                    END AS effective_out
                 FROM stays
-                WHERE room_id = :room_id AND status = 'in_house'
+                WHERE room_id = :room_id 
+                  AND status IN ('in_house', 'checked_out')
                   AND check_in_date < :check_out
-                  AND :check_in < (CASE WHEN checkout_planned >= :today3 THEN checkout_planned ELSE DATE_ADD(:today4, INTERVAL 1 DAY) END)";
+                  AND :check_in < (
+                    CASE 
+                        WHEN status = 'in_house' AND checkout_planned < :today3 THEN DATE_ADD(:today4, INTERVAL 1 DAY)
+                        WHEN status = 'checked_out' THEN COALESCE(checkout_actual, checkout_planned)
+                        ELSE checkout_planned 
+                    END
+                  )";
         $params = [
             'room_id' => $roomId, 'check_in' => $checkIn, 'check_out' => $checkOut,
             'today1' => $today, 'today2' => $today, 'today3' => $today, 'today4' => $today,
@@ -78,6 +91,7 @@ class StayRepository
             $sql .= ' AND id != :exclude_id';
             $params['exclude_id'] = $excludeId;
         }
+        $sql .= ' LOCK IN SHARE MODE';
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         return $stmt->fetchAll();
@@ -175,7 +189,7 @@ class StayRepository
     public function listDoneForHotel(int $hotelId, ?string $from = null, ?string $to = null): array
     {
         $sql = "SELECT s.*, g.name AS guest_name, g.phone AS guest_phone, r.room_no,
-                       i.invoice_number, i.total_amount AS invoice_total, i.guest_gstin
+                       i.invoice_number, i.total_amount AS invoice_total, i.guest_gstin, i.id AS invoice_id
                 FROM stays s JOIN guests g ON g.id = s.guest_id JOIN rooms r ON r.id = s.room_id
                 LEFT JOIN invoices i ON i.stay_id = s.id
                 WHERE s.hotel_id = :hotel_id AND s.status = 'checked_out'";

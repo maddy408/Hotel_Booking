@@ -232,6 +232,13 @@ export function buildInvoiceHtml(data) {
               </tr>
               ${chargesRows}
               ${taxRows}
+              ${Number(invoice.discount_amount) > 0 ? `
+                <tr style="color: #BE123C;">
+                  <td>Discount applied</td>
+                  <td></td>
+                  <td class="r">−${inr(invoice.discount_amount)}</td>
+                </tr>
+              ` : ''}
               <tr class="inv-total">
                 <td>Invoice Total</td>
                 <td></td>

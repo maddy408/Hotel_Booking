@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import Screen, { ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Sheet, { SheetHeader } from '../../components/Sheet.jsx';
 import { Input, Segmented, FieldError, FormErrorBanner } from '../../components/ui/Field.jsx';
-import { useUsers, useRoles, useCreateUser, useUpdateUser, useResetPassword } from '../../api/users';
+import { useUsers, useRoles, useCreateUser, useUpdateUser, useDeleteUser, useResetPassword } from '../../api/users';
 import { useToast } from '../../components/ToastContext.jsx';
 import { useFormValidation, isFilled, isValidEmail, isValidPhone } from '../../lib/validation.js';
 import { colors, fonts, radii } from '../../theme/theme';
@@ -14,9 +14,11 @@ export default function UsersScreen() {
   const { data: roles } = useRoles();
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
+  const deleteUser = useDeleteUser();
   const resetPassword = useResetPassword();
   const toast = useToast();
   const [form, setForm] = useState(null);
+  const [deletingUserId, setDeletingUserId] = useState(null);
 
   const {
     errors,
@@ -145,6 +147,35 @@ export default function UsersScreen() {
         toast(unmapped || 'Failed to save user.');
       }
     }
+  };
+
+  const handleDeleteUser = () => {
+    if (!form?.id || deletingUserId) return;
+    Alert.alert(
+      'Delete User',
+      `Are you sure you want to delete user ${form.name} (${form.username})? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingUserId(form.id);
+            try {
+              await deleteUser.mutateAsync(form.id);
+              toast(`User ${form.username} deleted.`);
+              setForm(null);
+            } catch (e) {
+              const msg = e.message || 'Failed to delete user.';
+              toast(msg);
+              Alert.alert('Cannot Delete User', msg);
+            } finally {
+              setDeletingUserId(null);
+            }
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -298,6 +329,18 @@ export default function UsersScreen() {
               onPress={save}
               style={{ marginTop: 8 }}
             />
+
+            {form.id ? (
+              <Button
+                title={deletingUserId === form.id ? 'Deleting User…' : 'Delete User'}
+                variant="danger"
+                size="lg"
+                loading={deletingUserId === form.id}
+                disabled={createUser.isPending || updateUser.isPending || deletingUserId === form.id}
+                onPress={handleDeleteUser}
+                style={{ marginTop: 4 }}
+              />
+            ) : null}
           </View>
         </Sheet>
       )}

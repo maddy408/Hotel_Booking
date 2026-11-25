@@ -27,13 +27,30 @@ final class RoomService
         private readonly RoomTypeRepository $roomTypes,
         private readonly HousekeepingLogRepository $hkLogs,
         private readonly AuditLogger $audit,
+        private readonly ?\App\Repository\SettingsRepository $settings = null,
     ) {
+    }
+
+    public function hotelToday(int $hotelId): string
+    {
+        $tzName = null;
+        if ($this->settings !== null) {
+            $s = $this->settings->find($hotelId);
+            $tzName = $s['timezone'] ?? null;
+        }
+        $tzName = $tzName ?: (string) \App\Config\Env::get('APP_TIMEZONE', 'Asia/Kolkata');
+        try {
+            $tz = new \DateTimeZone($tzName ?: 'Asia/Kolkata');
+        } catch (\Throwable) {
+            $tz = new \DateTimeZone('Asia/Kolkata');
+        }
+        return (new \DateTimeImmutable('now', $tz))->format('Y-m-d');
     }
 
     /** @return array{rooms: array<int,array<string,mixed>>, counts: array<string,int>} */
     public function listRooms(int $hotelId): array
     {
-        $today = date('Y-m-d');
+        $today = $this->hotelToday($hotelId);
         $rooms = $this->rooms->allForHotel($hotelId);
         $inHouse = $this->rooms->inHouseStaysByRoom($hotelId);
         $reservations = $this->rooms->pendingReservationsByRoom($hotelId);
@@ -44,10 +61,12 @@ final class RoomService
         foreach ($rooms as $room) {
             $roomId = (int) $room['id'];
             $stay = $inHouse[$roomId] ?? null;
+            $isOccupied = ($stay !== null);
 
             $roomReservations = $reservations[$roomId] ?? [];
             $activeBooking = $roomReservations[0] ?? null;
             $nextBooking = $roomReservations[1] ?? null;
+            $nextUpcomingBooking = $nextBooking;
 
             // Priority order for primary room status:
             // 1. Occupied: active in-house stay exists (takes priority over Booked)
@@ -56,7 +75,7 @@ final class RoomService
             // 4. Cleaning: housekeeping condition awaiting cleaning (when not occupied or booked)
             // 5. Free: available and ready
             $status = match (true) {
-                $stay !== null => 'occupied',
+                $isOccupied => 'occupied',
                 $activeBooking !== null => 'booked',
                 $room['housekeeping_status'] === 'repair' => 'repair',
                 $room['housekeeping_status'] === 'cleaning' => 'cleaning',
@@ -67,13 +86,12 @@ final class RoomService
             // - occupied: rooms with active in-house stays
             // - booked: rooms with active pending reservations that have not completed check-in
             // - repair / cleaning / free: based on housekeeping for rooms without an active stay or booking
-            if ($stay !== null) {
+            if ($isOccupied) {
                 $counts['occupied']++;
             }
             if ($activeBooking !== null) {
                 $counts['booked']++;
-            }
-            if ($stay === null && $activeBooking === null) {
+            } elseif (!$isOccupied) {
                 if ($room['housekeeping_status'] === 'repair') {
                     $counts['repair']++;
                 } elseif ($room['housekeeping_status'] === 'cleaning') {
@@ -83,14 +101,73 @@ final class RoomService
                 }
             }
 
+            // Next booking date:
+            $nextBookingDate = $stay !== null ? ($activeBooking['check_in_date'] ?? null) : ($nextBooking['check_in_date'] ?? null);
+
+            // Genuine room conflict detection:
+            // Condition 1: Room is occupied by in-house stay, and an active/future reservation overlaps with the stay
+            //   Date overlap rule: res.check_in_date < stay_effective_end AND stay.check_in_date < res.check_out_date
+            //   Only consider reservations where check_out_date > today (not historical/past bookings)
+            // Condition 2: Two active pending reservations overlap each other:
+            //   r1.check_in_date < r2.check_out_date AND r2.check_in_date < r1.check_out_date
+            $conflictingBooking = null;
+            if ($isOccupied) {
+                $stayEffectiveEnd = $stay['checkout_planned'] < $today
+                    ? date('Y-m-d', strtotime($today . ' +1 day'))
+                    : (string) $stay['checkout_planned'];
+
+                foreach ($roomReservations as $res) {
+                    // Exclude past bookings whose checkout has already passed
+                    if (!empty($res['check_out_date']) && $res['check_out_date'] <= $today) {
+                        continue;
+                    }
+
+                    // Check date overlap
+                    if ($res['check_in_date'] < $stayEffectiveEnd && (string) $stay['check_in_date'] < $res['check_out_date']) {
+                        // Same day turnover: if stay is leaving today and reservation check-in is today, not a conflict
+                        if ($stay['checkout_planned'] === $today && $res['check_in_date'] === $today && $stay['checkout_planned'] >= $today) {
+                            continue;
+                        }
+                        $conflictingBooking = $res;
+                        break;
+                    }
+                }
+            }
+
+            if ($conflictingBooking === null && count($roomReservations) > 1) {
+                $activeList = array_values(array_filter($roomReservations, fn($r) => empty($r['check_out_date']) || $r['check_out_date'] > $today));
+                $n = count($activeList);
+                for ($i = 0; $i < $n; $i++) {
+                    for ($j = $i + 1; $j < $n; $j++) {
+                        $r1 = $activeList[$i];
+                        $r2 = $activeList[$j];
+                        if ($r1['check_in_date'] < $r2['check_out_date'] && $r2['check_in_date'] < $r1['check_out_date']) {
+                            $conflictingBooking = $r2;
+                            break 2;
+                        }
+                    }
+                }
+            }
+
+            $hasConflict = ($conflictingBooking !== null);
             $hasPendingBooking = ($activeBooking !== null);
+
             $pendingBookingDto = $hasPendingBooking ? [
-                'id' => (int) ($activeBooking['id'] ?? 0),
+                'id' => (int) $activeBooking['id'],
                 'bookingCode' => $activeBooking['booking_code'] ?? null,
                 'guestName' => $activeBooking['guest_name'] ?? null,
                 'checkInDate' => $activeBooking['check_in_date'] ?? null,
                 'checkOutDate' => $activeBooking['check_out_date'] ?? null,
                 'persons' => (int) ($activeBooking['persons'] ?? 1),
+            ] : null;
+
+            $conflictBookingDto = $hasConflict ? [
+                'id' => (int) $conflictingBooking['id'],
+                'bookingCode' => $conflictingBooking['booking_code'] ?? null,
+                'guestName' => $conflictingBooking['guest_name'] ?? null,
+                'checkInDate' => $conflictingBooking['check_in_date'] ?? null,
+                'checkOutDate' => $conflictingBooking['check_out_date'] ?? null,
+                'persons' => (int) ($conflictingBooking['persons'] ?? 1),
             ] : null;
 
             $dto = [
@@ -120,7 +197,17 @@ final class RoomService
                 'bookingCheckIn' => null,
                 'hasPendingBooking' => $hasPendingBooking,
                 'pendingBooking' => $pendingBookingDto,
-                'nextBookingDate' => $stay !== null ? ($activeBooking['check_in_date'] ?? null) : ($nextBooking['check_in_date'] ?? null),
+                'hasConflict' => $hasConflict,
+                'conflictBooking' => $conflictBookingDto,
+                'nextBookingDate' => $nextBookingDate,
+                'upcomingBooking' => $nextUpcomingBooking !== null ? [
+                    'id' => (int) $nextUpcomingBooking['id'],
+                    'bookingCode' => $nextUpcomingBooking['booking_code'] ?? null,
+                    'guestName' => $nextUpcomingBooking['guest_name'] ?? null,
+                    'checkInDate' => $nextUpcomingBooking['check_in_date'] ?? null,
+                    'checkOutDate' => $nextUpcomingBooking['check_out_date'] ?? null,
+                    'persons' => (int) ($nextUpcomingBooking['persons'] ?? 1),
+                ] : null,
             ];
 
             if ($status === 'occupied') {
@@ -271,6 +358,9 @@ final class RoomService
         $room = $this->getOwnedRoom($roomId, $hotelId);
         if ($this->rooms->liveReferenceCount($roomId) > 0) {
             throw ApiException::conflict("Room {$room['room_no']} has a guest or booking. It cannot be removed.");
+        }
+        if ($this->rooms->totalReferenceCount($roomId) > 0) {
+            throw ApiException::conflict("Room {$room['room_no']} has historical stays or bookings. It cannot be removed.");
         }
         $this->rooms->delete($roomId);
         $this->audit->log($hotelId, $userId, 'room_delete', 'room', $roomId, $room, null);

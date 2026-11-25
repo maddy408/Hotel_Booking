@@ -81,8 +81,12 @@ final class StayService
             if ($room === null || (int) $room['hotel_id'] !== $hotelId) {
                 throw ApiException::notFound('Room not found.');
             }
-            if ($this->rooms->lockById($roomId) === null) {
+            $lockedRoom = $this->rooms->lockById($roomId);
+            if ($lockedRoom === null) {
                 throw ApiException::notFound('Room not found.');
+            }
+            if (isset($lockedRoom['housekeeping_status'])) {
+                $room['housekeeping_status'] = $lockedRoom['housekeeping_status'];
             }
 
             $today = date('Y-m-d');
@@ -105,6 +109,12 @@ final class StayService
                 throw ApiException::conflict("Room {$room['room_no']} is already occupied by another active stay. Complete the previous checkout before assigning this room.");
             }
 
+            // Authoritative check: room must not have an active checked-in reservation
+            $activeCheckedInRes = $this->reservations->findCheckedInByRoom($roomId, true);
+            if ($activeCheckedInRes !== null) {
+                throw ApiException::conflict("Room {$room['room_no']} is already occupied by another active stay ({$activeCheckedInRes['booking_code']}). Complete the previous checkout before assigning this room.");
+            }
+
             // Enforce room readiness
             if (($room['housekeeping_status'] ?? '') === 'repair') {
                 $msg = "Room {$room['room_no']} is under maintenance and cannot be checked in.";
@@ -115,10 +125,18 @@ final class StayService
                 throw ApiException::validation(['room' => $msg, 'housekeepingStatus' => $msg], $msg);
             }
 
+            if ($days < 1) {
+                throw ApiException::validation(['days' => 'Days must be at least 1.'], 'Days must be at least 1.');
+            }
+            if ($persons < 1) {
+                throw ApiException::validation(['persons' => 'Actual persons count must be a positive whole number.'], 'Actual persons count must be a positive whole number.');
+            }
+
             // Enforce max_persons
             $maxPersons = (int) ($room['max_persons'] ?? 2);
             if ($persons > $maxPersons) {
-                $msg = "This room allows a maximum of {$maxPersons} persons.";
+                $unit = $maxPersons === 1 ? 'person' : 'persons';
+                $msg = "This room allows a maximum of {$maxPersons} {$unit}.";
                 throw ApiException::validation(['persons' => $msg], $msg);
             }
 
@@ -262,14 +280,24 @@ final class StayService
             if ($room === null || (int) $room['hotel_id'] !== $hotelId) {
                 throw ApiException::notFound('Room not found.');
             }
-            if ($this->rooms->lockById($roomId) === null) {
+            $lockedRoom = $this->rooms->lockById($roomId);
+            if ($lockedRoom === null) {
                 throw ApiException::notFound('Room not found.');
+            }
+            if (isset($lockedRoom['housekeeping_status'])) {
+                $room['housekeeping_status'] = $lockedRoom['housekeeping_status'];
             }
 
             // Authoritative check: room must not have another active stay
             $activeStay = $this->stays->findInHouseByRoom($roomId, true);
             if ($activeStay !== null) {
                 throw ApiException::conflict("Room {$room['room_no']} is already occupied by another active stay. Complete the previous checkout before assigning this room.");
+            }
+
+            // Authoritative check: room must not have another checked-in reservation
+            $activeCheckedInRes = $this->reservations->findCheckedInByRoom($roomId, true);
+            if ($activeCheckedInRes !== null && (int) $activeCheckedInRes['id'] !== $reservationId) {
+                throw ApiException::conflict("Room {$room['room_no']} is already occupied by another guest ({$activeCheckedInRes['booking_code']}). Complete the previous checkout before assigning this room.");
             }
 
             // Enforce room readiness
@@ -283,10 +311,14 @@ final class StayService
             }
 
             // Enforce max_persons based on actual persons count
+            if ($persons !== null && $persons < 1) {
+                throw ApiException::validation(['persons' => 'Actual persons count must be a positive whole number.'], 'Actual persons count must be a positive whole number.');
+            }
             $actualPersons = ($persons !== null && $persons > 0) ? $persons : (int) $reservation['persons'];
             $maxPersons = (int) ($room['max_persons'] ?? 2);
             if ($actualPersons > $maxPersons) {
-                $msg = "This room allows a maximum of {$maxPersons} persons.";
+                $unit = $maxPersons === 1 ? 'person' : 'persons';
+                $msg = "This room allows a maximum of {$maxPersons} {$unit}.";
                 throw ApiException::validation(['persons' => $msg], $msg);
             }
 
@@ -316,7 +348,7 @@ final class StayService
                         "Late arrival conflict: Guest arrived on {$today} (original booking was {$reservation['check_in_date']} to {$reservation['check_out_date']}). Room {$room['room_no']} is already reserved by {$code} ({$guest}) from {$in} to {$out}. Reception must resolve the booking dates or room assignment before check-in."
                     );
                 }
-                throw ApiException::conflict("Room {$room['room_no']} is already booked for part of those dates ({$code}).");
+                throw ApiException::conflict('This room is already booked for these dates. Please select another room.');
             }
 
             $this->availability->assertFree($roomId, $today, $checkoutPlanned, excludeReservationId: $reservationId);
@@ -445,15 +477,29 @@ final class StayService
 
     public function removeExtra(int $stayId, int $chargeId, int $hotelId): array
     {
-        $stay = $this->stays->lockForUpdate($stayId);
-        if ($stay === null || (int) $stay['hotel_id'] !== $hotelId) {
-            throw ApiException::notFound('Stay not found.');
+        $this->db->beginTransaction();
+        try {
+            $stay = $this->stays->lockForUpdate($stayId);
+            if ($stay === null || (int) $stay['hotel_id'] !== $hotelId) {
+                throw ApiException::notFound('Stay not found.');
+            }
+            if ($stay['status'] !== 'in_house') {
+                throw ApiException::conflict('Extras can only be changed on a current stay.');
+            }
+            $charge = $this->charges->find($chargeId);
+            if ($charge === null || (int) $charge['stay_id'] !== $stayId) {
+                throw ApiException::notFound('Extra charge not found.');
+            }
+            $this->charges->remove($chargeId, $stayId);
+            $bill = $this->billing->computeBill($this->stays->find($stayId));
+            $this->db->commit();
+            return $bill;
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
         }
-        if ($stay['status'] !== 'in_house') {
-            throw ApiException::conflict('Extras can only be changed on a current stay.');
-        }
-        $this->charges->remove($chargeId, $stayId);
-        return $this->billing->computeBill($this->stays->find($stayId));
     }
 
     public function extend(int $stayId, int $hotelId, ?int $userId): array
@@ -467,6 +513,7 @@ final class StayService
             if ($stay['status'] !== 'in_house') {
                 throw ApiException::conflict('Only a current stay can be extended.');
             }
+            $this->rooms->lockById((int) $stay['room_id']);
             $today = date('Y-m-d');
             $from = max($stay['checkout_planned'], $today);
             $newOut = $this->addDays($from, 1);
@@ -493,6 +540,7 @@ final class StayService
             if ($stay['status'] !== 'in_house') {
                 throw ApiException::conflict('Only a current stay can be updated.');
             }
+            $this->rooms->lockById((int) $stay['room_id']);
 
             $settings = $this->settings->find($hotelId);
             $defaultHour = (int) ($settings['checkout_hour'] ?? 12);
@@ -996,8 +1044,9 @@ final class StayService
             $this->rooms->updateHousekeeping($roomId, 'cleaning', null);
             $this->hkLogs->log($roomId, 'cleaning', null, $userId);
 
-            // If originating reservation exists, adjust its check_out_date if needed so future dates are free
+            // If originating reservation exists, mark checked_out and adjust its check_out_date if needed so future dates are free
             if ($reservationId !== null) {
+                $this->reservations->markCheckedOut($reservationId);
                 $res = $this->reservations->find($reservationId);
                 if ($res !== null && $actualDate > $res['check_in_date'] && $res['check_out_date'] !== $actualDate) {
                     $this->reservations->update(
@@ -1136,11 +1185,10 @@ final class StayService
                     "Occupant #{$num} gender is required and must be Male, Female, or Other."
                 );
             }
-            $cleanPhone = preg_replace('/[^\d]/', '', $phone);
-            if ($cleanPhone === '' || strlen($cleanPhone) !== 10) {
+            if (!\App\Support\Validator::isValidPhone($phone)) {
                 throw ApiException::validation(
-                    ['occupants' => "Occupant #{$num} phone number is required and must be 10 digits."],
-                    "Occupant #{$num} phone number is required and must be 10 digits."
+                    ['occupants' => "Occupant #{$num} phone number is invalid. Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9."],
+                    "Occupant #{$num} phone number is invalid. Enter a valid 10-digit mobile number starting with 6, 7, 8, or 9."
                 );
             }
         }

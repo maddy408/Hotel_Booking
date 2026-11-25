@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import Screen, { ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Sheet, { SheetHeader } from '../../components/Sheet.jsx';
@@ -9,7 +9,9 @@ import {
   useRooms,
   useCreateRoomType,
   useUpdateRoomType,
+  useDeleteRoomType,
   useUpdateRoom,
+  useDeleteRoom,
   useHousekeepingAction,
   useBulkAddRooms,
 } from '../../api/rooms';
@@ -26,7 +28,9 @@ export default function RoomMasterScreen() {
   const { data: settingsData } = useSettings();
   const createType = useCreateRoomType();
   const updateType = useUpdateRoomType();
+  const deleteType = useDeleteRoomType();
   const updateRoom = useUpdateRoom();
+  const deleteRoom = useDeleteRoom();
   const hkAction = useHousekeepingAction();
   const bulkAdd = useBulkAddRooms();
   const toast = useToast();
@@ -35,6 +39,8 @@ export default function RoomMasterScreen() {
   const [editType, setEditType] = useState(null);
   const [editRoom, setEditRoom] = useState(null);
   const [submittingAction, setSubmittingAction] = useState(null); // null | 'repair' | 'ready'
+  const [deletingRoomId, setDeletingRoomId] = useState(null);
+  const [deletingTypeId, setDeletingTypeId] = useState(null);
   const [addRoomsModal, setAddRoomsModal] = useState(false);
 
   const addRoomsScrollRef = useRef(null);
@@ -134,6 +140,71 @@ export default function RoomMasterScreen() {
     }
   };
 
+  const handleDeleteRoom = (room) => {
+    if (!room || deletingRoomId) return;
+    Alert.alert(
+      'Delete Room',
+      `Are you sure you want to delete Room ${room.roomNo}? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingRoomId(room.id);
+            try {
+              await deleteRoom.mutateAsync(room.id);
+              toast(`Room ${room.roomNo} deleted.`);
+              setEditRoom(null);
+            } catch (e) {
+              const msg = e.message || 'Failed to delete room.';
+              toast(msg);
+              Alert.alert('Cannot Delete Room', msg);
+            } finally {
+              setDeletingRoomId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteType = (type) => {
+    if (!type || deletingTypeId) return;
+    const count = roomsByType[type.id]?.length || 0;
+    if (count > 0) {
+      const msg = `Cannot delete "${type.name}": this room type has ${count} room(s) assigned. Change or remove the rooms first.`;
+      toast(msg);
+      Alert.alert('Cannot Delete Room Type', msg);
+      return;
+    }
+    Alert.alert(
+      'Delete Room Type',
+      `Are you sure you want to delete "${type.name}"? This action cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingTypeId(type.id);
+            try {
+              await deleteType.mutateAsync(type.id);
+              toast(`Room type "${type.name}" deleted.`);
+              if (editType?.id === type.id) setEditType(null);
+            } catch (e) {
+              const msg = e.message || 'Failed to delete room type.';
+              toast(msg);
+              Alert.alert('Cannot Delete Room Type', msg);
+            } finally {
+              setDeletingTypeId(null);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleAddRooms = async () => {
     const isValid = validateAddRooms(() => {
       const errs = {};
@@ -206,7 +277,7 @@ export default function RoomMasterScreen() {
       {activeTab === 'rooms' && (
         <>
           <View style={styles.header}>
-            <View>
+            <View style={{ flex: 1, minWidth: 150, marginRight: 8 }}>
               <Text style={styles.title}>All Rooms & Floors</Text>
               <Text style={styles.subTitle}>Manage floors and configure individual rooms</Text>
             </View>
@@ -280,7 +351,7 @@ export default function RoomMasterScreen() {
       {activeTab === 'types' && (
         <>
           <View style={styles.header}>
-            <View>
+            <View style={{ flex: 1, minWidth: 150, marginRight: 8 }}>
               <Text style={styles.title}>Room Types</Text>
               <Text style={styles.subTitle}>Categories, rates, and occupancy rules</Text>
             </View>
@@ -299,7 +370,17 @@ export default function RoomMasterScreen() {
                   <Text style={styles.typeName}>{t.name}</Text>
                   <Text style={styles.meta}>{inr(t.rate)}/night · Max {t.maxPersons || t.max_persons} persons</Text>
                 </View>
-                <Button title="Edit" variant="outline" size="sm" onPress={() => setEditType(t)} />
+                <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+                  <Button title="Edit" variant="outline" size="sm" onPress={() => setEditType(t)} />
+                  <Button
+                    title="Delete"
+                    variant="danger"
+                    size="sm"
+                    disabled={deletingTypeId === t.id || deleteType.isPending}
+                    loading={deletingTypeId === t.id}
+                    onPress={() => handleDeleteType(t)}
+                  />
+                </View>
               </View>
               <View style={styles.roomGrid}>
                 {(roomsByType[t.id] || []).map((r) => {
@@ -540,6 +621,18 @@ export default function RoomMasterScreen() {
               }}
               style={{ marginTop: 8 }}
             />
+
+            {editType.id ? (
+              <Button
+                title={deletingTypeId === editType.id ? 'Deleting…' : 'Delete Room Type'}
+                variant="danger"
+                size="lg"
+                disabled={deletingTypeId === editType.id || deleteType.isPending}
+                loading={deletingTypeId === editType.id}
+                onPress={() => handleDeleteType(editType)}
+                style={{ marginTop: 4 }}
+              />
+            ) : null}
           </View>
         </Sheet>
       )}
@@ -624,6 +717,14 @@ export default function RoomMasterScreen() {
                 onPress={() => handleRoomHousekeeping('ready')}
               />
               <Button
+                title={deletingRoomId === currentEditRoom.id ? 'Deleting…' : 'Delete Room'}
+                variant="danger"
+                size="md"
+                disabled={Boolean(submittingAction) || deletingRoomId === currentEditRoom.id || deleteRoom.isPending}
+                loading={deletingRoomId === currentEditRoom.id}
+                onPress={() => handleDeleteRoom(currentEditRoom)}
+              />
+              <Button
                 title="Close"
                 variant="outline"
                 size="md"
@@ -644,7 +745,7 @@ const styles = StyleSheet.create({
   topTabActive: { backgroundColor: colors.primary },
   topTabText: { fontFamily: fonts.bodySemibold, fontSize: 13, color: colors.textSecondary },
   topTabTextActive: { color: '#FFFFFF', fontFamily: fonts.bodyBold },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 8 },
   title: { fontFamily: fonts.display, fontSize: 18, color: colors.heading },
   subTitle: { fontFamily: fonts.body, fontSize: 11.5, color: colors.textSecondary, marginTop: 1 },
   floorCard: { backgroundColor: colors.card, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.cardBorder, padding: 12, marginBottom: 12 },

@@ -311,7 +311,10 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
                       className="rm"
                       type="button"
                       aria-label="Remove"
-                      onClick={() => removeExtra.mutate({ stayId: stay.id, chargeId: ch.id })}
+                      onClick={() => {
+                        if (!window.confirm(`Are you sure you want to remove extra charge "${ch.label}"?`)) return;
+                        removeExtra.mutate({ stayId: stay.id, chargeId: ch.id });
+                      }}
                     >
                       ×
                     </button>
