@@ -24,9 +24,17 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
-  // Ignore API requests and browser extension requests
+  // Ignore API requests, auth endpoints, browser extensions, and dev server requests
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith('/api') || url.pathname.includes('/auth') || url.protocol.startsWith('chrome-extension')) {
+  if (
+    url.pathname.startsWith('/api') ||
+    url.pathname.includes('/auth') ||
+    url.protocol.startsWith('chrome-extension') ||
+    url.pathname.startsWith('/@') ||
+    url.pathname.startsWith('/src') ||
+    url.pathname.startsWith('/node_modules') ||
+    url.searchParams.has('t')
+  ) {
     return;
   }
 

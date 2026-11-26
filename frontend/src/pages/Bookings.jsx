@@ -18,40 +18,19 @@ export default function Bookings() {
   const [viewMode, setViewMode] = useState('date'); // 'date' | 'room'
   const [search, setSearch] = useState('');
 
-  if (isLoading) {
-    return (
-      <div className="panel">
-        <div className="sb">
-          <div className="skel" style={{ height: 60 }} />
-          <div className="skel" style={{ height: 60 }} />
-          <div className="skel" style={{ height: 60 }} />
-        </div>
-      </div>
-    );
-  }
-  if (isError) {
-    return (
-      <div className="panel empty">
-        Could not load bookings: {error.message}
-        <div style={{ marginTop: 10 }}>
-          <button className="btn sm" type="button" onClick={() => refetch()}>
-            Retry
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   const today = reservations?.find((s) => s.hotel_today)?.hotel_today || todayIso();
   const tomorrow = addDaysIso(today, 1);
-  const all = [...(reservations || [])].sort((a, b) => {
-    const dateA = a.created_at || a.createdAt || '';
-    const dateB = b.created_at || b.createdAt || '';
-    if (dateA && dateB && dateA !== dateB) {
-      return dateB.localeCompare(dateA);
-    }
-    return (Number(b.id) || 0) - (Number(a.id) || 0);
-  });
+  const all = useMemo(() => {
+    return [...(reservations || [])].sort((a, b) => {
+      const dateA = a.created_at || a.createdAt || '';
+      const dateB = b.created_at || b.createdAt || '';
+      if (dateA && dateB && dateA !== dateB) {
+        return dateB.localeCompare(dateA);
+      }
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
+    });
+  }, [reservations]);
+
   const filtered = useMemo(() => {
     if (!search.trim()) return all;
     const q = search.toLowerCase().trim();
@@ -62,15 +41,6 @@ export default function Bookings() {
       (s.room_no && String(s.room_no).includes(q))
     ));
   }, [all, search]);
-
-  const isOverdue = (s) => Boolean(s.is_overdue ?? s.check_in_overdue ?? (s.status === 'pending' && s.check_in_date < today));
-  const groups = [
-    ['CHECK-IN OVERDUE', filtered.filter(isOverdue)],
-    ['Today', filtered.filter((s) => !isOverdue(s) && s.check_in_date === today && s.status === 'pending')],
-    ['Tomorrow', filtered.filter((s) => !isOverdue(s) && s.check_in_date === tomorrow && s.status === 'pending')],
-    ['Later', filtered.filter((s) => !isOverdue(s) && s.check_in_date > tomorrow && s.status === 'pending')],
-  ].filter(([, list]) => list.length);
-  const totalPendingCount = groups.reduce((acc, [, list]) => acc + list.length, 0);
 
   const getRoom = (roomId) => roomsData?.rooms?.find((r) => r.id === roomId);
 
@@ -86,7 +56,7 @@ export default function Bookings() {
     const roomNos = Object.keys(map).sort((a, b) => Number(a) - Number(b));
     return roomNos.map((rNo) => {
       const bookingsForRoom = map[rNo].sort((a, b) => a.check_in_date.localeCompare(b.check_in_date));
-      const rObj = roomsData?.rooms?.find((r) => String(r.roomNo || r.room_no) === String(rNo)) || getRoom(bookingsForRoom[0]?.room_id);
+      const rObj = roomsData?.rooms?.find((r) => String(r.roomNo || r.room_no) === String(rNo)) || roomsData?.rooms?.find((r) => r.id === bookingsForRoom[0]?.room_id);
 
       const pendingForRoom = bookingsForRoom.filter((b) => b.status === 'pending' && (!b.check_out_date || b.check_out_date > today));
       const minDate = (rObj?.status === 'occupied' && rObj?.checkoutPlanned && rObj.checkoutPlanned > today) ? rObj.checkoutPlanned : today;
@@ -112,6 +82,39 @@ export default function Bookings() {
       };
     });
   }, [filtered, roomsData?.rooms, today]);
+
+  if (isLoading) {
+    return (
+      <div className="panel">
+        <div className="sb">
+          <div className="skel" style={{ height: 60 }} />
+          <div className="skel" style={{ height: 60 }} />
+          <div className="skel" style={{ height: 60 }} />
+        </div>
+      </div>
+    );
+  }
+  if (isError) {
+    return (
+      <div className="panel empty">
+        Could not load bookings: {error.message}
+        <div style={{ marginTop: 10 }}>
+          <button className="btn sm" type="button" onClick={() => refetch()}>
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const isOverdue = (s) => Boolean(s.is_overdue ?? s.check_in_overdue ?? (s.status === 'pending' && s.check_in_date < today));
+  const groups = [
+    ['CHECK-IN OVERDUE', filtered.filter(isOverdue)],
+    ['Today', filtered.filter((s) => !isOverdue(s) && s.check_in_date === today && s.status === 'pending')],
+    ['Tomorrow', filtered.filter((s) => !isOverdue(s) && s.check_in_date === tomorrow && s.status === 'pending')],
+    ['Later', filtered.filter((s) => !isOverdue(s) && s.check_in_date > tomorrow && s.status === 'pending')],
+  ].filter(([, list]) => list.length);
+  const totalPendingCount = groups.reduce((acc, [, list]) => acc + list.length, 0);
 
   const openPreCheckInVerification = (res) => {
     setSheet({
