@@ -1,7 +1,16 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
 import RefundSheet from './RefundSheet.jsx';
-import { useReservation, useCancelReservation, useNoShowReservation, useCancellationPreview, useReservations } from '../../api/reservations';
+import {
+  useReservation,
+  useCancelReservation,
+  useNoShowReservation,
+  useCancellationPreview,
+  useReservations,
+  useReservationDocuments,
+  useUploadReservationDocuments,
+} from '../../api/reservations';
+import { fetchOccupantDocumentBlob, useDeleteOccupantDocument } from '../../api/occupantDocuments';
 import { useRooms, useHousekeepingAction } from '../../api/rooms';
 import { useToast } from '../../context/ToastContext.jsx';
 import { addDaysIso, fd, inr, todayIso } from '../../lib/format';
@@ -14,8 +23,13 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
   const noShow = useNoShowReservation();
   const hkAction = useHousekeepingAction();
   const { data: allReservations = [] } = useReservations();
+  const { data: bookingDocs = [], refetch: refetchDocs } = useReservationDocuments(reservationId);
+  const uploadResDocs = useUploadReservationDocuments();
+  const deleteDoc = useDeleteOccupantDocument();
   const toast = useToast();
 
+  const fileInputRef = useRef(null);
+  const [loadingDocId, setLoadingDocId] = useState(null);
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [refundNow, setRefundNow] = useState(false);
@@ -99,6 +113,58 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
       toast(`Booking ${reservation.booking_code} marked as no-show. Room ${reservation.room_no} is free.`);
     } catch (err) {
       toast(err.message);
+    }
+  };
+
+  const handleViewDocument = async (doc) => {
+    try {
+      setLoadingDocId(doc.id);
+      const { blobUrl, mime, filename } = await fetchOccupantDocumentBlob(doc.id);
+      if (mime?.startsWith('image/') || mime === 'application/pdf') {
+        window.open(blobUrl, '_blank', 'noopener,noreferrer');
+      } else {
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename || doc.original_filename || 'document';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } catch (e) {
+      toast(e.message || 'Could not load document.');
+    } finally {
+      setLoadingDocId(null);
+    }
+  };
+
+  const handleUploadBookingDoc = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    const overSized = files.filter((f) => f.size && f.size > 10 * 1024 * 1024);
+    if (overSized.length > 0) {
+      toast('Document must be 10 MB or smaller.');
+      e.target.value = '';
+      return;
+    }
+    try {
+      await uploadResDocs.mutateAsync({ reservationId, files });
+      toast('ID document uploaded successfully.');
+      refetchDocs();
+    } catch (err) {
+      toast(err.message || 'Failed to upload document.');
+    } finally {
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteDocument = async (docId) => {
+    if (!window.confirm('Are you sure you want to delete this document?')) return;
+    try {
+      await deleteDoc.mutateAsync({ docId });
+      toast('Document deleted.');
+      refetchDocs();
+    } catch (e) {
+      toast(e.message || 'Failed to delete document.');
     }
   };
 
@@ -192,6 +258,90 @@ export default function BookingDetailSheet({ reservationId, onClose, onCheckIn, 
               </>
             )}
           </dl>
+
+          {/* ID Documents Section */}
+          <div style={{ marginTop: 12, marginBottom: 12, padding: '10px 14px', background: 'var(--color-bg-secondary, #f8fafc)', borderRadius: 8, border: '1px solid var(--color-border, #e2e8f0)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+              <strong style={{ fontSize: 13, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--color-heading)' }}>
+                ID Documents ({bookingDocs.length})
+              </strong>
+              {isPending && (
+                <div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                    style={{ display: 'none' }}
+                    onChange={handleUploadBookingDoc}
+                  />
+                  <button
+                    type="button"
+                    className="btn sm"
+                    disabled={uploadResDocs.isPending}
+                    onClick={() => fileInputRef.current?.click()}
+                    style={{ fontSize: 12, padding: '2px 8px' }}
+                  >
+                    {uploadResDocs.isPending ? 'Uploading…' : '+ Upload ID Document'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {bookingDocs.length === 0 ? (
+              <span className="muted" style={{ fontSize: 12, fontStyle: 'italic' }}>
+                No ID documents attached.
+              </span>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {bookingDocs.map((doc) => (
+                  <div
+                    key={doc.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '5px 10px',
+                      background: 'var(--color-surface, #ffffff)',
+                      border: '1px solid var(--color-border, #e2e8f0)',
+                      borderRadius: 6,
+                      fontSize: 12.5,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flex: 1 }}>
+                      <span>📄</span>
+                      <span style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={doc.original_filename}>
+                        {doc.original_filename}
+                      </span>
+                      {doc.file_size ? <span className="muted" style={{ fontSize: 11 }}>({Math.round(doc.file_size / 1024)} KB)</span> : null}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <button
+                        type="button"
+                        className="btn sm"
+                        disabled={loadingDocId === doc.id}
+                        onClick={() => handleViewDocument(doc)}
+                        style={{ fontSize: 11.5, padding: '2px 8px' }}
+                      >
+                        {loadingDocId === doc.id ? 'Loading…' : 'View'}
+                      </button>
+                      {isPending && (
+                        <button
+                          type="button"
+                          className="btn sm"
+                          style={{ padding: '2px 6px', fontSize: 12, color: 'var(--color-danger, #dc2626)', borderColor: 'var(--color-danger, #dc2626)' }}
+                          title="Delete Document"
+                          onClick={() => handleDeleteDocument(doc.id)}
+                        >
+                          ✕
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* Cancellation History & Refund Action if already Cancelled */}
           {isCancelled && Number(reservation.refundable_amount) > 0 && (

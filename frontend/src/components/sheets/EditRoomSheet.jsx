@@ -1,11 +1,58 @@
 import { useState } from 'react';
 import Sheet, { SheetHeader } from '../Sheet.jsx';
-import { useUpdateRoom } from '../../api/rooms';
+import { useUpdateRoom, useDeleteRoom, useHousekeepingAction } from '../../api/rooms';
 import { useToast } from '../../context/ToastContext.jsx';
 
 export default function EditRoomSheet({ room, roomTypes, onClose }) {
   const updateRoom = useUpdateRoom();
+  const deleteRoom = useDeleteRoom();
+  const hkAction = useHousekeepingAction();
   const toast = useToast();
+
+  const [deleting, setDeleting] = useState(false);
+  const [submittingAction, setSubmittingAction] = useState(null);
+  const [statusNote, setStatusNote] = useState('');
+  const [showStatusNote, setShowStatusNote] = useState(false);
+
+  const isUnderRepair = room?.status === 'repair' || room?.housekeepingStatus === 'repair' || room?.housekeeping_status === 'repair';
+  const isOccupied = room?.status === 'occupied';
+  const isBooked = room?.status === 'booked' || room?.hasPendingBooking;
+
+  const handleHousekeeping = async (action) => {
+    if (submittingAction) return;
+    setSubmittingAction(action);
+    try {
+      await hkAction.mutateAsync({
+        roomId: room.id,
+        action,
+        note: action === 'repair' ? (statusNote.trim() || 'Marked under maintenance from Room Master') : undefined,
+      });
+      if (action === 'repair') {
+        toast(`Room ${room.roomNo} marked under repair.`);
+      } else {
+        toast(`Room ${room.roomNo} marked ready.`);
+      }
+      onClose();
+    } catch (e) {
+      toast(e.message || 'Room status update failed.');
+    } finally {
+      setSubmittingAction(null);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Are you sure you want to delete Room ${room.roomNo}? This action cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await deleteRoom.mutateAsync(room.id);
+      toast(`Room ${room.roomNo} deleted.`);
+      onClose();
+    } catch (err) {
+      toast(err.message || 'Cannot delete room.');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const [form, setForm] = useState({
     roomNo: room?.roomNo ?? room?.room_no ?? '',
@@ -141,11 +188,88 @@ export default function EditRoomSheet({ room, roomTypes, onClose }) {
         </div>
 
         <div className="row2" style={{ marginTop: 12 }}>
-          <button className="btn dark big" type="submit" disabled={isPending}>
+          <button className="btn dark big" type="submit" disabled={isPending || deleting || Boolean(submittingAction)}>
             {isPending ? 'Saving changes…' : 'Save changes'}
           </button>
-          <button className="btn big" type="button" disabled={isPending} onClick={onClose}>
+          <button className="btn big" type="button" disabled={isPending || deleting || Boolean(submittingAction)} onClick={onClose}>
             Cancel
+          </button>
+        </div>
+
+        {/* Housekeeping Maintenance & Status Action */}
+        {!isOccupied && !isBooked && (
+          <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--color-border)' }}>
+            <label style={{ fontWeight: 600, fontSize: 13, display: 'block', marginBottom: 8 }}>
+              Maintenance &amp; Status Action
+            </label>
+            {isUnderRepair ? (
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', background: 'var(--color-bg-secondary)', padding: '8px 12px', borderRadius: 6 }}>
+                <span style={{ fontSize: 13, color: 'var(--color-danger, #dc2626)', fontWeight: 600 }}>
+                  ⚠️ Currently under maintenance
+                </span>
+                <button
+                  type="button"
+                  className="btn sm go"
+                  disabled={Boolean(submittingAction)}
+                  onClick={() => handleHousekeeping('ready')}
+                >
+                  {submittingAction === 'ready' ? 'Updating…' : 'Mark Ready'}
+                </button>
+              </div>
+            ) : (
+              <div>
+                {!showStatusNote ? (
+                  <button
+                    type="button"
+                    className="btn sm"
+                    style={{ borderColor: '#dc2626', color: '#dc2626' }}
+                    onClick={() => setShowStatusNote(true)}
+                  >
+                    Mark Under Maintenance
+                  </button>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--color-bg-secondary)', padding: '10px 12px', borderRadius: 6 }}>
+                    <input
+                      type="text"
+                      placeholder="Reason for maintenance (e.g. AC repair, plumbing issue)"
+                      value={statusNote}
+                      onChange={(e) => setStatusNote(e.target.value)}
+                    />
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        type="button"
+                        className="btn sm"
+                        style={{ backgroundColor: '#dc2626', color: '#ffffff', borderColor: '#dc2626' }}
+                        disabled={Boolean(submittingAction)}
+                        onClick={() => handleHousekeeping('repair')}
+                      >
+                        {submittingAction === 'repair' ? 'Updating…' : 'Confirm Maintenance'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn sm"
+                        onClick={() => setShowStatusNote(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Delete Room Section */}
+        <div style={{ marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--color-border)' }}>
+          <button
+            type="button"
+            className="btn"
+            style={{ width: '100%', borderColor: '#ef4444', color: '#dc2626' }}
+            disabled={isPending || deleting || Boolean(submittingAction)}
+            onClick={handleDelete}
+          >
+            {deleting ? 'Deleting room…' : '🗑️ Delete Room'}
           </button>
         </div>
       </form>

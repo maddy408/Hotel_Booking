@@ -6,8 +6,8 @@ start "KKK Lodge - PHP Engine" /min cmd /c "cd /d %~dp0backend && php -S 127.0.0
 start "KKK Lodge - Backend (Port 8080)" cmd /k "cd /d %~dp0backend && node proxy.mjs"
 start "KKK Lodge - Frontend (Port 5173)" cmd /k "cd /d %~dp0frontend && npm run dev"
 
-echo Backend:  http://127.0.0.1:8080 (or http://192.168.1.105:8080)
-echo Frontend: http://localhost:5173 (or http://192.168.1.105:5173)
+echo Backend:  http://127.0.0.1:8080 (or http://192.168.1.102:8080)
+echo Frontend: http://localhost:5173 (or http://192.168.1.102:5173)
 echo.
 echo Application is running!
 ping 127.0.0.1 -n 5 >nul

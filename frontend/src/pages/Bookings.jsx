@@ -16,6 +16,7 @@ export default function Bookings() {
   const toast = useToast();
   const [sheet, setSheet] = useState(null);
   const [viewMode, setViewMode] = useState('date'); // 'date' | 'room'
+  const [search, setSearch] = useState('');
 
   if (isLoading) {
     return (
@@ -43,13 +44,31 @@ export default function Bookings() {
 
   const today = reservations?.find((s) => s.hotel_today)?.hotel_today || todayIso();
   const tomorrow = addDaysIso(today, 1);
-  const all = [...(reservations || [])].sort((a, b) => a.check_in_date.localeCompare(b.check_in_date) || a.room_no - b.room_no);
+  const all = [...(reservations || [])].sort((a, b) => {
+    const dateA = a.created_at || a.createdAt || '';
+    const dateB = b.created_at || b.createdAt || '';
+    if (dateA && dateB && dateA !== dateB) {
+      return dateB.localeCompare(dateA);
+    }
+    return (Number(b.id) || 0) - (Number(a.id) || 0);
+  });
+  const filtered = useMemo(() => {
+    if (!search.trim()) return all;
+    const q = search.toLowerCase().trim();
+    return all.filter((s) => (
+      (s.booking_code && s.booking_code.toLowerCase().includes(q)) ||
+      (s.guest_name && s.guest_name.toLowerCase().includes(q)) ||
+      (s.guest_phone && s.guest_phone.includes(q)) ||
+      (s.room_no && String(s.room_no).includes(q))
+    ));
+  }, [all, search]);
+
   const isOverdue = (s) => Boolean(s.is_overdue ?? s.check_in_overdue ?? (s.status === 'pending' && s.check_in_date < today));
   const groups = [
-    ['CHECK-IN OVERDUE', all.filter(isOverdue)],
-    ['Today', all.filter((s) => !isOverdue(s) && s.check_in_date === today && s.status === 'pending')],
-    ['Tomorrow', all.filter((s) => !isOverdue(s) && s.check_in_date === tomorrow && s.status === 'pending')],
-    ['Later', all.filter((s) => !isOverdue(s) && s.check_in_date > tomorrow && s.status === 'pending')],
+    ['CHECK-IN OVERDUE', filtered.filter(isOverdue)],
+    ['Today', filtered.filter((s) => !isOverdue(s) && s.check_in_date === today && s.status === 'pending')],
+    ['Tomorrow', filtered.filter((s) => !isOverdue(s) && s.check_in_date === tomorrow && s.status === 'pending')],
+    ['Later', filtered.filter((s) => !isOverdue(s) && s.check_in_date > tomorrow && s.status === 'pending')],
   ].filter(([, list]) => list.length);
   const totalPendingCount = groups.reduce((acc, [, list]) => acc + list.length, 0);
 
@@ -58,7 +77,7 @@ export default function Bookings() {
   // Room-wise sections
   const roomSections = useMemo(() => {
     const map = {};
-    all.forEach((b) => {
+    filtered.forEach((b) => {
       const rNo = b.room_no || 'Unknown';
       if (!map[rNo]) map[rNo] = [];
       map[rNo].push(b);
@@ -92,7 +111,7 @@ export default function Bookings() {
         } : null,
       };
     });
-  }, [all, roomsData?.rooms, today]);
+  }, [filtered, roomsData?.rooms, today]);
 
   const openPreCheckInVerification = (res) => {
     setSheet({
@@ -205,12 +224,22 @@ export default function Bookings() {
             </button>
           </div>
         </div>
-        <button className="btn dark" type="button" onClick={() => setSheet({ type: 'new' })}>
-          + New Booking
-        </button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <input
+            type="search"
+            placeholder="Search booking, guest or room…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ width: 'min(240px, 100%)', padding: '6px 12px', fontSize: 13 }}
+            aria-label="Search bookings"
+          />
+          <button className="btn dark" type="button" onClick={() => setSheet({ type: 'new' })}>
+            + New Booking
+          </button>
+        </div>
       </div>
 
-      {all.length ? (
+      {filtered.length ? (
         viewMode === 'date' ? (
           groups.map(([title, list]) => {
             const isOverdueGroup = title === 'CHECK-IN OVERDUE';
@@ -299,7 +328,7 @@ export default function Bookings() {
           })
         )
       ) : (
-        <div className="empty">No bookings. Tap "New booking" when a guest calls or comes to book.</div>
+        <div className="empty">{search.trim() ? 'No bookings match your search.' : 'No bookings. Tap "New booking" when a guest calls or comes to book.'}</div>
       )}
 
       {sheet?.type === 'new' && <NewBookingSheet onClose={() => setSheet(null)} />}

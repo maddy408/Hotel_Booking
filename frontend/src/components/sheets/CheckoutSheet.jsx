@@ -24,6 +24,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
   const [actualCheckoutDate, setActualCheckoutDate] = useState(todayIso());
   const [dateOverridden, setDateOverridden] = useState(false);
   const [discountVal, setDiscountVal] = useState('');
+  const [discountType, setDiscountType] = useState('fixed'); // 'fixed' | 'percent'
   const [discountReason, setDiscountReason] = useState('');
   const [showDiscountInput, setShowDiscountInput] = useState(false);
 
@@ -49,11 +50,25 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
     return 'normal';
   }, [actualCheckoutDate, stay?.checkout_planned]);
 
+  const totalBefore = rawBill
+    ? Number(rawBill.roomAmount || 0) +
+      Number(rawBill.roomGstAmount || 0) +
+      Number(rawBill.extrasAmount || 0) +
+      Number(rawBill.extrasGstAmount || 0) +
+      Number(rawBill.earlyCheckoutFee || 0)
+    : 0;
+
+  const effectiveDiscount = discountVal !== ''
+    ? (discountType === 'percent'
+        ? Math.round((totalBefore * (Number(discountVal) / 100)) * 100) / 100
+        : Number(discountVal))
+    : (stay?.discount_amount != null ? Number(stay.discount_amount) : undefined);
+
   const { data: previewData } = useEarlyCheckoutPreview(
     stayId,
     {
       checkoutDate: actualCheckoutDate,
-      discount: discountVal !== '' ? Number(discountVal) : undefined,
+      discount: effectiveDiscount,
     },
     { enabled: !!stayId && !isDateInvalid }
   );
@@ -161,14 +176,27 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
   };
 
   const handleApplyDiscount = async () => {
-    const num = Number(discountVal);
-    if (isNaN(num) || num < 0) {
+    const rawNum = Number(discountVal);
+    if (isNaN(rawNum) || rawNum < 0 || discountVal.toString().trim() === '') {
       toast('Please enter a valid discount amount.');
       return;
     }
+    let calculatedAmount = rawNum;
+    if (discountType === 'percent') {
+      if (rawNum > 100) {
+        toast('Discount percentage cannot exceed 100%.');
+        return;
+      }
+      calculatedAmount = Math.round((totalBefore * (rawNum / 100)) * 100) / 100;
+    } else {
+      if (rawNum > totalBefore) {
+        toast('Discount cannot exceed the payable amount.');
+        return;
+      }
+    }
     try {
-      await applyDiscount.mutateAsync({ stayId, amount: num, reason: discountReason || 'Discretionary discount' });
-      toast(`Discount of ${inr(num)} applied.`);
+      await applyDiscount.mutateAsync({ stayId, amount: calculatedAmount, reason: discountReason || 'Discretionary discount' });
+      toast(`Discount of ${inr(calculatedAmount)} applied.`);
       setShowDiscountInput(false);
     } catch (err) {
       toast(err.message || 'Failed to apply discount.');
@@ -189,6 +217,18 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
     }
     setIsSubmitting(true);
     try {
+      const effDiscount = discountVal !== ''
+        ? (discountType === 'percent'
+            ? Math.round((totalBefore * (Number(discountVal) / 100)) * 100) / 100
+            : Number(discountVal))
+        : Number(stay.discount_amount || 0);
+
+      if (effDiscount > totalBefore) {
+        toast('Discount cannot exceed the payable amount.');
+        setIsSubmitting(false);
+        return;
+      }
+
       const amtToPass = bal > 0 ? bal : 0;
       const defaultRefundReason = isEarly
         ? 'Early checkout refund for unused night(s)'
@@ -201,7 +241,7 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
         amount: amtToPass,
         actualCheckoutDate,
         checkoutType,
-        discountAmount: discountVal !== '' ? Number(discountVal) : Number(stay.discount_amount || 0),
+        discountAmount: effDiscount,
         discountReason: discountReason || stay.discount_reason,
         refundReason: bal < 0 ? (refundReason || defaultRefundReason) : null,
       });
@@ -661,17 +701,60 @@ export default function CheckoutSheet({ stayId, onClose, initialMode }) {
 
           {showDiscountInput && !isCheckedOut && (
             <div className="panel" style={{ padding: 12, marginTop: 4 }}>
-              <h5 style={{ margin: '0 0 8px', fontSize: 13 }}>Apply Discount to Stay</h5>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <h5 style={{ margin: 0, fontSize: 13 }}>Apply Discount to Stay</h5>
+                <button
+                  type="button"
+                  className="btn sm"
+                  style={{ fontSize: 11, padding: '2px 8px' }}
+                  onClick={() => {
+                    setDiscountType('percent');
+                    setDiscountVal('100');
+                    setDiscountReason('100% Full discount');
+                  }}
+                >
+                  100% Full Discount
+                </button>
+              </div>
+
+              <div style={{ marginBottom: 8 }}>
+                <label style={{ fontSize: 12, display: 'block', marginBottom: 4 }}>Discount Type</label>
+                <div className="seg">
+                  <button
+                    type="button"
+                    className={discountType === 'fixed' ? 'active' : ''}
+                    aria-pressed={discountType === 'fixed'}
+                    onClick={() => setDiscountType('fixed')}
+                  >
+                    Fixed (₹)
+                  </button>
+                  <button
+                    type="button"
+                    className={discountType === 'percent' ? 'active' : ''}
+                    aria-pressed={discountType === 'percent'}
+                    onClick={() => setDiscountType('percent')}
+                  >
+                    Percentage (%)
+                  </button>
+                </div>
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'end' }}>
                 <div className="f">
-                  <label>Amount (₹)</label>
+                  <label>{discountType === 'percent' ? 'Percentage (%)' : 'Amount (₹)'}</label>
                   <input
                     type="number"
                     min="0"
-                    placeholder="0"
+                    max={discountType === 'percent' ? 100 : totalBefore}
+                    placeholder={discountType === 'percent' ? 'e.g. 10' : '0'}
                     value={discountVal}
                     onChange={(e) => setDiscountVal(e.target.value)}
                   />
+                  {discountType === 'percent' && Number(discountVal) > 0 && !isNaN(Number(discountVal)) && (
+                    <span style={{ fontSize: 11.5, color: 'var(--color-primary, #70265F)', marginTop: 2, display: 'block' }}>
+                      = {inr(Math.round((totalBefore * (Number(discountVal) / 100)) * 100) / 100)} off {inr(totalBefore)}
+                    </span>
+                  )}
                 </div>
                 <div className="f">
                   <label>Reason</label>

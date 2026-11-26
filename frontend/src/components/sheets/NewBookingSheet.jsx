@@ -243,6 +243,15 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
       setSourceError('Please enter person name for reference.');
       return;
     }
+    const adv = Number(values.advance) || 0;
+    if (adv < 0) {
+      toast('Advance payment cannot be negative.');
+      return;
+    }
+    if (adv > total) {
+      toast('Advance cannot exceed the total payable amount.');
+      return;
+    }
     try {
       const checkOutDate = addDaysIso(values.checkIn, Number(values.days));
       const sourcePayload = {

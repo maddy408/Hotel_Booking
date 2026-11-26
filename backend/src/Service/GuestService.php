@@ -181,8 +181,8 @@ class GuestService
             $fields['address'] = $data['address'] !== null ? trim((string) $data['address']) : null;
         }
 
-        if (isset($data['idProofType'])) {
-            $fields['id_proof_type'] = (string) $data['idProofType'];
+        if (array_key_exists('idProofType', $data)) {
+            $fields['id_proof_type'] = !empty($data['idProofType']) ? (string) $data['idProofType'] : null;
         }
 
         if (!empty($data['idProofNumber'])) {
@@ -234,26 +234,36 @@ class GuestService
             $this->guests->update((int) $existing['id'], ['name' => $name]);
             return $this->guests->find((int) $existing['id']);
         }
-        $id = $this->guests->create($hotelId, $name, $phone, 'Aadhaar', null, null, $city);
+        $id = $this->guests->create($hotelId, $name, $phone, null, null, null, $city);
         return $this->guests->find($id);
     }
 
     /** Masked view safe to send to the frontend — never the decrypted number. */
     public function toPublic(array $guest): array
     {
+        $hasProof = !empty($guest['id_proof_last4']) || !empty($guest['id_proof_number_enc']) || !empty($guest['passport_number_enc']);
+        $idProofType = ($hasProof && !empty($guest['id_proof_type'])) ? (string) $guest['id_proof_type'] : null;
+        $idProofLast4 = ($hasProof && !empty($guest['id_proof_last4'])) ? (string) $guest['id_proof_last4'] : null;
+
         return [
             'id' => (int) $guest['id'],
             'name' => $guest['name'],
             'phone' => $guest['phone'],
             'email' => $guest['email'] ?? null,
-            'idProofType' => $guest['id_proof_type'],
-            'idProofMasked' => $guest['id_proof_last4'] ? Crypto::mask($guest['id_proof_type'], $guest['id_proof_last4']) : null,
+            'idProofType' => $idProofType,
+            'id_proof_type' => $idProofType,
+            'idProofMasked' => ($hasProof && !empty($guest['id_proof_last4']) && $idProofType) ? Crypto::mask($idProofType, $guest['id_proof_last4']) : null,
+            'idProofLast4' => $idProofLast4,
+            'id_proof_last4' => $idProofLast4,
+            'hasIdProof' => $hasProof,
             'city' => $guest['city'],
             'address' => $guest['address'] ?? null,
             'isForeign' => (bool) $guest['is_foreign'],
             'nationality' => $guest['nationality'] ?? null,
             'visaExpiry' => $guest['visa_expiry'] ?? null,
             'hasIdImage' => !empty($guest['id_image_path']),
+            'created_at' => $guest['created_at'] ?? null,
+            'createdAt' => $guest['created_at'] ?? null,
         ];
     }
 

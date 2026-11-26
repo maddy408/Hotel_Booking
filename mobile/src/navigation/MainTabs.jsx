@@ -88,18 +88,18 @@ function GuestsStack() {
       <Stack.Screen
         name="GuestDetails"
         component={GuestDetailsScreen}
-        options={{
+        options={({ navigation }) => ({
           title: 'Guest',
-          headerLeft: () => <BackButton fallbackRoute="GuestsHome" />,
-        }}
+          headerLeft: () => <BackButton navigation={navigation} fallbackRoute="GuestsHome" />,
+        })}
       />
       <Stack.Screen
         name="AllReferrals"
         component={AllReferralsScreen}
-        options={{
+        options={({ navigation }) => ({
           title: 'Referrals',
-          headerLeft: () => <BackButton fallbackRoute="GuestsHome" />,
-        }}
+          headerLeft: () => <BackButton navigation={navigation} fallbackRoute="GuestsHome" />,
+        })}
       />
     </Stack.Navigator>
   );
@@ -107,15 +107,15 @@ function GuestsStack() {
 
 function BillsStack() {
   return (
-    <Stack.Navigator screenOptions={headerOptions}>
+    <Stack.Navigator initialRouteName="BillsHome" screenOptions={headerOptions}>
       <Stack.Screen name="BillsHome" component={BillsScreen} options={{ title: 'Bills' }} />
       <Stack.Screen
         name="InvoicePrint"
         component={InvoicePrintScreen}
-        options={{
+        options={({ navigation }) => ({
           title: 'Invoice',
-          headerLeft: () => <BackButton fallbackRoute="BillsHome" />,
-        }}
+          headerLeft: () => <BackButton navigation={navigation} fallbackRoute="BillsHome" />,
+        })}
       />
     </Stack.Navigator>
   );
@@ -128,34 +128,34 @@ function MoreStack() {
       <Stack.Screen
         name="Reports"
         component={ReportsScreen}
-        options={{
+        options={({ navigation }) => ({
           title: 'Reports',
-          headerLeft: () => <BackButton fallbackRoute="MoreMenu" />,
-        }}
+          headerLeft: () => <BackButton navigation={navigation} fallbackRoute="MoreMenu" />,
+        })}
       />
       <Stack.Screen
         name="RoomMaster"
         component={RoomMasterScreen}
-        options={{
+        options={({ navigation }) => ({
           title: 'Room Master',
-          headerLeft: () => <BackButton fallbackRoute="MoreMenu" />,
-        }}
+          headerLeft: () => <BackButton navigation={navigation} fallbackRoute="MoreMenu" />,
+        })}
       />
       <Stack.Screen
         name="Users"
         component={UsersScreen}
-        options={{
+        options={({ navigation }) => ({
           title: 'Users',
-          headerLeft: () => <BackButton fallbackRoute="MoreMenu" />,
-        }}
+          headerLeft: () => <BackButton navigation={navigation} fallbackRoute="MoreMenu" />,
+        })}
       />
       <Stack.Screen
         name="SettingsScreen"
         component={SettingsScreen}
-        options={{
+        options={({ navigation }) => ({
           title: 'Settings',
-          headerLeft: () => <BackButton fallbackRoute="MoreMenu" />,
-        }}
+          headerLeft: () => <BackButton navigation={navigation} fallbackRoute="MoreMenu" />,
+        })}
       />
     </Stack.Navigator>
   );
@@ -239,6 +239,14 @@ export default function MainTabs() {
         options={{
           tabBarIcon: ({ color, size }) => <BillsIcon color={color} size={size} />,
         }}
+        listeners={({ navigation }) => ({
+          tabPress: (e) => {
+            e.preventDefault();
+            navigation.navigate('Bills', {
+              screen: 'BillsHome',
+            });
+          },
+        })}
       />
       <Tab.Screen
         name="More"

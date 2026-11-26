@@ -159,6 +159,13 @@ final class StayService
 
             $nights = max(1, $days);
             $gstCalc = $this->gst->calculateAccommodation($hotelId, $rate, $nights);
+            $totalAmount = $gstCalc['total_amount'];
+            if (round($advanceAmount, 2) > round($totalAmount, 2)) {
+                throw ApiException::validation(
+                    ['advanceAmount' => 'Advance cannot exceed the total payable amount.'],
+                    'Advance cannot exceed the total payable amount.'
+                );
+            }
 
             $stayId = $this->stays->create(
                 $hotelId, null, $roomId, (int) $guest['id'], $persons, $rate,
@@ -272,6 +279,19 @@ final class StayService
                 throw ApiException::validation(
                     ['advanceAmount' => 'Please enter and collect the advance amount before check-in.'],
                     'Please enter and collect the advance amount before check-in.'
+                );
+            }
+
+            $resTotalAmount = (float) ($reservation['total_amount'] ?? 0);
+            if ($resTotalAmount <= 0) {
+                $nights = BillingService::nightsBetween($reservation['check_in_date'], $reservation['check_out_date']);
+                $gstCalc = $this->gst->calculateAccommodation($hotelId, (float) $reservation['rate'], $nights);
+                $resTotalAmount = $gstCalc['total_amount'];
+            }
+            if (round($netAdvance, 2) > round($resTotalAmount, 2)) {
+                throw ApiException::validation(
+                    ['advanceAmount' => 'Advance cannot exceed the total payable amount.'],
+                    'Advance cannot exceed the total payable amount.'
                 );
             }
 
@@ -650,7 +670,7 @@ final class StayService
     public function applyDiscount(int $stayId, int $hotelId, float $amount, ?string $reason, ?int $userId): array
     {
         if ($amount < 0) {
-            throw ApiException::validation(['discountAmount' => 'Discount amount cannot be negative.']);
+            throw ApiException::validation(['discountAmount' => 'Discount amount cannot be negative.'], 'Discount amount cannot be negative.');
         }
         $this->db->beginTransaction();
         try {
@@ -660,6 +680,14 @@ final class StayService
             }
             if ($stay['status'] !== 'in_house') {
                 throw ApiException::conflict('Discounts can only be applied to a current stay.');
+            }
+            $currentBill = $this->billing->computeBill($stay, overrideDiscount: 0.0);
+            $totalBeforeDiscount = (float) $currentBill['total'];
+            if (round($amount, 2) > round($totalBeforeDiscount, 2)) {
+                throw ApiException::validation(
+                    ['discountAmount' => 'Discount cannot exceed the payable amount.'],
+                    'Discount cannot exceed the payable amount.'
+                );
             }
             $this->stays->applyDiscount($stayId, $amount, $reason);
             $this->audit->log($hotelId, $userId, 'discount', 'stay', $stayId, $stay, ['discount_amount' => $amount, 'reason' => $reason]);
@@ -913,6 +941,20 @@ final class StayService
             }
 
             $reservationId = $stay['reservation_id'] !== null ? (int) $stay['reservation_id'] : null;
+
+            if ($discountAmount !== null) {
+                if ($discountAmount < 0) {
+                    throw ApiException::validation(['discountAmount' => 'Discount amount cannot be negative.'], 'Discount amount cannot be negative.');
+                }
+                $billWithoutDiscount = $this->billing->computeBill($stay, $actualDate, $earlyCheckoutFee, 0.0);
+                $totalBeforeDiscount = (float) $billWithoutDiscount['total'];
+                if (round($discountAmount, 2) > round($totalBeforeDiscount, 2)) {
+                    throw ApiException::validation(
+                        ['discountAmount' => 'Discount cannot exceed the payable amount.'],
+                        'Discount cannot exceed the payable amount.'
+                    );
+                }
+            }
 
             // 1. Retrieve the bill based on actual checkout date, fee and discounts
             $initialBill = $this->billing->computeBill($stay, $actualDate, $earlyCheckoutFee, $discountAmount);

@@ -1,4 +1,6 @@
 import { fd, inr, todayIso, nightsBetween } from '../lib/format';
+import { useHousekeepingAction } from '../api/rooms';
+import { useToast } from '../context/ToastContext.jsx';
 
 const LABEL = { free: 'FREE', booked: 'BOOKED', occupied: 'OCCUPIED', cleaning: 'CLEANING', repair: 'REPAIR' };
 
@@ -58,8 +60,72 @@ export default function RoomTile({ room, onClick, onOpenBooking }) {
     personsDisplay = '0 Persons';
   }
 
+  const hkAction = useHousekeepingAction();
+  const toast = useToast();
+
+  const handleDirectAction = async (action, confirmLabel, successMsg) => {
+    if (!window.confirm(`Mark Room ${room.roomNo} as ${confirmLabel}?`)) return;
+    try {
+      await hkAction.mutateAsync({
+        roomId: room.id,
+        action,
+        note: action === 'repair' ? (room.note || 'Marked under maintenance from dashboard') : undefined,
+      });
+      toast(successMsg);
+    } catch (err) {
+      toast(err?.message || 'Could not update room status.');
+    }
+  };
+
+  const actions = [];
+  if (room.status === 'free') {
+    actions.push({
+      title: 'Clean',
+      action: 'cleaning',
+      confirmLabel: 'Cleaning',
+      successMsg: `Room ${room.roomNo} marked for cleaning.`,
+    });
+    actions.push({
+      title: 'Repair',
+      action: 'repair',
+      confirmLabel: 'Under Maintenance',
+      successMsg: `Room ${room.roomNo} marked under maintenance.`,
+    });
+  } else if (room.status === 'cleaning') {
+    actions.push({
+      title: 'Ready',
+      action: 'ready',
+      confirmLabel: 'Ready',
+      successMsg: `Room ${room.roomNo} marked ready.`,
+    });
+    actions.push({
+      title: 'Repair',
+      action: 'repair',
+      confirmLabel: 'Under Maintenance',
+      successMsg: `Room ${room.roomNo} marked under maintenance.`,
+    });
+  } else if (room.status === 'repair') {
+    actions.push({
+      title: 'To Clean',
+      action: 'cleaning',
+      confirmLabel: 'Cleaning',
+      successMsg: `Room ${room.roomNo} marked for cleaning.`,
+    });
+  }
+
   return (
-    <button className={`room s-${room.status}`} type="button" onClick={onClick}>
+    <div
+      className={`room s-${room.status}`}
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick?.(e);
+        }
+      }}
+    >
       <span className="t">
         <span className="no">{room.roomNo}</span>
         <span className="ty">{room.roomType.name}</span>
@@ -165,7 +231,48 @@ export default function RoomTile({ room, onClick, onOpenBooking }) {
 
       {!isOverdue && <span className={`m${due ? ' due' : ''}`}>{meta}</span>}
 
+      {actions.length > 0 && (
+        <span
+          className="room-tile-actions"
+          style={{
+            display: 'inline-flex',
+            gap: '5px',
+            marginTop: '4px',
+            zIndex: 2,
+            position: 'relative',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {actions.map((act) => (
+            <button
+              key={act.action + act.title}
+              type="button"
+              className="btn sm"
+              style={{
+                padding: '2px 8px',
+                fontSize: '11px',
+                minHeight: '22px',
+                lineHeight: '18px',
+                borderRadius: '4px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                background: act.action === 'ready' ? '#16a34a' : act.action === 'repair' ? '#dc2626' : '#7c3aed',
+                borderColor: act.action === 'ready' ? '#16a34a' : act.action === 'repair' ? '#dc2626' : '#7c3aed',
+                color: '#ffffff',
+              }}
+              disabled={hkAction.isPending}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDirectAction(act.action, act.confirmLabel, act.successMsg);
+              }}
+            >
+              {act.title}
+            </button>
+          ))}
+        </span>
+      )}
+
       <span className="st">{LABEL[room.status] || room.status.toUpperCase()}</span>
-    </button>
+    </div>
   );
 }

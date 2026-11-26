@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { useState, useEffect } from 'react';
+import { BackHandler, StyleSheet, Text, View } from 'react-native';
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -242,6 +242,13 @@ export function buildInvoiceHtml(data) {
               </tr>
               ${chargesRows}
               ${taxRows}
+              ${Number(invoice.discount_amount) > 0 ? `
+                <tr style="color: #059669;">
+                  <td>Discount Applied${invoice.discount_reason ? ` (${invoice.discount_reason})` : ''}</td>
+                  <td></td>
+                  <td class="r">−${inr(invoice.discount_amount)}</td>
+                </tr>
+              ` : ''}
               <tr class="inv-total">
                 <td>Invoice Total</td>
                 <td></td>
@@ -282,6 +289,45 @@ export default function InvoicePrintScreen({ route, navigation }) {
   const toast = useToast();
   const [printing, setPrinting] = useState(false);
   const [sharing, setSharing] = useState(false);
+
+  // Return to Bills List safely on Android hardware Back button
+  useEffect(() => {
+    const onHardwareBack = () => {
+      const state = navigation?.getState?.();
+      const canPop = state ? state.index > 0 : (navigation?.canGoBack && navigation.canGoBack());
+      if (canPop) {
+        navigation.goBack();
+        return true;
+      }
+      if (typeof navigation?.reset === 'function') {
+        navigation.reset({
+          index: 0,
+          routes: [{ name: 'BillsHome' }],
+        });
+        return true;
+      }
+      if (navigation?.navigate) {
+        navigation.navigate('BillsHome');
+        return true;
+      }
+      return false;
+    };
+
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => sub.remove();
+  }, [navigation]);
+
+  // When leaving the invoice detail screen (e.g. switching tabs), pop to BillsHome
+  // to prevent stale invoice detail screens from appearing when switching back to Bills tab
+  useEffect(() => {
+    const unsubscribe = navigation?.addListener?.('blur', () => {
+      const state = navigation?.getState?.();
+      if (state && state.index > 0 && typeof navigation?.popToTop === 'function') {
+        navigation.popToTop();
+      }
+    });
+    return unsubscribe;
+  }, [navigation]);
 
   if (isLoading) return <Screen><LoadingState label="Loading invoice…" /></Screen>;
   if (isError) return <Screen><ErrorState message={error?.message} onRetry={refetch} /></Screen>;
@@ -403,8 +449,15 @@ export default function InvoicePrintScreen({ route, navigation }) {
           variant="outline"
           size="md"
           onPress={() => {
-            if (navigation?.canGoBack && navigation.canGoBack()) {
+            const state = navigation?.getState?.();
+            const canPop = state ? state.index > 0 : (navigation?.canGoBack && navigation.canGoBack());
+            if (canPop) {
               navigation.goBack();
+            } else if (typeof navigation?.reset === 'function') {
+              navigation.reset({
+                index: 0,
+                routes: [{ name: 'BillsHome' }],
+              });
             } else {
               navigation?.navigate?.('BillsHome');
             }
@@ -535,6 +588,21 @@ export default function InvoicePrintScreen({ route, navigation }) {
               <Text style={[styles.tdMono, { flex: 1.5, textAlign: 'right' }]}>{inr(invoice.sgst_amount)}</Text>
             </View>
           </>
+        )}
+
+        {/* Discount Applied */}
+        {Number(invoice.discount_amount) > 0 && (
+          <View style={styles.tableRow}>
+            <View style={{ flex: 2 }}>
+              <Text style={[styles.tdText, { color: colors.success }]}>
+                Discount Applied{invoice.discount_reason ? ` (${invoice.discount_reason})` : ''}
+              </Text>
+            </View>
+            <Text style={{ flex: 1 }}></Text>
+            <Text style={[styles.tdMonoBold, { flex: 1.5, textAlign: 'right', color: colors.success }]}>
+              −{inr(invoice.discount_amount)}
+            </Text>
+          </View>
         )}
 
         {/* Invoice Total */}

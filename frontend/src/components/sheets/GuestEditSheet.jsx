@@ -20,7 +20,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
     email: '',
     city: '',
     address: '',
-    idProofType: 'Aadhaar',
+    idProofType: '',
     idProofNumber: '',
     isForeign: false,
     nationality: '',
@@ -36,7 +36,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
         email: guest.email || '',
         city: guest.city || '',
         address: guest.address || '',
-        idProofType: guest.idProofType || 'Aadhaar',
+        idProofType: guest.idProofType || guest.id_proof_type || '',
         idProofNumber: '',
         isForeign: !!guest.isForeign,
         nationality: guest.nationality || '',
@@ -83,7 +83,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
         email: form.email.trim() || null,
         city: form.city.trim() || null,
         address: form.address.trim() || null,
-        idProofType: form.idProofType,
+        idProofType: form.idProofType ? form.idProofType : null,
         isForeign: form.isForeign ? 1 : 0,
         nationality: form.isForeign ? (form.nationality.trim() || null) : null,
         visaExpiry: form.isForeign ? (form.visaExpiry || null) : null,
@@ -195,9 +195,10 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
                 <label htmlFor="ge-idtype">ID Proof Type</label>
                 <select
                   id="ge-idtype"
-                  value={form.idProofType}
+                  value={form.idProofType || ''}
                   onChange={(e) => handleFieldChange('idProofType', e.target.value)}
                 >
+                  <option value="">Not Provided</option>
                   {ID_TYPES.map((t) => (
                     <option key={t} value={t}>
                       {t}

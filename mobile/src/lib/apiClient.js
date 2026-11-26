@@ -34,7 +34,7 @@ export function getCandidateBaseUrls() {
   }
   const fallbackList = [
     'http://10.0.2.2:8080',      // Android emulator host loopback
-    'http://192.168.1.105:8080',  // Host Wi-Fi IP
+    'http://192.168.1.102:8080',  // Host Wi-Fi IP
     'http://localhost:8080',      // Localhost / adb reverse
     'http://127.0.0.1:8080',
   ];
@@ -49,7 +49,7 @@ export function getCandidateBaseUrls() {
 export function resolveBaseUrl() {
   if (activeBaseUrl) return activeBaseUrl;
   const candidates = getCandidateBaseUrls();
-  return candidates[0] || 'http://192.168.1.105:8080';
+  return candidates[0] || 'http://192.168.1.102:8080';
 }
 
 export const BASE_URL = resolveBaseUrl();

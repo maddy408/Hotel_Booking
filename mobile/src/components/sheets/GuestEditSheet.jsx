@@ -47,7 +47,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
   const [email, setEmail] = useState('');
   const [city, setCity] = useState('');
   const [address, setAddress] = useState('');
-  const [idProofType, setIdProofType] = useState('Aadhaar');
+  const [idProofType, setIdProofType] = useState('');
   const [idProofNumber, setIdProofNumber] = useState('');
   const [isForeign, setIsForeign] = useState(false);
   const [nationality, setNationality] = useState('');
@@ -60,7 +60,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
       setEmail(guest.email || '');
       setCity(guest.city || '');
       setAddress(guest.address || '');
-      setIdProofType(guest.idProofType || guest.id_proof_type || 'Aadhaar');
+      setIdProofType(guest.idProofType || guest.id_proof_type || '');
       setIdProofNumber('');
       setIsForeign(Boolean(guest.isForeign || guest.is_foreign));
       setNationality(guest.nationality || '');
@@ -84,6 +84,9 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
       if (idProofNumber.trim() && idProofNumber.trim().length < 4) {
         errs.idProofNumber = 'ID number must be at least 4 characters.';
       }
+      if (idProofNumber.trim() && !idProofType) {
+        errs.idProofNumber = 'Please select an ID proof type above.';
+      }
       if (isForeign && !nationality.trim()) {
         errs.nationality = 'Nationality is required for foreign guests.';
       }
@@ -100,7 +103,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
         email: email.trim() || null,
         city: city.trim() || null,
         address: address.trim() || null,
-        idProofType,
+        idProofType: idProofType || null,
         isForeign: isForeign ? 1 : 0,
         nationality: isForeign ? (nationality.trim() || null) : null,
         visaExpiry: isForeign ? (visaExpiry || null) : null,
@@ -281,7 +284,7 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
               <Pressable
                 key={type}
                 style={[styles.idChip, idProofType === type && styles.idChipActive]}
-                onPress={() => setIdProofType(type)}
+                onPress={() => setIdProofType(type === idProofType ? '' : type)}
               >
                 <Text style={[styles.idChipText, idProofType === type && styles.idChipTextActive]}>
                   {type}

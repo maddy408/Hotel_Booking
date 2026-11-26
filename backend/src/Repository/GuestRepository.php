@@ -28,7 +28,7 @@ final class GuestRepository
         return $row === false ? null : $row;
     }
 
-    public function create(int $hotelId, string $name, string $phone, string $idProofType, ?string $idProofNumberEnc, ?string $idProofLast4, ?string $city, ?string $email = null, ?string $address = null): int
+    public function create(int $hotelId, string $name, string $phone, ?string $idProofType, ?string $idProofNumberEnc, ?string $idProofLast4, ?string $city, ?string $email = null, ?string $address = null): int
     {
         $stmt = $this->db->prepare(
             'INSERT INTO guests (hotel_id, name, phone, email, id_proof_type, id_proof_number_enc, id_proof_last4, city, address)
@@ -63,12 +63,39 @@ final class GuestRepository
     public function search(int $hotelId, string $query): array
     {
         $stmt = $this->db->prepare(
-            "SELECT * FROM guests WHERE hotel_id = :hotel_id
-             AND (:q = '' OR name LIKE :like1 OR phone LIKE :like2 OR city LIKE :like3 OR (email IS NOT NULL AND email LIKE :like4) OR (address IS NOT NULL AND address LIKE :like5))
-             ORDER BY name"
+            "SELECT g.* FROM guests g WHERE g.hotel_id = :hotel_id
+             AND (
+                :q = '' 
+                OR g.name LIKE :like1 
+                OR g.phone LIKE :like2 
+                OR g.city LIKE :like3 
+                OR (g.email IS NOT NULL AND g.email LIKE :like4) 
+                OR (g.address IS NOT NULL AND g.address LIKE :like5)
+                OR EXISTS (
+                    SELECT 1 FROM stays s JOIN rooms r ON r.id = s.room_id 
+                    WHERE s.guest_id = g.id AND s.hotel_id = :h1 AND s.status != 'cancelled' AND r.room_no LIKE :like6
+                )
+                OR EXISTS (
+                    SELECT 1 FROM reservations res JOIN rooms r ON r.id = res.room_id 
+                    WHERE res.guest_id = g.id AND res.hotel_id = :h2 AND res.status NOT IN ('cancelled', 'no_show') AND r.room_no LIKE :like7
+                )
+             )
+             ORDER BY g.created_at DESC, g.id DESC"
         );
         $like = '%' . $query . '%';
-        $stmt->execute(['hotel_id' => $hotelId, 'q' => $query, 'like1' => $like, 'like2' => $like, 'like3' => $like, 'like4' => $like, 'like5' => $like]);
+        $stmt->execute([
+            'hotel_id' => $hotelId,
+            'q' => $query,
+            'like1' => $like,
+            'like2' => $like,
+            'like3' => $like,
+            'like4' => $like,
+            'like5' => $like,
+            'h1' => $hotelId,
+            'like6' => $like,
+            'h2' => $hotelId,
+            'like7' => $like,
+        ]);
         return $stmt->fetchAll();
     }
 
@@ -139,6 +166,33 @@ final class GuestRepository
              LIMIT 1"
         );
 
+        $completedResStmt = $this->db->prepare(
+            "SELECT b.id, b.room_id, r.room_no, b.persons, b.check_in_date, b.check_out_date, b.status,
+                    b.referred_by_guest_id
+             FROM reservations b
+             JOIN rooms r ON r.id = b.room_id
+             WHERE b.hotel_id = :hotel_id AND b.guest_id = :guest_id AND b.status = 'checked_out'
+             ORDER BY COALESCE(b.check_out_date, b.check_in_date) DESC, b.id DESC
+             LIMIT 1"
+        );
+
+        $recentHistStmt = $this->db->prepare(
+            "SELECT hist.room_no
+             FROM (
+                 SELECT r.room_no, COALESCE(s.checkout_actual, s.checkout_planned, s.check_in_date) AS event_date, s.id
+                 FROM stays s
+                 JOIN rooms r ON r.id = s.room_id
+                 WHERE s.hotel_id = :hotel_id_stay AND s.guest_id = :guest_id_stay AND s.status = 'checked_out'
+                 UNION ALL
+                 SELECT r.room_no, COALESCE(b.check_out_date, b.check_in_date) AS event_date, b.id
+                 FROM reservations b
+                 JOIN rooms r ON r.id = b.room_id
+                 WHERE b.hotel_id = :hotel_id_res AND b.guest_id = :guest_id_res AND b.status = 'checked_out'
+             ) hist
+             ORDER BY hist.event_date DESC, hist.id DESC
+             LIMIT 1"
+        );
+
         $occStmt = $this->db->prepare(
             "SELECT o.id, o.occupant_number,
                     COALESCE(NULLIF(TRIM(o.name), ''), og.name) AS name,
@@ -168,6 +222,16 @@ final class GuestRepository
         foreach ($rows as $g) {
             $guestId = (int) $g['id'];
             $public = $guestService !== null ? $guestService->toPublic($g) : $g;
+            $public['created_at'] = $g['created_at'] ?? null;
+            $public['createdAt'] = $g['created_at'] ?? null;
+            if ($guestService === null) {
+                $hasProof = !empty($g['id_proof_last4']) || !empty($g['id_proof_number_enc']) || !empty($g['passport_number_enc']);
+                $public['idProofType'] = ($hasProof && !empty($g['id_proof_type'])) ? (string) $g['id_proof_type'] : null;
+                $public['id_proof_type'] = $public['idProofType'];
+                $public['idProofLast4'] = ($hasProof && !empty($g['id_proof_last4'])) ? (string) $g['id_proof_last4'] : null;
+                $public['id_proof_last4'] = $public['idProofLast4'];
+                $public['hasIdProof'] = $hasProof;
+            }
 
             $visitStmt->execute(['id' => $guestId]);
             $visits = (int) $visitStmt->fetchColumn();
@@ -230,6 +294,8 @@ final class GuestRepository
                 }
 
                 $public['room'] = (int) $primary['room_no'];
+                $public['room_no'] = (int) $primary['room_no'];
+                $public['roomNo'] = (int) $primary['room_no'];
                 $public['additionalRooms'] = $otherRooms;
                 $public['additional_rooms'] = $otherRooms;
                 $public['persons'] = (int) $primary['persons'];
@@ -286,6 +352,8 @@ final class GuestRepository
                 }
 
                 $public['room'] = (int) $primary['room_no'];
+                $public['room_no'] = (int) $primary['room_no'];
+                $public['roomNo'] = (int) $primary['room_no'];
                 $public['additionalRooms'] = [];
                 $public['additional_rooms'] = [];
                 $public['additionalPending'] = $otherPending;
@@ -314,79 +382,47 @@ final class GuestRepository
                 continue;
             }
 
-            // Rule 3: Latest completed stay
+            // Rule 3: Latest completed stay or other relevant booking/stay
             $completedStmt->execute(['hotel_id' => $hotelId, 'guest_id' => $guestId]);
-            $latestCompleted = $completedStmt->fetch(\PDO::FETCH_ASSOC);
+            $latestCompletedStay = $completedStmt->fetch(\PDO::FETCH_ASSOC);
+
+            $completedResStmt->execute(['hotel_id' => $hotelId, 'guest_id' => $guestId]);
+            $latestCompletedRes = $completedResStmt->fetch(\PDO::FETCH_ASSOC);
 
             $otherResStmt->execute(['hotel_id' => $hotelId, 'guest_id' => $guestId]);
             $latestOtherRes = $otherResStmt->fetch(\PDO::FETCH_ASSOC);
 
-            if ($latestCompleted) {
-                $stayId = (int) $latestCompleted['id'];
-                $occStmt->execute(['stay_id' => $stayId, 'hotel_id' => $hotelId]);
-                $occRows = $occStmt->fetchAll(\PDO::FETCH_ASSOC);
+            $latestCompleted = null;
+            $completedDate = null;
+            $completedIsStay = false;
 
-                if (empty($occRows)) {
-                    $occupants = [
-                        [
-                            'name' => $g['name'],
-                            'is_primary' => true,
-                            'isPrimary' => true,
-                            'role' => 'Primary Guest',
-                        ],
-                    ];
+            if ($latestCompletedStay && $latestCompletedRes) {
+                $stayDate = $latestCompletedStay['checkout_actual'] ?: ($latestCompletedStay['checkout_planned'] ?: $latestCompletedStay['check_in_date']);
+                $resDate = $latestCompletedRes['check_out_date'] ?: $latestCompletedRes['check_in_date'];
+                if ($stayDate >= $resDate) {
+                    $latestCompleted = $latestCompletedStay;
+                    $completedDate = $stayDate;
+                    $completedIsStay = true;
                 } else {
-                    $occupants = array_map(function ($o) use ($g) {
-                        $name = !empty(trim($o['name'] ?? ''))
-                            ? trim($o['name'])
-                            : ($o['is_primary'] ? $g['name'] : 'Occupant ' . $o['occupant_number']);
-                        $isPrimary = (bool) $o['is_primary'];
-                        return [
-                            'name' => $name,
-                            'is_primary' => $isPrimary,
-                            'isPrimary' => $isPrimary,
-                            'role' => $isPrimary ? 'Primary Guest' : 'Additional Occupant',
-                        ];
-                    }, $occRows);
+                    $latestCompleted = $latestCompletedRes;
+                    $completedDate = $resDate;
+                    $completedIsStay = false;
                 }
-
-                $refId = $latestCompleted['referred_by_guest_id'] ?? $latestCompleted['res_ref_id'] ?? null;
-                if (!$refId) {
-                    $fallbackRefStmt->execute(['guest_id' => $guestId]);
-                    $refId = $fallbackRefStmt->fetchColumn() ?: null;
-                }
-                $referrer = null;
-                if ($refId) {
-                    $refStmt->execute(['id' => (int) $refId]);
-                    $refRow = $refStmt->fetch(\PDO::FETCH_ASSOC);
-                    if ($refRow) {
-                        $referrer = ['id' => (int) $refRow['id'], 'name' => $refRow['name']];
-                    }
-                }
-
-                $public['room'] = null;
-                $public['additionalRooms'] = [];
-                $public['additional_rooms'] = [];
-                $public['persons'] = (int) $latestCompleted['persons'];
-                $public['occupants'] = $occupants;
-                $public['occupantsStatus'] = 'ok';
-                $public['occupants_status'] = 'ok';
-                $public['referredBy'] = $referrer;
-                $public['referred_by'] = $referrer;
-                $public['visits'] = $visits;
-                $public['status'] = 'Checked Out';
-                $public['statusKey'] = 'checked_out';
-                $public['status_key'] = 'checked_out';
-                $public['stayId'] = $stayId;
-                $public['bookingId'] = $latestCompleted['reservation_id'] ? (int) $latestCompleted['reservation_id'] : null;
-                $public['conflictingUpcoming'] = 0;
-                $public['now'] = null;
-
-                $results[] = $public;
-                continue;
+            } elseif ($latestCompletedStay) {
+                $latestCompleted = $latestCompletedStay;
+                $completedDate = $latestCompletedStay['checkout_actual'] ?: ($latestCompletedStay['checkout_planned'] ?: $latestCompletedStay['check_in_date']);
+                $completedIsStay = true;
+            } elseif ($latestCompletedRes) {
+                $latestCompleted = $latestCompletedRes;
+                $completedDate = $latestCompletedRes['check_out_date'] ?: $latestCompletedRes['check_in_date'];
+                $completedIsStay = false;
             }
 
-            if ($latestOtherRes) {
+            $otherResDate = $latestOtherRes ? $latestOtherRes['check_in_date'] : null;
+
+            // If the latest event is a cancelled or no-show booking (newer than any completed stay),
+            // do not treat it as a completed stay and never display a previous stay room
+            if ($latestOtherRes && (!$latestCompleted || ($otherResDate && $completedDate && $otherResDate > $completedDate))) {
                 $refId = $latestOtherRes['referred_by_guest_id'] ?? null;
                 if (!$refId) {
                     $fallbackRefStmt->execute(['guest_id' => $guestId]);
@@ -403,6 +439,8 @@ final class GuestRepository
 
                 $statusLabel = $latestOtherRes['status'] === 'no_show' ? 'No-Show' : 'Cancelled';
                 $public['room'] = null;
+                $public['room_no'] = null;
+                $public['roomNo'] = null;
                 $public['additionalRooms'] = [];
                 $public['additional_rooms'] = [];
                 $public['persons'] = (int) $latestOtherRes['persons'];
@@ -424,8 +462,101 @@ final class GuestRepository
                 continue;
             }
 
-            // Rule 4: No stay or booking
-            $public['room'] = null;
+            if ($latestCompleted) {
+                $stayId = $completedIsStay ? (int) $latestCompleted['id'] : null;
+                $occupants = [];
+                if ($completedIsStay && $stayId) {
+                    $occStmt->execute(['stay_id' => $stayId, 'hotel_id' => $hotelId]);
+                    $occRows = $occStmt->fetchAll(\PDO::FETCH_ASSOC);
+
+                    if (empty($occRows)) {
+                        $occupants = [
+                            [
+                                'name' => $g['name'],
+                                'is_primary' => true,
+                                'isPrimary' => true,
+                                'role' => 'Primary Guest',
+                            ],
+                        ];
+                    } else {
+                        $occupants = array_map(function ($o) use ($g) {
+                            $name = !empty(trim($o['name'] ?? ''))
+                                ? trim($o['name'])
+                                : ($o['is_primary'] ? $g['name'] : 'Occupant ' . $o['occupant_number']);
+                            $isPrimary = (bool) $o['is_primary'];
+                            return [
+                                'name' => $name,
+                                'is_primary' => $isPrimary,
+                                'isPrimary' => $isPrimary,
+                                'role' => $isPrimary ? 'Primary Guest' : 'Additional Occupant',
+                            ];
+                        }, $occRows);
+                    }
+                } else {
+                    $occupants = [
+                        [
+                            'name' => $g['name'],
+                            'is_primary' => true,
+                            'isPrimary' => true,
+                            'role' => 'Primary Guest',
+                        ],
+                    ];
+                }
+
+                $refId = $latestCompleted['referred_by_guest_id'] ?? $latestCompleted['res_ref_id'] ?? null;
+                if (!$refId) {
+                    $fallbackRefStmt->execute(['guest_id' => $guestId]);
+                    $refId = $fallbackRefStmt->fetchColumn() ?: null;
+                }
+                $referrer = null;
+                if ($refId) {
+                    $refStmt->execute(['id' => (int) $refId]);
+                    $refRow = $refStmt->fetch(\PDO::FETCH_ASSOC);
+                    if ($refRow) {
+                        $referrer = ['id' => (int) $refRow['id'], 'name' => $refRow['name']];
+                    }
+                }
+
+                $roomNo = (int) $latestCompleted['room_no'];
+                $public['room'] = $roomNo;
+                $public['room_no'] = $roomNo;
+                $public['roomNo'] = $roomNo;
+                $public['additionalRooms'] = [];
+                $public['additional_rooms'] = [];
+                $public['persons'] = (int) $latestCompleted['persons'];
+                $public['occupants'] = $occupants;
+                $public['occupantsStatus'] = 'ok';
+                $public['occupants_status'] = 'ok';
+                $public['referredBy'] = $referrer;
+                $public['referred_by'] = $referrer;
+                $public['visits'] = $visits;
+                $public['status'] = 'Checked Out';
+                $public['statusKey'] = 'checked_out';
+                $public['status_key'] = 'checked_out';
+                $public['stayId'] = $stayId;
+                $public['bookingId'] = $completedIsStay
+                    ? ($latestCompleted['reservation_id'] ? (int) $latestCompleted['reservation_id'] : null)
+                    : (int) $latestCompleted['id'];
+                $public['conflictingUpcoming'] = 0;
+                $public['now'] = null;
+
+                $results[] = $public;
+                continue;
+            }
+
+            // Rule 4: Not staying - if booking/stay history exists, display most recently associated room; else —
+            $recentHistStmt->execute([
+                'hotel_id_stay' => $hotelId,
+                'guest_id_stay' => $guestId,
+                'hotel_id_res' => $hotelId,
+                'guest_id_res' => $guestId,
+            ]);
+            $recentHist = $recentHistStmt->fetch(\PDO::FETCH_ASSOC);
+            $histRoom = $recentHist ? (int) $recentHist['room_no'] : null;
+
+            $public['room'] = $histRoom;
+            $public['room_no'] = $histRoom;
+            $public['roomNo'] = $histRoom;
             $public['additionalRooms'] = [];
             $public['additional_rooms'] = [];
             $public['persons'] = null;

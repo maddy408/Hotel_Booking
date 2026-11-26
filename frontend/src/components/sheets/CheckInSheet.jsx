@@ -243,14 +243,17 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
 
   const advNum = advance === '' || advance === null ? 0 : Number(advance);
   const isAdvanceEmptyOrZero = isNaN(advNum) || advNum <= 0;
+  const isAdvanceExceeded = !isFromReservation && advNum > total;
 
   // Advance validation:
   // For reservations: must have confirmed successful payment recorded in DB.
   // Typing an amount does NOT clear the error; only successful payment clears it.
   // For direct check-in: advance amount must be > 0 and successfully collected on check-in.
   const advanceError = isFromReservation
-    ? (confirmedAdvance <= 0 && (advanceSubmitted || serverAdvanceError || triggerAdvanceError) ? ADVANCE_REQUIRED_MSG : '')
-    : ((advanceSubmitted && isAdvanceEmptyOrZero) || serverAdvanceError ? ADVANCE_REQUIRED_MSG : '');
+    ? (confirmedAdvance <= 0 && (advanceSubmitted || serverAdvanceError || triggerAdvanceError) ? ADVANCE_REQUIRED_MSG : serverAdvanceError)
+    : isAdvanceExceeded
+      ? 'Advance cannot exceed the total payable amount.'
+      : ((advanceSubmitted && isAdvanceEmptyOrZero) || serverAdvanceError ? (serverAdvanceError || ADVANCE_REQUIRED_MSG) : '');
 
   useEffect(() => {
     if (serverPersonsError && roomMaxPersons != null && personCount <= Number(roomMaxPersons)) {
@@ -366,8 +369,8 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
     });
 
   const isAdvanceValid = isFromReservation
-    ? confirmedAdvance > 0
-    : Number(advance) > 0 && !!pay;
+    ? confirmedAdvance > 0 && confirmedAdvance <= total
+    : Number(advance) > 0 && Number(advance) <= total && !!pay;
 
   const isCapacityValid =
     !isPersonsExceeded &&
@@ -934,6 +937,12 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
       setServerAdvanceError(ADVANCE_REQUIRED_MSG);
       return;
     }
+    if (advVal > total) {
+      setAdvanceSubmitted(true);
+      setServerAdvanceError('Advance cannot exceed the total payable amount.');
+      toast('Advance cannot exceed the total payable amount.');
+      return;
+    }
     try {
       const res = await recordAdvance.mutateAsync({
         id: reservation.id,
@@ -947,7 +956,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
       toast(`Advance payment of ${inr(advVal)} collected successfully.`);
     } catch (err) {
       if (err.fields?.advanceAmount || err.message?.includes('advance') || err.message?.includes('Advance')) {
-        setServerAdvanceError(ADVANCE_REQUIRED_MSG);
+        setServerAdvanceError(err.fields?.advanceAmount || err.message || ADVANCE_REQUIRED_MSG);
       } else {
         toast(err.message);
       }
@@ -1007,6 +1016,11 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
         setServerAdvanceError(ADVANCE_REQUIRED_MSG);
         return;
       }
+      if (confirmedAdvance > total) {
+        setServerAdvanceError('Advance cannot exceed the total payable amount.');
+        toast('Advance cannot exceed the total payable amount.');
+        return;
+      }
     } else {
       const phoneValidation = validatePhone(values.phone);
       if (!phoneValidation.isValid) {
@@ -1024,6 +1038,11 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
       const advVal = values.advance === '' || values.advance === null ? 0 : Number(values.advance);
       if (isNaN(advVal) || advVal <= 0) {
         setServerAdvanceError(ADVANCE_REQUIRED_MSG);
+        return;
+      }
+      if (advVal > total) {
+        setServerAdvanceError('Advance cannot exceed the total payable amount.');
+        toast('Advance cannot exceed the total payable amount.');
         return;
       }
     }

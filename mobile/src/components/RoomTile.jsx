@@ -51,7 +51,7 @@ export default function RoomTile({ room, settings, onPress, onOpenBooking }) {
       meta = room.bookingCode ? `${room.bookingCode} · Ready` : 'Ready';
     }
   } else if (room.status === 'free') {
-    meta = room.nextBookingDate ? 'Booked ' + fd(room.nextBookingDate) : `₹${Math.round(room.roomType?.rate || 0)}`;
+    meta = room.nextBookingDate ? 'Booked ' + fd(room.nextBookingDate) : 'Available';
   } else if (room.status === 'repair') {
     meta = (room.note || '').split('.')[0] || 'Under maintenance';
   } else {
@@ -143,7 +143,7 @@ export default function RoomTile({ room, settings, onPress, onOpenBooking }) {
   }
 
   return (
-    <View style={[styles.tile, { borderColor: c.border, backgroundColor: c.bg }]}>
+    <View style={[styles.tile, { borderColor: c.fg }]}>
       <Pressable
         onPress={onPress}
         style={styles.tileMain}
@@ -154,54 +154,79 @@ export default function RoomTile({ room, settings, onPress, onOpenBooking }) {
         <View pointerEvents="none" style={styles.topRow}>
           <View style={styles.roomIdentity}>
             <Text style={[styles.roomNo, { color: c.fg }]}>{room.roomNo}</Text>
-            <Text style={styles.roomType} numberOfLines={1}>{room.roomType?.name || ''}</Text>
-          </View>
-          <View style={[styles.statusChip, { backgroundColor: c.fg }]}>
-            <Text style={styles.statusChipText} numberOfLines={1}>{LABEL[room.status] || room.status.toUpperCase()}</Text>
-          </View>
-        </View>
-
-        <View pointerEvents="none" style={styles.personsRow}>
-          <Svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke={colors.textSecondary} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
-            <Path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
-            <Circle cx="12" cy="7" r="4" />
-          </Svg>
-          <Text style={styles.personsText}>{personsDisplay}</Text>
-        </View>
-
-        {(room.status === 'occupied' || room.status === 'booked') && guestName ? (
-          <Text pointerEvents="none" style={styles.guest} numberOfLines={1}>Guest: {guestName}</Text>
-        ) : null}
-
-        {room.bookingCode ? (
-          <Text pointerEvents="none" style={styles.bookingRef} numberOfLines={1}>
-            Booking: {room.bookingCode}
-          </Text>
-        ) : (room.status === 'occupied' && room.stayId ? (
-          <Text pointerEvents="none" style={styles.bookingRef} numberOfLines={1}>
-            Stay: #{room.stayId}
-          </Text>
-        ) : null)}
-
-        {isOverdue && (
-          <View pointerEvents="none" style={styles.overdueBadge}>
-            <View style={styles.overdueTagRow}>
-              <Svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke={colors.danger} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <Path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
-                <Line x1="12" y1="9" x2="12" y2="13" />
-                <Line x1="12" y1="17" x2="12.01" y2="17" />
-              </Svg>
-              <Text style={styles.overdueBadgeText}>
-                {overdueDays > 0 ? `${overdueDays}d overdue` : 'OVERDUE'}
-              </Text>
-            </View>
-            <Text style={styles.overdueDateText} numberOfLines={1}>
-              · Due {fd(plannedIso)}
+            <Text style={styles.roomType} numberOfLines={1} ellipsizeMode="tail">
+              {room.roomType?.name || 'Standard'}
             </Text>
           </View>
-        )}
+          <View style={[styles.statusChip, { backgroundColor: c.fg }]}>
+            <Text style={styles.statusChipText} numberOfLines={1}>
+              {LABEL[room.status] || room.status.toUpperCase()}
+            </Text>
+          </View>
+        </View>
 
-        <Text pointerEvents="none" style={[styles.meta, due && { color: isOverdue ? colors.danger : colors.warning, fontWeight: isOverdue ? '700' : '600' }]} numberOfLines={1}>{meta}</Text>
+        <View pointerEvents="none" style={styles.middleSection}>
+          <View style={styles.personsRow}>
+            <Svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke={colors.textSecondary} strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+              <Path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+              <Circle cx="12" cy="7" r="4" />
+            </Svg>
+            <Text style={styles.personsText}>{personsDisplay}</Text>
+          </View>
+
+          {room.status === 'free' && room.roomType?.rate != null && (
+            <View style={styles.rateRow}>
+              <Text style={styles.rateValue}>{`₹${Math.round(room.roomType.rate || 0)}`}</Text>
+              <Text style={styles.rateUnit}>/night</Text>
+            </View>
+          )}
+
+          {(room.status === 'occupied' || room.status === 'booked') && guestName ? (
+            <Text style={styles.guest} numberOfLines={2} ellipsizeMode="tail">
+              <Text style={styles.guestLabel}>Guest: </Text>
+              <Text style={styles.guestNameText}>{guestName}</Text>
+            </Text>
+          ) : null}
+
+          {room.bookingCode ? (
+            <Text style={styles.bookingRef} numberOfLines={1} ellipsizeMode="tail">
+              Booking: <Text style={styles.refVal}>{room.bookingCode}</Text>
+            </Text>
+          ) : (room.status === 'occupied' && room.stayId ? (
+            <Text style={styles.bookingRef} numberOfLines={1} ellipsizeMode="tail">
+              Stay: <Text style={styles.refVal}>#{room.stayId}</Text>
+            </Text>
+          ) : null)}
+
+          {isOverdue && (
+            <View style={styles.overdueBadge}>
+              <View style={styles.overdueTagRow}>
+                <Svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke={colors.danger} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                  <Path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z" />
+                  <Line x1="12" y1="9" x2="12" y2="13" />
+                  <Line x1="12" y1="17" x2="12.01" y2="17" />
+                </Svg>
+                <Text style={styles.overdueBadgeText}>
+                  {overdueDays > 0 ? `${overdueDays}d overdue` : 'OVERDUE'}
+                </Text>
+              </View>
+              <Text style={styles.overdueDateText} numberOfLines={1}>
+                · Due {fd(plannedIso)}
+              </Text>
+            </View>
+          )}
+
+          <Text
+            style={[
+              styles.meta,
+              due && { color: isOverdue ? colors.danger : colors.warning, fontFamily: isOverdue ? fonts.bodyBold : fonts.bodySemibold },
+            ]}
+            numberOfLines={2}
+            ellipsizeMode="tail"
+          >
+            {meta}
+          </Text>
+        </View>
       </Pressable>
 
       {(room.hasConflict || room.hasPendingBooking) &&
@@ -246,9 +271,16 @@ export default function RoomTile({ room, settings, onPress, onOpenBooking }) {
 const styles = StyleSheet.create({
   tile: {
     width: '48%',
+    backgroundColor: '#FFFFFF',
     borderWidth: 1.5,
     borderRadius: radii.lg,
     overflow: 'hidden',
+    minHeight: 144,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2.5,
+    elevation: 1.5,
   },
   tileMain: {
     flex: 1,
@@ -257,23 +289,98 @@ const styles = StyleSheet.create({
   },
   topRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    gap: 4,
+    gap: 6,
   },
   roomIdentity: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 5,
     flex: 1,
     minWidth: 0,
   },
-  roomNo: { fontFamily: fonts.display, fontSize: 18 },
-  roomType: { fontFamily: fonts.body, fontSize: 11, color: colors.textSecondary, flexShrink: 1 },
-  personsRow: { flexDirection: 'row', alignItems: 'center', gap: 3, marginTop: 1 },
-  personsText: { fontFamily: fonts.bodySemibold, fontSize: 11, color: colors.textSecondary },
-  guest: { fontFamily: fonts.bodyMedium, fontSize: 12, color: colors.heading },
-  bookingRef: { fontFamily: fonts.mono, fontSize: 10.5, color: colors.textSecondary, marginTop: 1 },
+  roomNo: {
+    fontFamily: fonts.display,
+    fontSize: 19,
+    lineHeight: 23,
+    letterSpacing: -0.3,
+  },
+  roomType: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  statusChip: {
+    borderRadius: radii.xs,
+    paddingHorizontal: 6,
+    paddingVertical: 2.5,
+    alignSelf: 'flex-start',
+    flexShrink: 0,
+  },
+  statusChipText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 8.5,
+    color: '#FFFFFF',
+    letterSpacing: 0.3,
+  },
+  middleSection: {
+    gap: 2.5,
+    marginTop: 2,
+  },
+  personsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3.5,
+    marginTop: 1,
+  },
+  personsText: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  rateRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 2,
+    marginTop: 1,
+  },
+  rateValue: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 12.5,
+    color: colors.heading,
+  },
+  rateUnit: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    color: colors.textSecondary,
+  },
+  guest: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11.5,
+    lineHeight: 15,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  guestLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 11,
+    color: colors.textSecondary,
+  },
+  guestNameText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 11.5,
+    color: colors.heading,
+  },
+  bookingRef: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 10.5,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
+  refVal: {
+    fontFamily: fonts.mono,
+    fontSize: 10.5,
+    color: colors.heading,
+  },
   overdueBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -283,10 +390,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: radii.xs,
     paddingHorizontal: 5,
-    paddingVertical: 2.5,
+    paddingVertical: 2,
     marginTop: 2,
     alignSelf: 'flex-start',
     maxWidth: '100%',
+    flexWrap: 'wrap',
   },
   overdueTagRow: {
     flexDirection: 'row',
@@ -295,19 +403,25 @@ const styles = StyleSheet.create({
   },
   overdueBadgeText: {
     fontFamily: fonts.bodyBold,
-    fontSize: 9.5,
+    fontSize: 9,
     color: colors.danger,
     letterSpacing: 0.2,
   },
   overdueDateText: {
     fontFamily: fonts.bodySemibold,
-    fontSize: 9.5,
+    fontSize: 9,
     color: '#9F1239',
   },
-  meta: { fontFamily: fonts.body, fontSize: 11.5, color: colors.textSecondary, marginTop: 2 },
+  meta: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    lineHeight: 15,
+    color: colors.textSecondary,
+    marginTop: 1,
+  },
   conflict: {
-    marginHorizontal: 10,
-    marginBottom: 10,
+    marginHorizontal: 8,
+    marginBottom: 8,
     marginTop: 0,
     padding: 6,
     borderRadius: radii.sm,
@@ -315,26 +429,31 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.dangerBorder,
   },
-  conflictTitle: { fontFamily: fonts.bodyBold, fontSize: 10.5, color: colors.danger },
-  conflictDates: { fontFamily: fonts.body, fontSize: 10, color: colors.danger },
-  conflictAction: { fontFamily: fonts.bodySemibold, fontSize: 10, color: colors.danger, marginTop: 1 },
-  statusChip: {
-    borderRadius: radii.xs,
-    paddingHorizontal: 5,
-    paddingVertical: 2,
-    alignSelf: 'center',
-    flexShrink: 0,
+  conflictTitle: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 10.5,
+    color: colors.danger,
   },
-  statusChipText: { fontFamily: fonts.bodyBold, fontSize: 8.5, color: '#fff', letterSpacing: 0.3 },
+  conflictDates: {
+    fontFamily: fonts.body,
+    fontSize: 10,
+    color: colors.danger,
+  },
+  conflictAction: {
+    fontFamily: fonts.bodySemibold,
+    fontSize: 10,
+    color: colors.danger,
+    marginTop: 1,
+  },
   actionsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
     paddingHorizontal: 8,
     paddingBottom: 8,
-    paddingTop: 4,
+    paddingTop: 6,
     borderTopWidth: 1,
-    borderTopColor: 'rgba(0,0,0,0.06)',
+    borderTopColor: '#F1F5F9',
   },
   actionBtn: {
     flex: 1,
@@ -374,4 +493,3 @@ const styles = StyleSheet.create({
     color: colors.success || '#15803D',
   },
 });
-

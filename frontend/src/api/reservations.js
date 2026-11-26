@@ -126,3 +126,21 @@ export function useCheckInReservation() {
     onSuccess: () => invalidate(qc),
   });
 }
+
+export function useUploadReservationDocuments() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ reservationId, files }) => {
+      const form = new FormData();
+      for (const file of files) {
+        form.append('documents[]', file);
+      }
+      return api.post(`/reservations/${reservationId}/documents`, form);
+    },
+    onSuccess: (_data, { reservationId }) => {
+      invalidate(qc);
+      qc.invalidateQueries({ queryKey: ['reservation', reservationId] });
+      qc.invalidateQueries({ queryKey: ['reservation-documents', reservationId] });
+    },
+  });
+}

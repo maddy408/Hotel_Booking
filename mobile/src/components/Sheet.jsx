@@ -21,6 +21,7 @@ export default function Sheet({
   unsavedChangesTitle = 'Discard unsaved changes?',
   unsavedChangesMessage = 'You have unsaved changes. Are you sure you want to discard them and close?',
   compact = false,
+  bottomSheet = false,
   scrollRef,
 }) {
   const handleDismiss = useCallback(() => {
@@ -78,6 +79,43 @@ export default function Sheet({
                 <Pressable style={StyleSheet.absoluteFill} onPress={handleDismiss} />
                 <View style={styles.compactCard} pointerEvents="auto">
                   {inner}
+                </View>
+              </SafeAreaView>
+            </View>
+          </ToastProvider>
+        </SafeAreaProvider>
+      </Modal>
+    );
+  }
+
+  if (bottomSheet) {
+    return (
+      <Modal
+        visible={true}
+        transparent={true}
+        animationType="slide"
+        onRequestClose={handleDismiss}
+        statusBarTranslucent={true}
+      >
+        <SafeAreaProvider initialMetrics={initialWindowMetrics}>
+          <ToastProvider>
+            <View style={styles.bottomSheetOverlay}>
+              <Pressable style={styles.scrim} onPress={handleDismiss} accessibilityLabel="Close bottom sheet" />
+              <SafeAreaView edges={['bottom', 'left', 'right']} style={styles.bottomSheetWrap} pointerEvents="box-none">
+                <View style={styles.bottomSheetCard} pointerEvents="auto">
+                  <View style={styles.handleBar} />
+                  {scroll ? (
+                    <ScrollView
+                      ref={scrollRef}
+                      style={styles.bottomSheetScroll}
+                      contentContainerStyle={styles.bottomSheetScrollContent}
+                      keyboardShouldPersistTaps="handled"
+                    >
+                      {children}
+                    </ScrollView>
+                  ) : (
+                    children
+                  )}
                 </View>
               </SafeAreaView>
             </View>
@@ -247,6 +285,45 @@ const styles = StyleSheet.create({
   },
   compactBody: {
     padding: 16,
+  },
+  bottomSheetOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    zIndex: 100,
+  },
+  bottomSheetWrap: {
+    width: '100%',
+    maxHeight: '90%',
+    justifyContent: 'flex-end',
+    zIndex: 2,
+  },
+  bottomSheetCard: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radii.xl,
+    borderTopRightRadius: radii.xl,
+    overflow: 'hidden',
+    width: '100%',
+    maxHeight: '100%',
+    alignSelf: 'center',
+    zIndex: 10,
+    elevation: 24,
+    ...shadow.pop,
+  },
+  handleBar: {
+    width: 38,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#CBD5E1',
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  bottomSheetScroll: {
+    flexGrow: 0,
+  },
+  bottomSheetScrollContent: {
+    paddingBottom: 24,
   },
   header: {
     flexDirection: 'row',

@@ -40,7 +40,7 @@ export default function InvoicePrint() {
           if (document.referrer && document.referrer.startsWith(window.location.origin)) {
             window.location.href = document.referrer;
           } else {
-            navigate('/');
+            navigate('/bills');
           }
         }
       }, 150);

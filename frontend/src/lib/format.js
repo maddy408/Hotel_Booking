@@ -9,6 +9,54 @@ export function addDaysIso(iso, n) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
+export function getPresetDateRange(presetKey, baseToday = todayIso()) {
+  switch (presetKey) {
+    case 'today':
+      return { from: baseToday, to: baseToday, preset: 'today', label: 'Today' };
+    case 'yesterday': {
+      const y = addDaysIso(baseToday, -1);
+      return { from: y, to: y, preset: 'yesterday', label: 'Yesterday' };
+    }
+    case 'last7':
+      return { from: addDaysIso(baseToday, -6), to: baseToday, preset: 'last7', label: 'Last 7 days' };
+    case 'thisWeek': {
+      const d = new Date(`${baseToday}T00:00:00`);
+      const dayOfWeek = d.getDay();
+      const diffToMonday = (dayOfWeek + 6) % 7;
+      const mondayIso = addDaysIso(baseToday, -diffToMonday);
+      return { from: mondayIso, to: baseToday, preset: 'thisWeek', label: 'This week' };
+    }
+    case 'thisMonth': {
+      const firstOfMonth = `${baseToday.slice(0, 7)}-01`;
+      return { from: firstOfMonth, to: baseToday, preset: 'thisMonth', label: 'This month' };
+    }
+    default:
+      return { from: baseToday, to: baseToday, preset: 'today', label: 'Today' };
+  }
+}
+
+export function formatDateRangeLabel(from, to, preset) {
+  if (preset && preset !== 'custom') {
+    const p = getPresetDateRange(preset, to || todayIso());
+    if (p.from === from && p.to === to) {
+      return p.label;
+    }
+  }
+  if (!from || !to) return 'Select date';
+  if (from === to) {
+    return fdWithYear(from);
+  }
+  const fromD = new Date(`${from}T00:00:00`);
+  const toD = new Date(`${to}T00:00:00`);
+  const fromStr = fromD.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const toStrWithYear = toD.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (fromD.getFullYear() === toD.getFullYear()) {
+    return `${fromStr} – ${toStrWithYear}`;
+  }
+  const fromWithYear = fromD.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return `${fromWithYear} – ${toStrWithYear}`;
+}
+
 export function nightsBetween(a, b) {
   const diff = (new Date(`${b}T00:00:00`) - new Date(`${a}T00:00:00`)) / 86400000;
   return Math.max(1, Math.round(diff));

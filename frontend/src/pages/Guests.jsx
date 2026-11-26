@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGuests } from '../api/guests';
 import { useRooms } from '../api/rooms';
@@ -14,6 +14,17 @@ export default function Guests() {
   const { data: roomsData } = useRooms();
   const [sheet, setSheet] = useState(null);
   const [expandedOccupantsGuestId, setExpandedOccupantsGuestId] = useState(null);
+
+  const sortedGuests = useMemo(() => {
+    return [...(guests || [])].sort((a, b) => {
+      const dateA = a.created_at || a.createdAt || '';
+      const dateB = b.created_at || b.createdAt || '';
+      if (dateA && dateB && dateA !== dateB) {
+        return dateB.localeCompare(dateA);
+      }
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
+    });
+  }, [guests]);
 
   // Close occupant popover when clicking anywhere outside
   useEffect(() => {
@@ -469,8 +480,8 @@ export default function Guests() {
                 </tr>
               </thead>
               <tbody>
-                {guests && guests.length ? (
-                  guests.map((g) => (
+                {sortedGuests && sortedGuests.length ? (
+                  sortedGuests.map((g) => (
                     <tr
                       key={g.id}
                       onClick={() => navigate(`/guests/${g.id}`)}
@@ -515,7 +526,7 @@ export default function Guests() {
 
                       {/* 2. Room */}
                       <td>
-                        {g.room ? (
+                        {(g.room ?? g.room_no ?? g.roomNo) ? (
                           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                             <span
                               className="rtag"
@@ -525,7 +536,7 @@ export default function Guests() {
                                 fontSize: '12px',
                               }}
                             >
-                              {g.room}
+                              {g.room ?? g.room_no ?? g.roomNo}
                             </span>
                             {g.additionalRooms && g.additionalRooms.length > 0 && (
                               <span
@@ -651,8 +662,8 @@ export default function Guests() {
 
           {/* Tablet & Mobile Responsive Cards View */}
           <div className="register-cards-view">
-            {guests && guests.length ? (
-              guests.map((g) => (
+            {sortedGuests && sortedGuests.length ? (
+              sortedGuests.map((g) => (
                 <div
                   key={g.id}
                   className="register-card"
@@ -723,9 +734,9 @@ export default function Guests() {
                         Room
                       </span>
                       <span style={{ fontWeight: 600, fontSize: '13px' }}>
-                        {g.room ? (
+                        {(g.room ?? g.room_no ?? g.roomNo) ? (
                           <>
-                            Room {g.room}
+                            Room {g.room ?? g.room_no ?? g.roomNo}
                             {g.additionalRooms && g.additionalRooms.length > 0 && (
                               <span
                                 style={{

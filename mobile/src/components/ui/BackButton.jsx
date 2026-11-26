@@ -19,6 +19,7 @@ import { ArrowLeftIcon } from '../Icons.jsx';
  * - Avoids unnecessary Back buttons on root screens.
  */
 export default function BackButton({
+  navigation: propNavigation,
   onPress,
   hasUnsavedChanges = false,
   unsavedChangesTitle = 'Discard unsaved changes?',
@@ -30,7 +31,8 @@ export default function BackButton({
   enableHardwareBack = true,
   accessibilityLabel = 'Go back',
 }) {
-  const navigation = useNavigation();
+  const hookNavigation = useNavigation();
+  const navigation = propNavigation || hookNavigation;
 
   const onPressRef = useRef(onPress);
   onPressRef.current = onPress;
@@ -55,10 +57,19 @@ export default function BackButton({
         currentOnPress();
         return;
       }
-      if (navigation?.canGoBack && navigation.canGoBack()) {
+      const state = navigation?.getState?.();
+      const canPop = state ? state.index > 0 : (navigation?.canGoBack && navigation.canGoBack());
+      if (canPop) {
         navigation.goBack();
-      } else if (currentFallback && navigation?.navigate) {
-        navigation.navigate(currentFallback);
+      } else if (currentFallback) {
+        if (typeof navigation?.reset === 'function') {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: currentFallback }],
+          });
+        } else if (navigation?.navigate) {
+          navigation.navigate(currentFallback);
+        }
       }
     };
 
@@ -89,12 +100,21 @@ export default function BackButton({
         onPressRef.current();
         return true;
       }
-      if (navigation?.canGoBack && navigation.canGoBack()) {
+      const state = navigation?.getState?.();
+      const canPop = state ? state.index > 0 : (navigation?.canGoBack && navigation.canGoBack());
+      if (canPop) {
         navigation.goBack();
         return true;
       }
-      if (fallbackRouteRef.current && navigation?.navigate) {
-        navigation.navigate(fallbackRouteRef.current);
+      if (fallbackRouteRef.current) {
+        if (typeof navigation?.reset === 'function') {
+          navigation.reset({
+            index: 0,
+            routes: [{ name: fallbackRouteRef.current }],
+          });
+        } else if (navigation?.navigate) {
+          navigation.navigate(fallbackRouteRef.current);
+        }
         return true;
       }
       return false; // let Android handle root screen exit safely

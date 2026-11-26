@@ -878,6 +878,8 @@ export default function DailyOpsScreen({ navigation }) {
               const isCheckedOut = item.checkin_status === 'checked_out';
               const isPending = !isCheckedIn;
               const isEligibleWhatsApp = Boolean(item.is_eligible_whatsapp && whatsappCheckinEnabled);
+              const stayId = item.stay_id || (typeof item.id === 'string' && item.id.startsWith('stay-') ? parseInt(item.id.slice(5), 10) : (typeof item.id === 'number' ? item.id : null));
+              const reservationId = item.reservation_id ? Number(item.reservation_id) : (typeof item.id === 'string' && item.id.startsWith('res-') ? parseInt(item.id.slice(4), 10) : null);
 
               let badgeText = 'Not Arrived';
               let badgeStyle = styles.badgeWarning;
@@ -915,8 +917,10 @@ export default function DailyOpsScreen({ navigation }) {
                   <View style={styles.guestRow}>
                     <Pressable
                       onPress={() => {
-                        if (item.reservation_id) {
-                          setSheet({ type: 'booking', reservationId: item.reservation_id });
+                        if (reservationId) {
+                          setSheet({ type: 'booking', reservationId });
+                        } else if (stayId) {
+                          setSheet({ type: 'stay', stayId });
                         } else if (item.guest_id) {
                           navigation.navigate('Guests', { screen: 'GuestDetails', params: { guestId: item.guest_id } });
                         }
@@ -980,26 +984,35 @@ export default function DailyOpsScreen({ navigation }) {
                       </Pressable>
                     )}
 
-                    {/* 4. Calendar / Booking Details */}
-                    {item.reservation_id ? (
+                    {/* 4. Calendar / Booking or Stay Details */}
+                    {reservationId ? (
                       <Pressable
                         style={styles.iconActionBtn}
-                        onPress={() => setSheet({ type: 'booking', reservationId: item.reservation_id })}
+                        onPress={() => setSheet({ type: 'booking', reservationId })}
                         accessibilityRole="button"
                         accessibilityLabel="View Booking Details and Calendar"
                       >
                         <Text style={styles.iconBtnText}>📅</Text>
                       </Pressable>
+                    ) : stayId ? (
+                      <Pressable
+                        style={styles.iconActionBtn}
+                        onPress={() => setSheet({ type: 'stay', stayId })}
+                        accessibilityRole="button"
+                        accessibilityLabel="View Stay Details"
+                      >
+                        <Text style={styles.iconBtnText}>📋</Text>
+                      </Pressable>
                     ) : null}
 
                     {/* 5. View Bill (if checked out) */}
-                    {isCheckedOut && item.stay_id ? (
+                    {isCheckedOut && stayId ? (
                       <Pressable
                         style={[styles.outlineActionBtn, { flex: 1 }]}
                         onPress={() =>
                           navigation.navigate('Bills', {
                             screen: 'InvoicePrint',
-                            params: { stayId: item.stay_id, invoiceId: item.invoice_id },
+                            params: { stayId, invoiceId: item.invoice_id },
                           })
                         }
                         accessibilityRole="button"
@@ -1047,6 +1060,7 @@ export default function DailyOpsScreen({ navigation }) {
               const isPending = isInHouse;
               const isEligibleWhatsApp = Boolean(s.is_eligible_whatsapp || s.guest_phone);
               const stayId = s.stay_id || (typeof s.id === 'string' && s.id.startsWith('stay-') ? parseInt(s.id.slice(5), 10) : (typeof s.id === 'number' ? s.id : null));
+              const reservationId = s.reservation_id ? Number(s.reservation_id) : (typeof s.id === 'string' && s.id.startsWith('res-') ? parseInt(s.id.slice(4), 10) : null);
 
               let badgeText = 'Still Staying';
               let badgeStyle = styles.badgeWarning;
@@ -1084,7 +1098,9 @@ export default function DailyOpsScreen({ navigation }) {
                   <View style={styles.guestRow}>
                     <Pressable
                       onPress={() => {
-                        if (stayId) {
+                        if (reservationId) {
+                          setSheet({ type: 'booking', reservationId });
+                        } else if (stayId) {
                           setSheet({ type: 'stay', stayId });
                         } else if (s.guest_id) {
                           navigation.navigate('Guests', { screen: 'GuestDetails', params: { guestId: s.guest_id } });
@@ -1154,10 +1170,10 @@ export default function DailyOpsScreen({ navigation }) {
                     )}
 
                     {/* 4. Calendar / Booking or Stay Details */}
-                    {s.reservation_id ? (
+                    {reservationId ? (
                       <Pressable
                         style={styles.iconActionBtn}
-                        onPress={() => setSheet({ type: 'booking', reservationId: s.reservation_id })}
+                        onPress={() => setSheet({ type: 'booking', reservationId })}
                         accessibilityRole="button"
                         accessibilityLabel="View Booking Details and Calendar"
                       >
@@ -1247,6 +1263,9 @@ export default function DailyOpsScreen({ navigation }) {
           onClose={() => {
             setSheet(null);
             refetch();
+          }}
+          onEarlyCheckout={(sid) => {
+            setSheet({ type: 'checkout', stayId: sid || sheet.stayId, initialMode: 'early' });
           }}
           onCheckout={() => {
             setSheet({ type: 'checkout', stayId: sheet.stayId });

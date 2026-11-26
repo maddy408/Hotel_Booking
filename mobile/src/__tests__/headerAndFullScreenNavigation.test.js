@@ -127,13 +127,13 @@ describe('Duplicate Headers & Application-Wide Full-Screen Navigation Verificati
     );
   });
 
-  it('6. RoomMasterScreen keeps individual room edit dialog compact while Add Rooms/Floor remains full-screen', () => {
+  it('6. RoomMasterScreen presents individual room edit dialog as bottomSheet while Add Rooms/Floor remains full-screen', () => {
     const roomMasterContent = fs.readFileSync(roomMasterPath, 'utf8');
 
-    // editRoom must pass compact prop
+    // editRoom must pass bottomSheet or compact prop
     assert.ok(
-      /<Sheet\s+compact\s+onClose=\{\(\)\s*=>\s*setEditRoom\(null\)\}>/.test(roomMasterContent),
-      'RoomMasterScreen editRoom must pass compact prop to Sheet'
+      /<Sheet\s+(bottomSheet|compact)[^>]*onClose=\{\(\)\s*=>\s*setEditRoom\(null\)\}[^>]*>/.test(roomMasterContent),
+      'RoomMasterScreen editRoom must pass bottomSheet or compact prop to Sheet'
     );
 
     // addRoomsModal must NOT pass compact prop

@@ -73,7 +73,10 @@ export default function CustomDrawerContent(props) {
                 style={[styles.menuItem, isActive ? styles.menuItemActive : null]}
                 onPress={() => {
                   navigation.closeDrawer();
-                  navigation.navigate('MainTabs', { screen: tabTarget });
+                  navigation.navigate('MainTabs', {
+                    screen: tabTarget,
+                    params: tabTarget === 'Bills' ? { screen: 'BillsHome' } : undefined,
+                  });
                 }}
               >
                 <Icon color={isActive ? colors.primary : colors.text} size={20} />

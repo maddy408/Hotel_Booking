@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import Screen, { ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
 import Button from '../../components/ui/Button.jsx';
 import Sheet, { SheetHeader } from '../../components/Sheet.jsx';
@@ -38,6 +38,15 @@ export default function RoomMasterScreen() {
   const [activeTab, setActiveTab] = useState('rooms'); // 'rooms' | 'types'
   const [editType, setEditType] = useState(null);
   const [editRoom, setEditRoom] = useState(null);
+  const [isEditingRoom, setIsEditingRoom] = useState(false);
+  const [editRoomForm, setEditRoomForm] = useState({
+    roomNo: '',
+    floor: '',
+    roomTypeId: '',
+    note: '',
+  });
+  const [editRoomErrors, setEditRoomErrors] = useState({});
+  const [isSavingRoom, setIsSavingRoom] = useState(false);
   const [submittingAction, setSubmittingAction] = useState(null); // null | 'repair' | 'ready'
   const [deletingRoomId, setDeletingRoomId] = useState(null);
   const [deletingTypeId, setDeletingTypeId] = useState(null);
@@ -111,6 +120,84 @@ export default function RoomMasterScreen() {
     if (r.status === 'repair' || r.housekeepingStatus === 'repair') return statusColors.repair;
     if (r.status === 'cleaning' || r.housekeepingStatus === 'cleaning') return statusColors.cleaning;
     return statusColors.free;
+  };
+
+  const getRoomStatusDetails = (r) => {
+    if (!r) {
+      return { label: 'Ready (Clean)', bg: statusColors.free.bg, color: statusColors.free.fg, border: statusColors.free.border };
+    }
+    if (r.isOverdue || isRoomOverdue(r, settingsData)) {
+      return { label: 'Overdue', bg: statusColors.overdue.bg, color: statusColors.overdue.fg, border: statusColors.overdue.border };
+    }
+    if (r.status === 'repair' || r.housekeepingStatus === 'repair') {
+      return { label: 'Under Repair', bg: statusColors.repair.bg, color: statusColors.repair.fg, border: statusColors.repair.border };
+    }
+    if (r.status === 'cleaning' || r.housekeepingStatus === 'cleaning') {
+      return { label: 'Cleaning', bg: statusColors.cleaning.bg, color: statusColors.cleaning.fg, border: statusColors.cleaning.border };
+    }
+    if (r.status === 'occupied') {
+      return { label: 'Occupied', bg: statusColors.occupied.bg, color: statusColors.occupied.fg, border: statusColors.occupied.border };
+    }
+    if (r.status === 'booked' || r.hasPendingBooking) {
+      return { label: 'Booked', bg: statusColors.booked.bg, color: statusColors.booked.fg, border: statusColors.booked.border };
+    }
+    return { label: 'Ready (Clean)', bg: statusColors.free.bg, color: statusColors.free.fg, border: statusColors.free.border };
+  };
+
+  const startEditingRoom = () => {
+    if (!currentEditRoom) return;
+    setEditRoomForm({
+      roomNo: String(currentEditRoom.roomNo ?? ''),
+      floor: String(currentEditRoom.floor ?? ''),
+      roomTypeId: String(currentEditRoom.roomType?.id || currentEditRoom.room_type_id || (roomTypes?.[0]?.id ? String(roomTypes[0].id) : '')),
+      note: currentEditRoom.note || '',
+    });
+    setEditRoomErrors({});
+    setIsEditingRoom(true);
+  };
+
+  const handleSaveRoom = async () => {
+    if (!currentEditRoom || isSavingRoom) return;
+    const errs = {};
+    const roomNo = parseInt(editRoomForm.roomNo, 10);
+    const floor = parseInt(editRoomForm.floor, 10);
+
+    if (!editRoomForm.roomNo || isNaN(roomNo) || roomNo <= 0) {
+      errs.roomNo = 'Valid room number greater than 0 is required.';
+    }
+    if (editRoomForm.floor === '' || isNaN(floor) || floor < 0) {
+      errs.floor = 'Floor number is required (0 for Ground Floor).';
+    }
+    if (!editRoomForm.roomTypeId) {
+      errs.roomTypeId = 'Please select a room type.';
+    }
+
+    if (Object.keys(errs).length > 0) {
+      setEditRoomErrors(errs);
+      return;
+    }
+
+    setIsSavingRoom(true);
+    try {
+      await updateRoom.mutateAsync({
+        id: currentEditRoom.id,
+        roomNo,
+        floor,
+        roomTypeId: Number(editRoomForm.roomTypeId),
+        note: editRoomForm.note.trim() ? editRoomForm.note.trim() : null,
+      });
+      toast(`Room ${roomNo} details updated.`);
+      setIsEditingRoom(false);
+    } catch (e) {
+      const msg = e.message || 'Failed to update room.';
+      if (msg.toLowerCase().includes('already exists')) {
+        setEditRoomErrors({ roomNo: msg });
+      } else {
+        toast(msg);
+      }
+    } finally {
+      setIsSavingRoom(false);
+    }
   };
 
   if (isLoading) return <Screen><LoadingState /></Screen>;
@@ -323,7 +410,10 @@ export default function RoomMasterScreen() {
                             borderWidth: 1.5,
                           },
                         ]}
-                        onPress={() => setEditRoom(r)}
+                        onPress={() => {
+                          setEditRoom(r);
+                          setIsEditingRoom(false);
+                        }}
                       >
                         <Text style={[styles.roomChipText, { color: sc.fg }]}>
                           {r.roomNo}
@@ -394,7 +484,10 @@ export default function RoomMasterScreen() {
                         isMnt && styles.roomChipRepair,
                         isCln && styles.roomChipCleaning,
                       ]}
-                      onPress={() => setEditRoom(r)}
+                      onPress={() => {
+                        setEditRoom(r);
+                        setIsEditingRoom(false);
+                      }}
                     >
                       <Text style={[styles.roomChipText, isMnt && styles.roomChipTextRepair, isCln && styles.roomChipTextCleaning]}>
                         {r.roomNo}
@@ -638,103 +731,216 @@ export default function RoomMasterScreen() {
       )}
 
       {/* MODAL: EDIT INDIVIDUAL ROOM */}
-      {currentEditRoom && (
-        <Sheet compact onClose={() => setEditRoom(null)}>
-          <SheetHeader
-            title={`Room ${currentEditRoom.roomNo}`}
-            subtitle={`${currentEditRoom.roomType?.name || 'Room'} · ${Number(currentEditRoom.floor) === 0 ? 'Ground Floor' : `Floor ${currentEditRoom.floor}`}`}
-            showBack={false}
-            onClose={() => setEditRoom(null)}
-          />
-          <View style={styles.roomDialogBody}>
-            <View style={styles.roomStatusRow}>
-              <Text style={styles.roomStatusLabel}>Current Status:</Text>
-              <View
-                style={[
-                  styles.roomStatusBadge,
-                  {
-                    backgroundColor:
-                      currentEditRoom.status === 'repair' || currentEditRoom.housekeepingStatus === 'repair'
-                        ? colors.dangerBg
-                        : currentEditRoom.status === 'cleaning' || currentEditRoom.housekeepingStatus === 'cleaning'
-                        ? colors.warningBg
-                        : currentEditRoom.status === 'occupied'
-                        ? colors.secondaryLight
-                        : currentEditRoom.status === 'booked'
-                        ? colors.warningBg
-                        : colors.successBg,
-                  },
-                ]}
-              >
-                <Text
-                  style={[
-                    styles.roomStatusBadgeText,
-                    {
-                      color:
-                        currentEditRoom.status === 'repair' || currentEditRoom.housekeepingStatus === 'repair'
-                          ? colors.danger
-                          : currentEditRoom.status === 'cleaning' || currentEditRoom.housekeepingStatus === 'cleaning'
-                          ? colors.warning
-                          : currentEditRoom.status === 'occupied'
-                          ? colors.primary
-                          : currentEditRoom.status === 'booked'
-                          ? colors.warning
-                          : colors.success,
-                    },
-                  ]}
-                >
-                  {currentEditRoom.status === 'repair' || currentEditRoom.housekeepingStatus === 'repair'
-                    ? 'Under Repair'
-                    : currentEditRoom.status === 'cleaning' || currentEditRoom.housekeepingStatus === 'cleaning'
-                    ? 'Cleaning'
-                    : currentEditRoom.status === 'occupied'
-                    ? 'Occupied'
-                    : currentEditRoom.status === 'booked'
-                    ? 'Booked'
-                    : 'Ready (Clean)'}
-                </Text>
-              </View>
-            </View>
+      {currentEditRoom && (() => {
+        const statusDetails = getRoomStatusDetails(currentEditRoom);
+        const isRepair = currentEditRoom.status === 'repair' || currentEditRoom.housekeepingStatus === 'repair';
+        const isCleaning = currentEditRoom.status === 'cleaning' || currentEditRoom.housekeepingStatus === 'cleaning';
+        const isOccupied = currentEditRoom.status === 'occupied';
+        const isBooked = currentEditRoom.status === 'booked' || currentEditRoom.hasPendingBooking;
+        const isCleanAndReady = (currentEditRoom.status === 'free' || !currentEditRoom.status) && (currentEditRoom.isReady || currentEditRoom.housekeepingStatus === 'ok');
 
-            <View style={styles.roomDialogActions}>
-              <Button
-                title={submittingAction === 'repair' ? 'Updating…' : 'Mark Under Repair'}
-                variant="danger"
-                size="md"
-                disabled={Boolean(submittingAction) || currentEditRoom.status === 'repair' || currentEditRoom.housekeepingStatus === 'repair'}
-                loading={submittingAction === 'repair'}
-                onPress={() => handleRoomHousekeeping('repair')}
-              />
-              <Button
-                title={submittingAction === 'ready' ? 'Updating…' : 'Mark Ready (Clean)'}
-                variant="success"
-                size="md"
-                disabled={
-                  Boolean(submittingAction) ||
-                  ((currentEditRoom.status === 'free' || !currentEditRoom.status) && (currentEditRoom.isReady || currentEditRoom.housekeepingStatus === 'ok'))
-                }
-                loading={submittingAction === 'ready'}
-                onPress={() => handleRoomHousekeeping('ready')}
-              />
-              <Button
-                title={deletingRoomId === currentEditRoom.id ? 'Deleting…' : 'Delete Room'}
-                variant="danger"
-                size="md"
-                disabled={Boolean(submittingAction) || deletingRoomId === currentEditRoom.id || deleteRoom.isPending}
-                loading={deletingRoomId === currentEditRoom.id}
-                onPress={() => handleDeleteRoom(currentEditRoom)}
-              />
-              <Button
-                title="Close"
-                variant="outline"
-                size="md"
-                disabled={Boolean(submittingAction)}
-                onPress={() => setEditRoom(null)}
-              />
-            </View>
-          </View>
-        </Sheet>
-      )}
+        const canMarkRepair = !isRepair;
+        const canMarkReady = isCleaning || isRepair || (!isCleanAndReady && !isOccupied && !isBooked);
+        const canDeleteRoom = !isOccupied && !isBooked;
+
+        return (
+          <Sheet bottomSheet onClose={() => setEditRoom(null)} scroll={false}>
+            <SheetHeader
+              title={isEditingRoom ? `Edit Room ${currentEditRoom.roomNo}` : `Room ${currentEditRoom.roomNo}`}
+              subtitle={
+                isEditingRoom
+                  ? 'Update room configuration and details'
+                  : `${currentEditRoom.roomType?.name || 'Room'} · ${Number(currentEditRoom.floor) === 0 ? 'Ground Floor' : `Floor ${currentEditRoom.floor}`}`
+              }
+              showBack={isEditingRoom}
+              onBack={() => setIsEditingRoom(false)}
+              onClose={() => setEditRoom(null)}
+            />
+            <ScrollView
+              style={styles.roomSheetScroll}
+              contentContainerStyle={styles.roomSheetScrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+            >
+              {!isEditingRoom ? (
+                <View style={styles.roomSheetBody}>
+                  {/* Current Status Box */}
+                  <View style={styles.roomStatusCard}>
+                    <View style={styles.roomStatusRow}>
+                      <Text style={styles.roomStatusLabel}>Current Status:</Text>
+                      <View
+                        style={[
+                          styles.roomStatusBadge,
+                          {
+                            backgroundColor: statusDetails.bg,
+                            borderColor: statusDetails.border,
+                          },
+                        ]}
+                      >
+                        <View style={[styles.statusDot, { backgroundColor: statusDetails.color }]} />
+                        <Text style={[styles.roomStatusBadgeText, { color: statusDetails.color }]}>
+                          {statusDetails.label}
+                        </Text>
+                      </View>
+                    </View>
+                    {currentEditRoom.note ? (
+                      <View style={styles.roomNoteBox}>
+                        <Text style={styles.roomNoteLabel}>Note:</Text>
+                        <Text style={styles.roomNoteText}>{currentEditRoom.note}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  {/* Room Info Summary */}
+                  <View style={styles.roomInfoCard}>
+                    <View style={styles.roomInfoRow}>
+                      <Text style={styles.roomInfoLabel}>Room Number</Text>
+                      <Text style={styles.roomInfoValue}>{currentEditRoom.roomNo}</Text>
+                    </View>
+                    <View style={styles.roomInfoRow}>
+                      <Text style={styles.roomInfoLabel}>Room Type</Text>
+                      <Text style={styles.roomInfoValue}>{currentEditRoom.roomType?.name || 'Standard'}</Text>
+                    </View>
+                    <View style={styles.roomInfoRow}>
+                      <Text style={styles.roomInfoLabel}>Floor</Text>
+                      <Text style={styles.roomInfoValue}>
+                        {Number(currentEditRoom.floor) === 0 ? 'Ground Floor' : `Floor ${currentEditRoom.floor}`}
+                      </Text>
+                    </View>
+                    {currentEditRoom.roomType?.rate != null ? (
+                      <View style={[styles.roomInfoRow, { borderBottomWidth: 0 }]}>
+                        <Text style={styles.roomInfoLabel}>Daily Tariff</Text>
+                        <Text style={[styles.roomInfoValue, { fontFamily: fonts.bodyBold }]}>
+                          {inr(currentEditRoom.roomType.rate)} / night
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+
+                  {/* Actions List */}
+                  <View style={styles.roomActionsSection}>
+                    <Text style={styles.actionsSectionTitle}>Room Actions</Text>
+                    <View style={styles.roomActionsList}>
+                      {canMarkRepair && (
+                        <Button
+                          title={submittingAction === 'repair' ? 'Updating…' : 'Mark Under Repair'}
+                          variant="danger"
+                          size="md"
+                          disabled={Boolean(submittingAction)}
+                          loading={submittingAction === 'repair'}
+                          onPress={() => handleRoomHousekeeping('repair')}
+                        />
+                      )}
+                      {canMarkReady && (
+                        <Button
+                          title={submittingAction === 'ready' ? 'Updating…' : 'Mark Ready (Clean)'}
+                          variant="success"
+                          size="md"
+                          disabled={Boolean(submittingAction)}
+                          loading={submittingAction === 'ready'}
+                          onPress={() => handleRoomHousekeeping('ready')}
+                        />
+                      )}
+                      <Button
+                        title="Edit Room"
+                        variant="outline"
+                        size="md"
+                        disabled={Boolean(submittingAction)}
+                        onPress={startEditingRoom}
+                      />
+                      {canDeleteRoom && (
+                        <View style={styles.destructiveActionWrap}>
+                          <Button
+                            title={deletingRoomId === currentEditRoom.id ? 'Deleting…' : 'Delete Room'}
+                            variant="danger"
+                            size="md"
+                            disabled={Boolean(submittingAction) || deletingRoomId === currentEditRoom.id || deleteRoom.isPending}
+                            loading={deletingRoomId === currentEditRoom.id}
+                            onPress={() => handleDeleteRoom(currentEditRoom)}
+                          />
+                        </View>
+                      )}
+                      <Button
+                        title="Close"
+                        variant="outline"
+                        size="md"
+                        disabled={Boolean(submittingAction)}
+                        onPress={() => setEditRoom(null)}
+                      />
+                    </View>
+                  </View>
+                </View>
+              ) : (
+                /* Edit Room Form */
+                <View style={styles.roomSheetBody}>
+                  <FormField label="Room Number *" required error={editRoomErrors.roomNo}>
+                    <Input
+                      keyboardType="numeric"
+                      placeholder="e.g. 101"
+                      value={editRoomForm.roomNo}
+                      onChangeText={(v) => {
+                        setEditRoomForm((p) => ({ ...p, roomNo: v }));
+                        if (editRoomErrors.roomNo) setEditRoomErrors((e) => ({ ...e, roomNo: null }));
+                      }}
+                      error={editRoomErrors.roomNo}
+                    />
+                  </FormField>
+
+                  <FormField label="Floor Number * (0 for Ground Floor)" required error={editRoomErrors.floor}>
+                    <Input
+                      keyboardType="numeric"
+                      placeholder="e.g. 1"
+                      value={editRoomForm.floor}
+                      onChangeText={(v) => {
+                        setEditRoomForm((p) => ({ ...p, floor: v }));
+                        if (editRoomErrors.floor) setEditRoomErrors((e) => ({ ...e, floor: null }));
+                      }}
+                      error={editRoomErrors.floor}
+                    />
+                  </FormField>
+
+                  <FormField label="Assign Room Type *" required error={editRoomErrors.roomTypeId}>
+                    <Segmented
+                      options={(roomTypes || []).map((t) => ({ value: String(t.id), label: t.name }))}
+                      value={editRoomForm.roomTypeId}
+                      onChange={(v) => {
+                        setEditRoomForm((p) => ({ ...p, roomTypeId: v }));
+                        if (editRoomErrors.roomTypeId) setEditRoomErrors((e) => ({ ...e, roomTypeId: null }));
+                      }}
+                      error={Boolean(editRoomErrors.roomTypeId)}
+                    />
+                  </FormField>
+
+                  <FormField label="Room Notes / Features (Optional)">
+                    <Input
+                      placeholder="e.g. Balcony view, near elevator"
+                      value={editRoomForm.note}
+                      onChangeText={(v) => setEditRoomForm((p) => ({ ...p, note: v }))}
+                    />
+                  </FormField>
+
+                  <View style={styles.editFormActions}>
+                    <Button
+                      title={isSavingRoom || updateRoom.isPending ? 'Saving…' : 'Save Room Details'}
+                      variant="primary"
+                      size="lg"
+                      loading={isSavingRoom || updateRoom.isPending}
+                      onPress={handleSaveRoom}
+                    />
+                    <Button
+                      title="Cancel"
+                      variant="outline"
+                      size="lg"
+                      disabled={isSavingRoom || updateRoom.isPending}
+                      onPress={() => setIsEditingRoom(false)}
+                    />
+                  </View>
+                </View>
+              )}
+            </ScrollView>
+          </Sheet>
+        );
+      })()}
     </Screen>
   );
 }
@@ -768,10 +974,123 @@ const styles = StyleSheet.create({
   roomChipSubRepair: { color: colors.danger, fontFamily: fonts.bodyBold },
   roomChipSubCleaning: { color: colors.warning, fontFamily: fonts.bodySemibold },
   body: { padding: 16, gap: 12 },
+  roomSheetScroll: {
+    flexGrow: 0,
+    maxHeight: '100%',
+  },
+  roomSheetScrollContent: {
+    paddingBottom: 28,
+  },
+  roomSheetBody: {
+    paddingHorizontal: 18,
+    paddingTop: 14,
+    gap: 16,
+  },
+  roomStatusCard: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radii.md,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    gap: 8,
+  },
+  roomStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  roomStatusLabel: {
+    fontFamily: fonts.bodySemibold,
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  roomStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radii.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    gap: 6,
+  },
+  statusDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  roomStatusBadgeText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 12.5,
+  },
+  roomNoteBox: {
+    backgroundColor: colors.card,
+    borderRadius: radii.sm,
+    padding: 8,
+    marginTop: 2,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  roomNoteLabel: {
+    fontFamily: fonts.bodySemibold,
+    fontSize: 11,
+    color: colors.textSecondary,
+    marginBottom: 2,
+  },
+  roomNoteText: {
+    fontFamily: fonts.body,
+    fontSize: 12.5,
+    color: colors.heading,
+  },
+  roomInfoCard: {
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radii.md,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+  },
+  roomInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  roomInfoLabel: {
+    fontFamily: fonts.bodyMedium,
+    fontSize: 13,
+    color: colors.textSecondary,
+  },
+  roomInfoValue: {
+    fontFamily: fonts.bodySemibold,
+    fontSize: 13,
+    color: colors.heading,
+  },
+  roomActionsSection: {
+    gap: 10,
+  },
+  actionsSectionTitle: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 12.5,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  roomActionsList: {
+    gap: 10,
+  },
+  destructiveActionWrap: {
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    paddingTop: 10,
+    marginTop: 4,
+  },
+  editFormActions: {
+    gap: 10,
+    marginTop: 8,
+  },
   roomDialogBody: { padding: 18, gap: 14 },
-  roomStatusRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 2, paddingHorizontal: 2 },
-  roomStatusLabel: { fontFamily: fonts.bodySemibold, fontSize: 13, color: colors.textSecondary },
-  roomStatusBadge: { borderRadius: radii.sm, paddingHorizontal: 10, paddingVertical: 4 },
-  roomStatusBadgeText: { fontFamily: fonts.bodyBold, fontSize: 12 },
   roomDialogActions: { gap: 10, marginTop: 4 },
 });

@@ -502,12 +502,14 @@ export default function GuestDetailsScreen({ route, navigation }) {
           </View>
           <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>ID Proof Type</Text>
-            <Text style={styles.fieldVal}>{guest.idProofType || guest.id_proof_type || 'Aadhaar'}</Text>
+            <Text style={guest.idProofType || guest.id_proof_type ? styles.fieldVal : styles.metaSub}>
+              {guest.idProofType || guest.id_proof_type || 'Not Provided'}
+            </Text>
           </View>
           <View style={styles.fieldRow}>
             <Text style={styles.fieldLabel}>ID Proof Number</Text>
-            <Text style={styles.fieldVal}>
-              {guest.id_proof_number || (guest.id_proof_last4 ? `••••${guest.id_proof_last4}` : '—')}
+            <Text style={guest.id_proof_number || guest.id_proof_last4 || guest.idProofMasked ? styles.fieldVal : styles.metaSub}>
+              {guest.id_proof_number || (guest.id_proof_last4 ? `••••${guest.id_proof_last4}` : (guest.idProofMasked || 'Not Provided'))}
             </Text>
           </View>
           {Boolean(guest.isForeign || guest.is_foreign) && (

@@ -241,7 +241,7 @@ class ReservationRepository
              LEFT JOIN stays s ON s.reservation_id = b.id
              LEFT JOIN guests ref_g ON ref_g.id = b.referred_by_guest_id
              WHERE b.hotel_id = :hotel_id AND b.status = 'pending'
-             ORDER BY b.check_in_date, r.room_no"
+             ORDER BY b.created_at DESC, b.id DESC"
         );
         $stmt->execute(['hotel_id' => $hotelId]);
         return $stmt->fetchAll();
@@ -267,7 +267,7 @@ class ReservationRepository
              LEFT JOIN stays s ON s.reservation_id = b.id
              LEFT JOIN guests ref_g ON ref_g.id = b.referred_by_guest_id
              WHERE b.hotel_id = :hotel_id
-             ORDER BY b.check_in_date, r.room_no"
+             ORDER BY b.created_at DESC, b.id DESC"
         );
         $stmt->execute(['hotel_id' => $hotelId]);
         return $stmt->fetchAll();

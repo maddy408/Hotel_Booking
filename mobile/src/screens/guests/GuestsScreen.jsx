@@ -24,21 +24,31 @@ export default function GuestsScreen({ navigation }) {
   );
 
   const filteredGuests = useMemo(() => {
-    return (guests || []).filter((g) => {
+    const list = (guests || []).filter((g) => {
       if (statusFilter !== 'all') {
         const key = g.statusKey || g.status_key || (g.status || '').toLowerCase().replace(/[\s-]/g, '_');
         if (key !== statusFilter) return false;
       }
       if (q.trim()) {
         const term = q.toLowerCase().trim();
+        const roomVal = g.room ?? g.room_no ?? g.roomNo;
         const matches =
           (g.name && g.name.toLowerCase().includes(term)) ||
           (g.phone && g.phone.includes(term)) ||
-          (g.room && String(g.room).includes(term)) ||
+          (roomVal && String(roomVal).includes(term)) ||
           (g.email && g.email.toLowerCase().includes(term));
         if (!matches) return false;
       }
       return true;
+    });
+
+    return [...list].sort((a, b) => {
+      const dateA = a.created_at || a.createdAt || '';
+      const dateB = b.created_at || b.createdAt || '';
+      if (dateA && dateB && dateA !== dateB) {
+        return dateB.localeCompare(dateA);
+      }
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
     });
   }, [guests, statusFilter, q]);
 
@@ -249,7 +259,7 @@ export default function GuestsScreen({ navigation }) {
               <Text style={styles.metaLabel}>Room</Text>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                 <Text style={styles.metaValBold}>
-                  {g.room ? `Room ${g.room}` : '—'}
+                  {(g.room ?? g.room_no ?? g.roomNo) ? `Room ${g.room ?? g.room_no ?? g.roomNo}` : '—'}
                 </Text>
                 {addRooms.length > 0 && (
                   <View style={styles.addRoomBadge}>
@@ -296,14 +306,12 @@ export default function GuestsScreen({ navigation }) {
           )}
 
           {/* ID Proof */}
-          {idProofType && (
-            <View style={[styles.gridItem, { width: '100%' }]}>
-              <Text style={styles.metaLabel}>ID Proof</Text>
-              <Text style={styles.metaVal}>
-                🪪 {idProofType}{idProofLast4 ? ` (••••${idProofLast4})` : ''}
-              </Text>
-            </View>
-          )}
+          <View style={[styles.gridItem, { width: '100%' }]}>
+            <Text style={styles.metaLabel}>ID Proof</Text>
+            <Text style={idProofType ? styles.metaVal : styles.metaValMuted}>
+              {idProofType ? `🪪 ${idProofType}${idProofLast4 ? ` (••••${idProofLast4})` : ''}` : 'Not Provided'}
+            </Text>
+          </View>
 
           {/* Occupants Section */}
           <View style={[styles.gridItem, { width: '100%', marginTop: 2 }]}>

@@ -850,7 +850,7 @@ export default function GuestDetails() {
             </div>
             <div>
               <span style={{ color: 'var(--color-muted)', fontSize: 11.5, display: 'block', marginBottom: 2 }}>ID Proof Type</span>
-              <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>{guest.idProofType || 'Aadhaar'}</span>
+              <span style={{ fontWeight: 600, color: 'var(--color-text-primary)' }}>{guest.idProofType || 'Not Provided'}</span>
             </div>
             <div>
               <span style={{ color: 'var(--color-muted)', fontSize: 11.5, display: 'block', marginBottom: 2 }}>Masked ID Number</span>
@@ -1564,6 +1564,10 @@ export default function GuestDetails() {
           guestId={sheet.id}
           onClose={() => setSheet(null)}
           onSaved={() => refetch()}
+          onDeleted={() => {
+            setSheet(null);
+            navigate('/guests');
+          }}
           onViewBooking={(bookingId) => setSheet({ type: 'booking', id: Number(bookingId) })}
         />
       )}

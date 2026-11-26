@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Pressable, RefreshControl, SectionList, StyleSheet, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import Screen, { ErrorState, LoadingState } from '../../components/ui/Screen.jsx';
 import Button from '../../components/ui/Button.jsx';
 import SearchInput from '../../components/ui/SearchInput.jsx';
@@ -21,6 +22,12 @@ export default function BookingsScreen() {
   const [viewMode, setViewMode] = useState('date'); // 'date' | 'room'
   const [collapsedRooms, setCollapsedRooms] = useState({});
 
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch])
+  );
+
   const today = reservations?.find((s) => s.hotel_today)?.hotel_today || todayIso();
   const tomorrow = addDaysIso(today, 1);
   const allReservations = reservations || [];
@@ -33,7 +40,14 @@ export default function BookingsScreen() {
   };
 
   const filteredReservations = useMemo(() => {
-    const sorted = [...allReservations].sort((a, b) => a.check_in_date.localeCompare(b.check_in_date) || a.room_no - b.room_no);
+    const sorted = [...allReservations].sort((a, b) => {
+      const dateA = a.created_at || a.createdAt || '';
+      const dateB = b.created_at || b.createdAt || '';
+      if (dateA && dateB && dateA !== dateB) {
+        return dateB.localeCompare(dateA);
+      }
+      return (Number(b.id) || 0) - (Number(a.id) || 0);
+    });
     if (!search.trim()) return sorted;
     const q = search.toLowerCase().trim();
     return sorted.filter((s) => (
@@ -287,21 +301,23 @@ export default function BookingsScreen() {
         <Pressable onPress={() => setSheet({ type: 'open', id: s.id })}>
           {/* Card Top Header: Booking #, Room #, and Situation Status Badge */}
           <View style={styles.rowTop}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <View style={styles.headerPrimary}>
               <Text style={styles.bookingCode}>{s.booking_code}</Text>
               <View style={styles.roomTag}>
                 <Text style={styles.roomTagText}>Room {s.room_no}</Text>
               </View>
+            </View>
+
+            <View style={styles.headerBadges}>
               {isOverdueItem && (
                 <View style={styles.overdueBadge}>
                   <Text style={styles.overdueBadgeText}>{daysOverdue > 0 ? `${daysOverdue}d overdue` : 'Overdue'}</Text>
                 </View>
               )}
-            </View>
-
-            {/* Simple English Status Badge */}
-            <View style={[styles.situationBadge, { backgroundColor: situation.bg, borderColor: situation.border }]}>
-              <Text style={[styles.situationBadgeText, { color: situation.color }]}>{situation.text}</Text>
+              {/* Simple English Status Badge */}
+              <View style={[styles.situationBadge, { backgroundColor: situation.bg, borderColor: situation.border }]}>
+                <Text style={[styles.situationBadgeText, { color: situation.color }]}>{situation.text}</Text>
+              </View>
             </View>
           </View>
 
@@ -438,13 +454,35 @@ const styles = StyleSheet.create({
   },
   rowOverdue: { borderLeftWidth: 4, borderLeftColor: '#E11D48', backgroundColor: '#FFFDFC' },
   rowConflict: { borderLeftWidth: 4, borderLeftColor: '#DC2626', backgroundColor: '#FEF2F2' },
-  overdueBadge: { backgroundColor: '#FFE4E6', borderWidth: 1, borderColor: '#FECDD3', borderRadius: radii.xs, paddingHorizontal: 6, paddingVertical: 2 },
+  overdueBadge: { backgroundColor: '#FFE4E6', borderWidth: 1, borderColor: '#FECDD3', borderRadius: radii.xs, paddingHorizontal: 6, paddingVertical: 2, alignSelf: 'flex-start' },
   overdueBadgeText: { fontFamily: fonts.mono, fontSize: 10.5, color: '#9F1239', fontWeight: '700' },
-  rowTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
+  rowTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+    rowGap: 6,
+    columnGap: 8,
+    marginBottom: 6,
+  },
+  headerPrimary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
+  },
+  headerBadges: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    flexShrink: 1,
+    justifyContent: 'flex-end',
+  },
   bookingCode: { fontFamily: fonts.mono, fontSize: 12.5, fontWeight: '700', color: colors.heading },
   roomTag: { backgroundColor: colors.secondaryLight, borderRadius: radii.xs, paddingHorizontal: 7, paddingVertical: 2 },
   roomTagText: { fontFamily: fonts.bodyBold, fontSize: 12, color: colors.primary },
-  situationBadge: { borderWidth: 1, borderRadius: radii.xs, paddingHorizontal: 7, paddingVertical: 2 },
+  situationBadge: { borderWidth: 1, borderRadius: radii.xs, paddingHorizontal: 7, paddingVertical: 2, alignSelf: 'flex-start' },
   situationBadgeText: { fontFamily: fonts.bodyBold, fontSize: 11 },
   guestInfoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
   guestName: { fontFamily: fonts.bodyBold, fontSize: 15.5, color: colors.heading },

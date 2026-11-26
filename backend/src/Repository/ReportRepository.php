@@ -48,6 +48,17 @@ final class ReportRepository
         return (float) $stmt->fetchColumn();
     }
 
+    public function balanceCollectedInRange(int $hotelId, string $from, string $to): float
+    {
+        $stmt = $this->db->prepare(
+            "SELECT COALESCE(SUM(amount), 0) FROM payments
+             WHERE hotel_id = :hotel_id AND type IN ('balance', 'extra')
+               AND DATE(created_at) >= :from AND DATE(created_at) <= :to"
+        );
+        $stmt->execute(['hotel_id' => $hotelId, 'from' => $from, 'to' => $to]);
+        return (float) $stmt->fetchColumn();
+    }
+
     /** @return array{occupied:int, total:int} */
     public function currentOccupancy(int $hotelId): array
     {
@@ -90,7 +101,7 @@ final class ReportRepository
         return $stmt->fetchAll();
     }
 
-    /** @return array{roomAmount:float, gstAmount:float, extrasAmount:float, total:float, invoiceCount:int} */
+    /** @return array{roomAmount:float, gstAmount:float, extrasAmount:float, discountAmount:float, total:float, invoiceCount:int} */
     public function revenueTotals(int $hotelId, string $from, string $to): array
     {
         $stmt = $this->db->prepare(
@@ -98,6 +109,7 @@ final class ReportRepository
                     COALESCE(SUM(CASE WHEN room_amount > discount_amount THEN room_amount - discount_amount ELSE 0 END), 0) AS room_amount,
                     COALESCE(SUM(CASE WHEN total_amount = 0 THEN 0 ELSE (room_gst_amount + extras_gst_amount) END), 0) AS gst_amount,
                     COALESCE(SUM(extras_amount), 0) AS extras_amount,
+                    COALESCE(SUM(discount_amount), 0) AS discount_amount,
                     COALESCE(SUM(total_amount), 0) AS total
              FROM invoices WHERE hotel_id = :hotel_id AND created_at >= :from AND created_at <= :to'
         );
@@ -108,6 +120,7 @@ final class ReportRepository
             'roomAmount' => (float) $row['room_amount'],
             'gstAmount' => (float) $row['gst_amount'],
             'extrasAmount' => (float) $row['extras_amount'],
+            'discountAmount' => (float) ($row['discount_amount'] ?? 0),
             'total' => (float) $row['total'],
         ];
     }

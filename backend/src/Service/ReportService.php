@@ -76,6 +76,7 @@ final class ReportService
             'checkouts' => $checkouts['count'],
             'billedAtCheckout' => $checkouts['total'],
             'advanceTaken' => $this->reports->advanceTakenInRange($hotelId, $from, $to),
+            'balanceCollected' => $this->reports->balanceCollectedInRange($hotelId, $from, $to),
             'occupancy' => $occData,
         ];
     }

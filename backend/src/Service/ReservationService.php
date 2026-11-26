@@ -115,6 +115,19 @@ final class ReservationService
             $taxAmount = $gstCalc['tax_amount'];
             $totalAmount = $gstCalc['total_amount'];
 
+            if ($advanceAmount < 0) {
+                throw ApiException::validation(
+                    ['advanceAmount' => 'Please enter a valid payment amount.'],
+                    'Please enter a valid payment amount.'
+                );
+            }
+            if (round($advanceAmount, 2) > round($totalAmount, 2)) {
+                throw ApiException::validation(
+                    ['advanceAmount' => 'Advance cannot exceed the total payable amount.'],
+                    'Advance cannot exceed the total payable amount.'
+                );
+            }
+
             $id = $this->reservations->create(
                 $hotelId, 'PENDING', $roomId, (int) $guest['id'], $checkIn, $checkOut, $persons, $rate,
                 $advanceAmount, $advanceMethod, $userId, $checkOutTime, $notes,
@@ -255,6 +268,19 @@ final class ReservationService
             $taxAmount = $gstCalc['tax_amount'];
             $totalAmount = $gstCalc['total_amount'];
 
+            if ($advanceAmount < 0) {
+                throw ApiException::validation(
+                    ['advanceAmount' => 'Please enter a valid payment amount.'],
+                    'Please enter a valid payment amount.'
+                );
+            }
+            if (round($advanceAmount, 2) > round($totalAmount, 2)) {
+                throw ApiException::validation(
+                    ['advanceAmount' => 'Advance cannot exceed the total payable amount.'],
+                    'Advance cannot exceed the total payable amount.'
+                );
+            }
+
             $this->reservations->update(
                 $reservationId, $roomId, $checkIn, $checkOut, $persons, $rate,
                 $advanceAmount, $advanceMethod, $checkOutTime, $cleanNotes, $assignedGuestId,
@@ -301,7 +327,21 @@ final class ReservationService
                 throw ApiException::conflict('This booking is no longer pending.');
             }
 
-            $newAdvance = round((float) $existing['advance_amount'] + $amount, 2);
+            $resTotal = (float) ($existing['total_amount'] ?? 0);
+            if ($resTotal <= 0) {
+                $nights = BillingService::nightsBetween($existing['check_in_date'], $existing['check_out_date']);
+                $gstCalc = $this->gst->calculateAccommodation($hotelId, (float) $existing['rate'], $nights);
+                $resTotal = $gstCalc['total_amount'];
+            }
+            $currentAdvance = (float) $this->payments->netAdvanceForReservation($reservationId, $hotelId);
+            $newAdvance = round($currentAdvance + $amount, 2);
+            if (round($newAdvance, 2) > round($resTotal, 2)) {
+                throw ApiException::validation(
+                    ['advanceAmount' => 'Advance cannot exceed the total payable amount.'],
+                    'Advance cannot exceed the total payable amount.'
+                );
+            }
+
             $this->reservations->update(
                 $reservationId,
                 (int) $existing['room_id'],

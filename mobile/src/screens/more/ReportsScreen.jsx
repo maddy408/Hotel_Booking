@@ -9,19 +9,6 @@ import { useToast } from '../../components/ToastContext.jsx';
 import { fd, inr, getPresetDateRange } from '../../lib/format';
 import { colors, fonts, radii } from '../../theme/theme';
 
-function SummaryRow({ items }) {
-  return (
-    <View style={styles.summaryRow}>
-      {items.map(([label, value]) => (
-        <View key={label} style={styles.summaryItem}>
-          <Text style={styles.summaryLabel}>{label}</Text>
-          <Text style={styles.summaryValue}>{value}</Text>
-        </View>
-      ))}
-    </View>
-  );
-}
-
 export default function ReportsScreen() {
   const [filter, setFilter] = useState(() => getPresetDateRange('today'));
   const { data: periodSummary, refetch: refetchSummary, isRefetching: isSummaryRefetching } = useTodayReport(filter.from, filter.to);
@@ -117,10 +104,10 @@ export default function ReportsScreen() {
         />
       }
     >
-      {/* Compact Date Filter Control */}
+      {/* 1. Date Filter Control */}
       <DateFilter value={filter} onChange={setFilter} />
 
-      {/* Card 1: Summary / Period at a glance */}
+      {/* 2. Today at a Glance - Responsive 2-Column Layout */}
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <Text style={styles.cardTitle}>
@@ -128,38 +115,65 @@ export default function ReportsScreen() {
           </Text>
           <Text style={styles.meta}>{dateSubtext}</Text>
         </View>
-        {periodSummary ? (
-          <SummaryRow items={[
-            ['Check-outs', String(periodSummary.checkouts ?? '—')],
-            ['Billed', inr(periodSummary.billedAtCheckout ?? 0)],
-            ['Advance taken', inr(periodSummary.advanceTaken ?? 0)],
-            ['Occupancy', occLabel],
-          ]} />
-        ) : null}
+        <View style={styles.grid2Col}>
+          <View style={styles.glanceItem}>
+            <Text style={styles.glanceLabel}>Check-outs</Text>
+            <Text style={styles.glanceValue}>{periodSummary?.checkouts ?? '—'}</Text>
+          </View>
+          <View style={styles.glanceItem}>
+            <Text style={styles.glanceLabel}>Billed</Text>
+            <Text style={styles.glanceValue}>{inr(periodSummary?.billedAtCheckout ?? 0)}</Text>
+          </View>
+          <View style={styles.glanceItem}>
+            <Text style={styles.glanceLabel}>Advance taken</Text>
+            <Text style={styles.glanceValue}>{inr(periodSummary?.advanceTaken ?? 0)}</Text>
+          </View>
+          <View style={styles.glanceItem}>
+            <Text style={styles.glanceLabel}>Balance collected</Text>
+            <Text style={styles.glanceValue}>{inr(periodSummary?.balanceCollected ?? 0)}</Text>
+          </View>
+          <View style={[styles.glanceItem, styles.glanceItemFull]}>
+            <Text style={styles.glanceLabel}>Occupancy</Text>
+            <Text style={styles.glanceValue}>{occLabel}</Text>
+          </View>
+        </View>
       </View>
 
-      {/* Card 2: Day-end / Period collection */}
+      {/* 3. Money Received - Cash, UPI, Card side by side & Total below */}
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>
+          <Text style={styles.cardTitle}>Money Received</Text>
+          <Text style={styles.meta}>
             {isSingleDay ? `Day-end collection (${fd(filter.from)})` : `Day-end collection (${periodLabel})`}
           </Text>
-          {!isSingleDay ? <Text style={styles.meta}>{dateSubtext}</Text> : null}
         </View>
-        {dayEnd ? (
-          <SummaryRow items={[
-            ['Cash', inr(dayEnd.byMethod?.cash ?? 0)],
-            ['UPI', inr(dayEnd.byMethod?.upi ?? 0)],
-            ['Card', inr(dayEnd.byMethod?.card ?? 0)],
-            ['Total', inr(dayEnd.total ?? 0)],
-          ]} />
-        ) : null}
+        <View style={styles.methodsRow}>
+          <View style={styles.methodBox}>
+            <Text style={styles.methodLabel}>Cash</Text>
+            <Text style={styles.methodValue}>{inr(dayEnd?.byMethod?.cash ?? 0)}</Text>
+          </View>
+          <View style={styles.methodBox}>
+            <Text style={styles.methodLabel}>UPI</Text>
+            <Text style={styles.methodValue}>{inr(dayEnd?.byMethod?.upi ?? 0)}</Text>
+          </View>
+          <View style={styles.methodBox}>
+            <Text style={styles.methodLabel}>Card</Text>
+            <Text style={styles.methodValue}>{inr(dayEnd?.byMethod?.card ?? 0)}</Text>
+          </View>
+        </View>
+        <View style={styles.totalReceivedRow}>
+          <Text style={styles.totalReceivedLabel}>Total Received</Text>
+          <Text style={styles.totalReceivedValue}>{inr(dayEnd?.total ?? 0)}</Text>
+        </View>
       </View>
 
-      {/* Card 3: Revenue & Occupancy Breakdown */}
+      {/* 4. Revenue Summary - Simple Rows with Highlighted Total at Bottom */}
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>Revenue ({periodLabel})</Text>
+          <View>
+            <Text style={styles.cardTitle}>Revenue Summary</Text>
+            <Text style={styles.meta}>{periodLabel}</Text>
+          </View>
           <Button
             title={exporting ? 'Exporting…' : 'Export CSV'}
             variant="outline"
@@ -167,21 +181,38 @@ export default function ReportsScreen() {
             loading={exporting}
             disabled={exporting}
             onPress={exportCsv}
+            style={styles.compactExportBtn}
           />
         </View>
-        {revenue ? (
-          <SummaryRow items={[
-            ['Invoices', String(revenue.totals?.invoiceCount ?? 0)],
-            ['Room revenue', inr(revenue.totals?.roomAmount ?? 0)],
-            ['GST collected', inr(revenue.totals?.gstAmount ?? 0)],
-            ['Total revenue', inr(revenue.totals?.total ?? 0)],
-          ]} />
-        ) : null}
+
+        <View style={styles.revenueRows}>
+          <View style={styles.simpleRow}>
+            <Text style={styles.simpleLabel}>Invoices</Text>
+            <Text style={styles.simpleValue}>{revenue?.totals?.invoiceCount ?? 0}</Text>
+          </View>
+          <View style={styles.simpleRow}>
+            <Text style={styles.simpleLabel}>Room revenue</Text>
+            <Text style={styles.simpleValue}>{inr(revenue?.totals?.roomAmount ?? 0)}</Text>
+          </View>
+          <View style={styles.simpleRow}>
+            <Text style={styles.simpleLabel}>GST collected</Text>
+            <Text style={styles.simpleValue}>{inr(revenue?.totals?.gstAmount ?? 0)}</Text>
+          </View>
+          <View style={[styles.simpleRow, { borderBottomWidth: 0 }]}>
+            <Text style={styles.simpleLabel}>Discount</Text>
+            <Text style={styles.simpleValue}>{inr(revenue?.totals?.discountAmount ?? 0)}</Text>
+          </View>
+        </View>
+
+        <View style={styles.totalRevenueRow}>
+          <Text style={styles.totalRevenueLabel}>Total revenue</Text>
+          <Text style={styles.totalRevenueValue}>{inr(revenue?.totals?.total ?? 0)}</Text>
+        </View>
 
         {/* Daily breakdown of occupancy */}
-        {occupancy?.days?.length ? (
-          <View style={{ marginTop: 14, gap: 4 }}>
-            <Text style={[styles.summaryLabel, { marginBottom: 4, fontFamily: fonts.bodyBold }]}>
+        {occupancy?.days?.length > 1 ? (
+          <View style={styles.occSection}>
+            <Text style={styles.occTitle}>
               Daily Breakdown
             </Text>
             {occupancy.days.map((d) => (
@@ -198,14 +229,192 @@ export default function ReportsScreen() {
 }
 
 const styles = StyleSheet.create({
-  card: { backgroundColor: colors.card, borderRadius: radii.lg, borderWidth: 1, borderColor: colors.cardBorder, padding: 14, marginBottom: 14 },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  cardTitle: { fontFamily: fonts.bodyBold, fontSize: 14.5, color: colors.heading },
-  meta: { fontFamily: fonts.body, fontSize: 12, color: colors.textSecondary },
-  mono: { fontFamily: fonts.mono, fontSize: 12, color: colors.text },
-  summaryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
-  summaryItem: { gap: 2, minWidth: '40%' },
-  summaryLabel: { fontFamily: fonts.body, fontSize: 11.5, color: colors.textSecondary },
-  summaryValue: { fontFamily: fonts.bodyBold, fontSize: 16, color: colors.heading },
-  occRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 2, borderTopWidth: 1, borderTopColor: colors.borderSubtle, paddingTop: 4 },
+  card: {
+    backgroundColor: colors.card,
+    borderRadius: radii.md,
+    borderWidth: 1,
+    borderColor: colors.cardBorder,
+    padding: 12,
+    marginBottom: 10,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  cardTitle: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 14,
+    color: colors.heading,
+  },
+  meta: {
+    fontFamily: fonts.body,
+    fontSize: 11.5,
+    color: colors.textSecondary,
+  },
+  mono: {
+    fontFamily: fonts.mono,
+    fontSize: 12,
+    color: colors.text,
+  },
+
+  /* Today at a Glance: 2-Column Responsive Grid */
+  grid2Col: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  glanceItem: {
+    width: '48.5%',
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radii.sm,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    gap: 2,
+  },
+  glanceItemFull: {
+    width: '100%',
+  },
+  glanceLabel: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  glanceValue: {
+    fontFamily: fonts.mono,
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.heading,
+  },
+
+  /* Money Received: Cash, UPI, Card side-by-side */
+  methodsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 8,
+  },
+  methodBox: {
+    flex: 1,
+    backgroundColor: colors.surfaceSecondary,
+    borderWidth: 1,
+    borderColor: colors.borderSubtle,
+    borderRadius: radii.sm,
+    paddingVertical: 8,
+    paddingHorizontal: 6,
+    alignItems: 'center',
+    gap: 2,
+  },
+  methodLabel: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: colors.textSecondary,
+    textTransform: 'uppercase',
+  },
+  methodValue: {
+    fontFamily: fonts.mono,
+    fontSize: 14,
+    fontWeight: '700',
+    color: colors.heading,
+  },
+  totalReceivedRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.secondaryLight,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radii.sm,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+  },
+  totalReceivedLabel: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 13,
+    color: colors.primaryDark,
+  },
+  totalReceivedValue: {
+    fontFamily: fonts.mono,
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+
+  /* Revenue Summary: Simple rows with bottom highlight */
+  compactExportBtn: {
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+  },
+  revenueRows: {
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
+  simpleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 7,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.borderSubtle,
+  },
+  simpleLabel: {
+    fontFamily: fonts.body,
+    fontSize: 12.5,
+    color: colors.textSecondary,
+  },
+  simpleValue: {
+    fontFamily: fonts.mono,
+    fontSize: 13.5,
+    fontWeight: '600',
+    color: colors.heading,
+  },
+  totalRevenueRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.secondaryLight,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    borderRadius: radii.sm,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    marginTop: 8,
+  },
+  totalRevenueLabel: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 13,
+    color: colors.primaryDark,
+  },
+  totalRevenueValue: {
+    fontFamily: fonts.mono,
+    fontSize: 16,
+    fontWeight: '800',
+    color: colors.primary,
+  },
+
+  /* Occupancy daily breakdown */
+  occSection: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+    gap: 4,
+  },
+  occTitle: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 11.5,
+    color: colors.textSecondary,
+    marginBottom: 4,
+    textTransform: 'uppercase',
+  },
+  occRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 3,
+    borderTopWidth: 1,
+    borderTopColor: colors.borderSubtle,
+  },
 });

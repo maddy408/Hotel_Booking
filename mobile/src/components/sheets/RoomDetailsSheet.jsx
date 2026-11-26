@@ -173,7 +173,7 @@ export default function RoomDetailsSheet({ room, onClose, onViewStay, onViewInvo
           <Card title="Guest Details">
             <Field label="Guest Name" value={stay.guest_name} bold />
             <Field label="Mobile Number" value={stay.guest_phone} />
-            <Field label="ID Proof" value={`${stay.id_proof_type || 'Aadhaar'}${stay.id_proof_last4 ? ` ••••${stay.id_proof_last4}` : ''}`} />
+            <Field label="ID Proof" value={stay.id_proof_type ? `${stay.id_proof_type}${stay.id_proof_last4 ? ` ••••${stay.id_proof_last4}` : ''}` : 'Not Provided'} />
             <Field label="Actual Persons Count" value={personsDisplay} bold color={colors.primary} />
           </Card>
 

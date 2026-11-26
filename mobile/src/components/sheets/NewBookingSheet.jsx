@@ -283,8 +283,13 @@ export default function NewBookingSheet({ editReservation, presetGuest, preSelec
         errs.rate = 'Daily rate is required.';
       }
 
-      if (advance !== '' && (isNaN(Number(advance)) || Number(advance) < 0)) {
-        errs.advance = 'Please enter a valid payment amount.';
+      if (advance !== '') {
+        const advNum = Number(advance);
+        if (isNaN(advNum) || advNum < 0) {
+          errs.advance = 'Please enter a valid payment amount.';
+        } else if (advNum > total) {
+          errs.advance = 'Advance cannot exceed the total payable amount.';
+        }
       }
 
       return errs;

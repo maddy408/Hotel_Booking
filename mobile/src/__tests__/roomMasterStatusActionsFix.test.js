@@ -46,13 +46,13 @@ describe('Room Master Status Actions & Popup Layout Verification', () => {
     );
   });
 
-  it('2. RoomMasterScreen keeps individual room edit dialog compact with proper positioning and dismissibility', () => {
+  it('2. RoomMasterScreen presents individual room edit dialog as bottomSheet with proper positioning and dismissibility', () => {
     const content = fs.readFileSync(roomMasterPath, 'utf8');
 
-    // editRoom must pass compact prop
+    // editRoom must pass bottomSheet or compact prop
     assert.ok(
-      /<Sheet\s+compact\s+onClose=\{\(\)\s*=>\s*setEditRoom\(null\)\}>/.test(content),
-      'RoomMasterScreen editRoom must pass compact prop to Sheet'
+      /<Sheet\s+(bottomSheet|compact)[^>]*onClose=\{\(\)\s*=>\s*setEditRoom\(null\)\}[^>]*>/.test(content),
+      'RoomMasterScreen editRoom must pass bottomSheet or compact prop to Sheet'
     );
 
     // Must include SheetHeader with title and Close button
@@ -135,6 +135,84 @@ describe('Room Master Status Actions & Popup Layout Verification', () => {
     assert.ok(
       content.includes('showBack'),
       'SheetHeader must support showBack prop'
+    );
+  });
+
+  it('8. RoomMasterScreen implements full bottom sheet layout with sticky header, status colours, and vertical actions', () => {
+    const content = fs.readFileSync(roomMasterPath, 'utf8');
+
+    // Bottom sheet with scroll container
+    assert.ok(
+      content.includes('bottomSheet') && content.includes('roomSheetScroll'),
+      'RoomMasterScreen must use bottomSheet mode and scrollable body'
+    );
+
+    // Header displays room number, room type, floor number, and close button
+    assert.ok(
+      content.includes('title={isEditingRoom ? `Edit Room ${currentEditRoom.roomNo}` : `Room ${currentEditRoom.roomNo}`}') ||
+        content.includes('Room ${currentEditRoom.roomNo}'),
+      'Header must display Room number'
+    );
+    assert.ok(
+      content.includes('currentEditRoom.roomType') && content.includes('currentEditRoom.floor'),
+      'Header must display Room type and Floor number'
+    );
+
+    // Current Status with status colours and dot
+    assert.ok(
+      content.includes('Current Status') && content.includes('statusDot') && content.includes('getRoomStatusDetails'),
+      'RoomMasterScreen must display current status with status colors and indicator'
+    );
+
+    // Vertically arranged room actions
+    assert.ok(
+      content.includes('Mark Under Repair'),
+      'RoomMasterScreen must offer Mark Under Repair action'
+    );
+    assert.ok(
+      content.includes('Mark Ready (Clean)'),
+      'RoomMasterScreen must offer Mark Ready (Clean) action'
+    );
+    assert.ok(
+      content.includes('Edit Room'),
+      'RoomMasterScreen must offer Edit Room action'
+    );
+    assert.ok(
+      content.includes('Delete Room'),
+      'RoomMasterScreen must offer Delete Room action'
+    );
+
+    // Visually separated destructive action
+    assert.ok(
+      content.includes('destructiveActionWrap'),
+      'Delete Room must be visually separated in destructiveActionWrap'
+    );
+
+    // Edit Room form with updateRoom mutation
+    assert.ok(
+      content.includes('updateRoom.mutateAsync') && content.includes('startEditingRoom') && content.includes('handleSaveRoom'),
+      'RoomMasterScreen must implement Edit Room form with updateRoom mutation'
+    );
+  });
+
+  it('9. Sheet.jsx supports bottomSheet presentation with slide animation, safe areas, and rounded top corners', () => {
+    const content = fs.readFileSync(sheetPath, 'utf8');
+
+    assert.ok(
+      content.includes('bottomSheetWrap') && content.includes('bottomSheetCard'),
+      'Sheet.jsx must support bottomSheetWrap and bottomSheetCard'
+    );
+    assert.ok(
+      content.includes('borderTopLeftRadius') && content.includes('borderTopRightRadius'),
+      'Sheet.jsx bottomSheetCard must have rounded top corners'
+    );
+    assert.ok(
+      content.includes("edges={['bottom', 'left', 'right']}"),
+      'Sheet.jsx bottomSheet must respect bottom safe areas and navigation bar insets'
+    );
+    assert.ok(
+      content.includes('handleBar'),
+      'Sheet.jsx bottomSheetCard must render handle bar indicator'
     );
   });
 });

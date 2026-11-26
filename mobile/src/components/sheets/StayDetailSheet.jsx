@@ -200,7 +200,7 @@ export default function StayDetailSheet({ stayId, onClose, onCheckout, onEarlyCh
           {stay.city ? <View style={styles.infoRow}><Text style={styles.label}>City</Text><Text style={styles.value}>{stay.city}</Text></View> : null}
           <View style={styles.infoRow}>
             <Text style={styles.label}>ID Proof</Text>
-            <Text style={styles.value}>{stay.id_proof_type || 'Aadhaar'}{stay.id_proof_last4 ? ` ••••${stay.id_proof_last4}` : ''}</Text>
+            <Text style={styles.value}>{stay.id_proof_type ? `${stay.id_proof_type}${stay.id_proof_last4 ? ` ••••${stay.id_proof_last4}` : ''}` : 'Not Provided'}</Text>
           </View>
         </View>
 
