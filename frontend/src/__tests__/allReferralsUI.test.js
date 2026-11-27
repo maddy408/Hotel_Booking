@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { formatActualCheckIn, formatDateTime, fd, isCheckedIn } from '../lib/format.js';
 
 describe('All Referrals Register UI & State Rules', () => {
   // Test 1: Summary Calculation from Database Records
@@ -379,5 +380,94 @@ describe('All Referrals Register UI & State Rules', () => {
     assert.equal(filterByType(list, 'all').length, 4);
     assert.equal(filterByType(list, 'existing_member').length, 2);
     assert.equal(filterByType(list, 'other').length, 2);
+  });
+
+  // Test 10: Actual Check-In formatting in Referrals Register
+  it('10. formats actual_check_in safely without "Invalid Date" for pending, future, checked-in, and checked-out reservations', () => {
+    // 1. Pending reservation (not checked in yet)
+    const pendingBooking = {
+      reservation_id: 101,
+      scheduled_check_in: '2026-11-27',
+      actual_check_in: null,
+      status: 'Upcoming',
+      status_code: 'upcoming',
+    };
+    assert.equal(formatActualCheckIn(pendingBooking.actual_check_in), 'Not checked in');
+    assert.equal(isCheckedIn(pendingBooking.actual_check_in), false);
+
+    // 2. Future reservation (scheduled in the future, guest has not checked in)
+    const futureBooking = {
+      reservation_id: 102,
+      scheduled_check_in: '2026-12-15',
+      actual_check_in: null,
+      status: 'Confirmed',
+      status_code: 'confirmed',
+    };
+    assert.equal(formatActualCheckIn(futureBooking.actual_check_in), 'Not checked in');
+    assert.equal(isCheckedIn(futureBooking.actual_check_in), false);
+
+    // 3. Checked-in reservation (In-House with standard MySQL datetime)
+    const checkedInBooking = {
+      reservation_id: 103,
+      scheduled_check_in: '2026-11-20',
+      actual_check_in: '2026-11-20 14:30:00',
+      status: 'In-House',
+      status_code: 'in_house',
+    };
+    assert.equal(formatActualCheckIn(checkedInBooking.actual_check_in), '20 Nov, 2:30 PM');
+    assert.equal(isCheckedIn(checkedInBooking.actual_check_in), true);
+
+    // 4. Checked-out reservation (historical stay with check-in and check-out)
+    const checkedOutBooking = {
+      reservation_id: 104,
+      scheduled_check_in: '2026-11-10',
+      actual_check_in: '2026-11-10 10:15:00',
+      actual_check_out: '2026-11-12 11:00:00',
+      status: 'Checked Out',
+      status_code: 'checked_out',
+    };
+    assert.equal(formatActualCheckIn(checkedOutBooking.actual_check_in), '10 Nov, 10:15 AM');
+    assert.equal(formatDateTime(checkedOutBooking.actual_check_out), '12 Nov, 11:00 AM');
+    assert.equal(isCheckedIn(checkedOutBooking.actual_check_in), true);
+
+    // 5. Does NOT use scheduled check-in date as actual check-in date
+    const unscheduledBooking = {
+      scheduled_check_in: '2026-11-28',
+      actual_check_in: null,
+    };
+    // If someone incorrectly used scheduled_check_in, it would be '28 Nov'
+    assert.notEqual(formatActualCheckIn(unscheduledBooking.actual_check_in), fd(unscheduledBooking.scheduled_check_in));
+    assert.equal(formatActualCheckIn(unscheduledBooking.actual_check_in), 'Not checked in');
+
+    // 6. Date-only actual check-in format (e.g. YYYY-MM-DD)
+    assert.equal(formatActualCheckIn('2026-11-17'), '17 Nov');
+
+    // 7. ISO format with 'T' and 'Z'
+    assert.equal(formatActualCheckIn('2026-11-17T10:48:04Z'), '17 Nov, 10:48 AM');
+  });
+
+  // Test 11: Safe handling of null, undefined, empty, and invalid date values
+  it('11. displays "Not checked in" instead of "Invalid Date" for null, undefined, empty, and invalid values', () => {
+    const invalidInputs = [
+      null,
+      undefined,
+      '',
+      '   ',
+      'null',
+      'undefined',
+      'Invalid Date',
+      '0000-00-00',
+      '0000-00-00 00:00:00',
+      'not-a-valid-date',
+      '2026-99-99',
+    ];
+
+    for (const input of invalidInputs) {
+      const result = formatActualCheckIn(input);
+      assert.equal(result, 'Not checked in', `Input ${JSON.stringify(input)} should return "Not checked in" but returned "${result}"`);
+      assert.equal(isCheckedIn(input), false);
+      assert.notEqual(result, 'Invalid Date');
+      assert.equal(result.includes('Invalid Date'), false);
+    }
   });
 });

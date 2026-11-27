@@ -1,5 +1,5 @@
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
-import { DrawerContentScrollView } from '@react-navigation/drawer';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../auth/AuthContext.jsx';
 import {
   RoomsIcon,
@@ -18,6 +18,7 @@ import { colors, fonts, radii } from '../theme/theme';
 
 export default function CustomDrawerContent(props) {
   const { state, navigation } = props;
+  const insets = useSafeAreaInsets();
   const { user, logout } = useAuth();
   const isAdmin = user?.role === 'admin';
   const isAdminOrManager = ['admin', 'manager'].includes(user?.role);
@@ -47,21 +48,27 @@ export default function CustomDrawerContent(props) {
 
   return (
     <View style={styles.container}>
-      <DrawerContentScrollView {...props} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
-        {/* Header Profile Card */}
-        <View style={styles.header}>
+      {/* Header Profile Card - respects top safe area */}
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 16) + 8 }]}>
+        <View style={styles.headerTop}>
           <View style={styles.crestWrap}>
-            <CrestIcon color="#FFFFFF" size={26} />
+            <CrestIcon color="#FFFFFF" size={24} />
           </View>
-          <Text style={styles.hotelTitle}>KKK Lodge</Text>
-          <View style={styles.userInfoWrap}>
-            <Text style={styles.userName}>{user?.name || 'Staff'}</Text>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{(user?.role_name || user?.role || 'User').toUpperCase()}</Text>
-            </View>
+          <View style={styles.hotelTitleWrap}>
+            <Text style={styles.hotelTitle}>KKK Lodge</Text>
+            <Text style={styles.hotelSubtitle}>Front Desk System</Text>
           </View>
         </View>
+        <View style={styles.userInfoWrap}>
+          <Text style={styles.userName}>{user?.name || 'Staff'}</Text>
+          <View style={styles.badge}>
+            <Text style={styles.badgeText}>{(user?.role_name || user?.role || 'User').toUpperCase()}</Text>
+          </View>
+        </View>
+      </View>
 
+      {/* Non-scrollable flexbox body: keyboardShouldPersistTaps="handled" */}
+      <View style={styles.body}>
         {/* Main Navigation */}
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>MAIN NAVIGATION</Text>
@@ -79,7 +86,7 @@ export default function CustomDrawerContent(props) {
                   });
                 }}
               >
-                <Icon color={isActive ? colors.primary : colors.text} size={20} />
+                <Icon color={isActive ? colors.primary : colors.text} size={19} />
                 <Text style={[styles.menuLabel, isActive ? styles.menuLabelActive : null]}>
                   {label}
                 </Text>
@@ -104,16 +111,16 @@ export default function CustomDrawerContent(props) {
                   });
                 }}
               >
-                <Icon color={colors.text} size={20} />
+                <Icon color={colors.text} size={19} />
                 <Text style={styles.menuLabel}>{label}</Text>
               </Pressable>
             ))}
           </View>
         )}
-      </DrawerContentScrollView>
+      </View>
 
-      {/* Logout Footer */}
-      <View style={styles.footer}>
+      {/* Logout Footer - anchored at bottom of available sidebar area, fully visible above Android system navigation */}
+      <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 12) + 4 }]}>
         <Pressable style={styles.logoutBtn} onPress={confirmLogout}>
           <LogoutIcon color={colors.danger} size={18} />
           <Text style={styles.logoutText}>Log out</Text>
@@ -127,73 +134,86 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.surface,
-  },
-  scrollContent: {
-    paddingTop: 0,
+    justifyContent: 'space-between',
   },
   header: {
     backgroundColor: colors.header,
-    paddingTop: 48,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    paddingBottom: 12,
+    paddingHorizontal: 16,
+    marginBottom: 6,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 8,
   },
   crestWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: 'rgba(255, 255, 255, 0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+  },
+  hotelTitleWrap: {
+    flex: 1,
   },
   hotelTitle: {
     fontFamily: fonts.displayBold,
-    fontSize: 18,
+    fontSize: 17,
     color: '#FFFFFF',
     letterSpacing: 0.3,
+  },
+  hotelSubtitle: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    color: 'rgba(255, 255, 255, 0.7)',
   },
   userInfoWrap: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginTop: 6,
   },
   userName: {
     fontFamily: fonts.bodySemibold,
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.9)',
+    fontSize: 13.5,
+    color: 'rgba(255, 255, 255, 0.95)',
   },
   badge: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     paddingHorizontal: 7,
-    paddingVertical: 2,
+    paddingVertical: 1.5,
     borderRadius: radii.sm,
   },
   badgeText: {
     fontFamily: fonts.monoMedium,
-    fontSize: 10,
+    fontSize: 9.5,
     color: '#FFFFFF',
     fontWeight: '700',
   },
+  body: {
+    flex: 1,
+    justifyContent: 'flex-start',
+  },
   section: {
-    paddingHorizontal: 12,
-    marginBottom: 16,
+    paddingHorizontal: 10,
+    marginBottom: 6,
   },
   sectionHeader: {
     fontFamily: fonts.monoMedium,
-    fontSize: 10.5,
+    fontSize: 10,
     color: colors.textSecondary,
-    marginBottom: 8,
+    marginBottom: 4,
     paddingHorizontal: 8,
     letterSpacing: 0.5,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
-    paddingVertical: 11,
-    paddingHorizontal: 12,
+    gap: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderRadius: radii.md,
     marginBottom: 2,
   },
@@ -202,7 +222,7 @@ const styles = StyleSheet.create({
   },
   menuLabel: {
     fontFamily: fonts.bodyMedium,
-    fontSize: 14.5,
+    fontSize: 13.5,
     color: colors.text,
   },
   menuLabelActive: {
@@ -211,7 +231,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   footer: {
-    padding: 16,
+    paddingHorizontal: 14,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: colors.border,
     backgroundColor: colors.surface,
@@ -219,7 +240,8 @@ const styles = StyleSheet.create({
   logoutBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    justifyContent: 'center',
+    gap: 10,
     paddingVertical: 10,
     paddingHorizontal: 12,
     borderRadius: radii.md,
@@ -227,7 +249,7 @@ const styles = StyleSheet.create({
   },
   logoutText: {
     fontFamily: fonts.bodySemibold,
-    fontSize: 14,
+    fontSize: 13.5,
     color: colors.danger,
     fontWeight: '600',
   },

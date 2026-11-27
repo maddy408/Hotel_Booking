@@ -2484,7 +2484,7 @@ input:focus, select:focus, textarea:focus {
 
 @media (max-width: 900px) {
   .main-content-wrap {
-    padding-bottom: calc(72px + env(safe-area-inset-bottom, 0px) + 16px);
+    padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
   }
 }
 
@@ -2574,7 +2574,7 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 4px 0 24px rgba(0, 0, 0, 0.25);
   transform: translateX(-100%);
   transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-  padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px);
+  padding: env(safe-area-inset-top, 0px) 0 0;
 }
 
 .mobile-drawer.open {
@@ -2585,7 +2585,7 @@ input:focus, select:focus, textarea:focus {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 16px 18px;
+  padding: 12px 16px;
   background: var(--color-primary);
   color: #FFFFFF;
 }
@@ -2635,19 +2635,19 @@ input:focus, select:focus, textarea:focus {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 18px;
+  padding: 10px 16px;
   background: var(--color-lavender-light);
   border-bottom: 1px solid var(--color-card-border);
 }
 
 .drawer-avatar {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   background: var(--color-primary);
   color: #FFFFFF;
   font-weight: 700;
-  font-size: 18px;
+  font-size: 17px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2661,12 +2661,12 @@ input:focus, select:focus, textarea:focus {
 }
 
 .drawer-user-meta strong {
-  font-size: 15px;
+  font-size: 14.5px;
   color: var(--color-heading);
 }
 
 .drawer-badge {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--color-primary);
   text-transform: uppercase;
@@ -2675,31 +2675,31 @@ input:focus, select:focus, textarea:focus {
 
 .drawer-nav {
   flex: 1;
-  overflow-y: auto;
-  padding: 12px 10px;
+  overflow: hidden;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .drawer-section-title {
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-muted);
-  padding: 8px 12px 4px;
+  padding: 6px 12px 2px;
 }
 
 .drawer-item {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 12px 14px;
+  gap: 12px;
+  padding: 8px 12px;
   border-radius: var(--radius-lg);
   color: var(--color-text);
   text-decoration: none;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   transition: all 0.15s ease;
 }
@@ -2731,7 +2731,8 @@ input:focus, select:focus, textarea:focus {
 }
 
 .drawer-footer {
-  padding: 14px 18px;
+  margin-top: auto;
+  padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid var(--color-card-border);
   background: var(--color-surface);
 }
@@ -2742,11 +2743,11 @@ input:focus, select:focus, textarea:focus {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 12px;
+  padding: 10px;
   border-radius: var(--radius-lg);
   background: #FEE2E2;
   color: #DC2626;
-  font-size: 14.5px;
+  font-size: 14px;
   font-weight: 700;
   cursor: pointer;
   transition: background 0.15s ease;

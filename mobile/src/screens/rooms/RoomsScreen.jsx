@@ -230,7 +230,7 @@ export default function RoomsScreen({ navigation }) {
 
   if (isLoading) {
     return (
-      <Screen>
+      <Screen edges={['left', 'right']}>
         <View style={{ alignItems: 'center', paddingVertical: 40 }}>
           <ActivityIndicator color={colors.primary} size="large" />
         </View>
@@ -239,14 +239,14 @@ export default function RoomsScreen({ navigation }) {
   }
   if (isError) {
     return (
-      <Screen>
+      <Screen edges={['left', 'right']}>
         <ErrorState message={error?.message} onRetry={refetch} />
       </Screen>
     );
   }
 
   return (
-    <Screen onRefresh={refetch} refreshing={isRefetching}>
+    <Screen onRefresh={refetch} refreshing={isRefetching} edges={['left', 'right']}>
       <View style={styles.actionBar}>
         <Button title="+ Direct Check-in" variant="success" size="sm" onPress={() => setSheet({ type: 'direct' })} style={{ flex: 1 }} />
         <Button title="+ Pre Booking" variant="primary" size="sm" onPress={() => setSheet({ type: 'newBooking' })} style={{ flex: 1 }} />

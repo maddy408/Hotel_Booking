@@ -5,7 +5,7 @@ import SearchInput from '../../components/ui/SearchInput.jsx';
 import Button from '../../components/ui/Button.jsx';
 import BookingDetailSheet from '../../components/sheets/BookingDetailSheet.jsx';
 import { useAllReferrals } from '../../api/guests';
-import { fd, inr } from '../../lib/format';
+import { fd, formatActualCheckIn, formatDateTime, inr } from '../../lib/format';
 import { colors, fonts, radii } from '../../theme/theme';
 
 export default function AllReferralsScreen({ navigation }) {
@@ -281,20 +281,25 @@ export default function AllReferralsScreen({ navigation }) {
                 </Text>
               </View>
 
-              {item.actual_check_in ? (
-                <View style={styles.gridItem}>
-                  <Text style={styles.metaLabel}>Actual Check-in</Text>
-                  <Text style={[styles.metaVal, { color: colors.success, fontFamily: fonts.bodyBold }]}>
-                    {fd(item.actual_check_in)}
-                  </Text>
-                </View>
-              ) : null}
+              <View style={styles.gridItem}>
+                <Text style={styles.metaLabel}>Actual Check-in</Text>
+                <Text
+                  style={[
+                    styles.metaVal,
+                    formatActualCheckIn(item.actual_check_in) !== 'Not checked in'
+                      ? { color: colors.success, fontFamily: fonts.bodyBold }
+                      : { color: colors.textSecondary },
+                  ]}
+                >
+                  {formatActualCheckIn(item.actual_check_in)}
+                </Text>
+              </View>
 
-              {item.actual_check_out ? (
+              {item.actual_check_out && formatDateTime(item.actual_check_out) !== '—' ? (
                 <View style={styles.gridItem}>
                   <Text style={styles.metaLabel}>Actual Check-out</Text>
                   <Text style={styles.metaVal}>
-                    {fd(item.actual_check_out)}
+                    {formatDateTime(item.actual_check_out)}
                   </Text>
                 </View>
               ) : null}

@@ -74,18 +74,106 @@ export function nightsBetween(a, b) {
 
 export function fd(iso) {
   if (!iso) return '';
-  return new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  const s = String(iso).trim();
+  if (
+    !s ||
+    s.toLowerCase() === 'null' ||
+    s.toLowerCase() === 'undefined' ||
+    s.toLowerCase() === 'invalid date' ||
+    s.startsWith('0000-00-00')
+  ) {
+    return '';
+  }
+  const datePart = s.includes(' ') ? s.split(' ')[0] : (s.includes('T') ? s.split('T')[0] : s);
+  const d = new Date(`${datePart}T00:00:00`);
+  if (isNaN(d.getTime())) return '';
+  const formatted = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  return formatted === 'Invalid Date' ? '' : formatted;
 }
 
 export function fdWithYear(iso) {
   if (!iso) return '';
-  const d = new Date(iso.includes('T') ? iso : `${iso}T00:00:00`);
-  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  const s = String(iso).trim();
+  if (
+    !s ||
+    s.toLowerCase() === 'null' ||
+    s.toLowerCase() === 'undefined' ||
+    s.toLowerCase() === 'invalid date' ||
+    s.startsWith('0000-00-00')
+  ) {
+    return '';
+  }
+  const datePart = s.includes(' ') ? s.split(' ')[0] : (s.includes('T') ? s.split('T')[0] : s);
+  const d = new Date(`${datePart}T00:00:00`);
+  if (isNaN(d.getTime())) return '';
+  const formatted = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  return formatted === 'Invalid Date' ? '' : formatted;
 }
 
 export function fdLong(iso) {
   if (!iso) return '';
-  return new Date(`${iso}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const s = String(iso).trim();
+  if (
+    !s ||
+    s.toLowerCase() === 'null' ||
+    s.toLowerCase() === 'undefined' ||
+    s.toLowerCase() === 'invalid date' ||
+    s.startsWith('0000-00-00')
+  ) {
+    return '';
+  }
+  const datePart = s.includes(' ') ? s.split(' ')[0] : (s.includes('T') ? s.split('T')[0] : s);
+  const d = new Date(`${datePart}T00:00:00`);
+  if (isNaN(d.getTime())) return '';
+  const formatted = d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return formatted === 'Invalid Date' ? '' : formatted;
+}
+
+export function formatDateTime(str, fallback = '—') {
+  if (!str) return fallback;
+  const s = String(str).trim();
+  if (
+    !s ||
+    s.toLowerCase() === 'null' ||
+    s.toLowerCase() === 'undefined' ||
+    s.toLowerCase() === 'invalid date' ||
+    s.startsWith('0000-00-00')
+  ) {
+    return fallback;
+  }
+  const [datePart, rawTime] = s.includes('T') ? s.split('T') : s.split(' ');
+  const d = new Date(`${datePart}T00:00:00`);
+  if (isNaN(d.getTime())) {
+    return fallback;
+  }
+  const dateFormatted = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  if (!dateFormatted || dateFormatted === 'Invalid Date') {
+    return fallback;
+  }
+  if (!rawTime) {
+    return dateFormatted;
+  }
+  const timePart = rawTime.replace('Z', '').split('.')[0];
+  const [hStr, mStr] = timePart.split(':');
+  if (hStr === undefined || mStr === undefined) {
+    return dateFormatted;
+  }
+  const hour = Number(hStr);
+  if (isNaN(hour)) {
+    return dateFormatted;
+  }
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const twelveHour = hour % 12 === 0 ? 12 : hour % 12;
+  return `${dateFormatted}, ${twelveHour}:${mStr} ${period}`;
+}
+
+/** Formats actual check-in date/time for display. Returns 'Not checked in' if null/undefined/empty/invalid. */
+export function formatActualCheckIn(val) {
+  return formatDateTime(val, 'Not checked in');
+}
+
+export function isCheckedIn(val) {
+  return formatActualCheckIn(val) !== 'Not checked in';
 }
 
 export function inr(n) {

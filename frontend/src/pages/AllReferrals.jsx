@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAllReferrals } from '../api/guests';
 import BookingDetailSheet from '../components/sheets/BookingDetailSheet.jsx';
 import StayDetailSheet from '../components/sheets/StayDetailSheet.jsx';
-import { fd } from '../lib/format';
+import { fd, formatActualCheckIn, formatDateTime } from '../lib/format';
 
 export default function AllReferrals() {
   const navigate = useNavigate();
@@ -131,17 +131,6 @@ export default function AllReferrals() {
     dateFrom !== '' ||
     dateTo !== '';
 
-  const formatDateTime = (str) => {
-    if (!str) return '—';
-    const [datePart, timePart] = str.split(' ');
-    const dateFormatted = fd(datePart);
-    if (!timePart) return dateFormatted;
-    const [h, m] = timePart.split(':');
-    const hour = Number(h);
-    const period = hour >= 12 ? 'PM' : 'AM';
-    const twelveHour = hour % 12 === 0 ? 12 : hour % 12;
-    return `${dateFormatted}, ${twelveHour}:${m} ${period}`;
-  };
 
   const getStatusBadge = (item) => {
     const code = item.status_code;
@@ -710,18 +699,18 @@ export default function AllReferrals() {
 
                     {/* Actual Check-In */}
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      {item.actual_check_in ? (
+                      {formatActualCheckIn(item.actual_check_in) !== 'Not checked in' ? (
                         <span style={{ color: 'var(--color-success-text, #166534)', fontWeight: 500 }}>
-                          {formatDateTime(item.actual_check_in)}
+                          {formatActualCheckIn(item.actual_check_in)}
                         </span>
                       ) : (
-                        <span className="muted">—</span>
+                        <span className="muted">Not checked in</span>
                       )}
                     </td>
 
                     {/* Actual Check-Out */}
                     <td style={{ whiteSpace: 'nowrap' }}>
-                      {item.actual_check_out ? (
+                      {item.actual_check_out && formatDateTime(item.actual_check_out) !== '—' ? (
                         <span style={{ color: 'var(--color-primary, #70265F)', fontWeight: 500 }}>
                           {formatDateTime(item.actual_check_out)}
                         </span>

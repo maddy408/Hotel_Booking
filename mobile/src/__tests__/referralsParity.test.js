@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { formatActualCheckIn, formatDateTime, fd, isCheckedIn } from '../lib/format.js';
 
 describe('Mobile All Referrals Screen Parity', () => {
   const mockReferralApiResponse = {
@@ -171,5 +172,57 @@ describe('Mobile All Referrals Screen Parity', () => {
     const cancelled = filterByStatus(mockReferralApiResponse.items, 'cancelled');
     assert.equal(cancelled.length, 1);
     assert.equal(cancelled[0].id, 4);
+  });
+
+  it('5. formats actual_check_in safely for pending, future, checked-in, and checked-out reservations', () => {
+    const items = mockReferralApiResponse.items;
+
+    // Item 1: Upcoming reservation -> actual_check_in is null -> "Not checked in"
+    assert.equal(items[0].status, 'upcoming');
+    assert.equal(items[0].actual_check_in, null);
+    assert.equal(formatActualCheckIn(items[0].actual_check_in), 'Not checked in');
+    assert.equal(isCheckedIn(items[0].actual_check_in), false);
+    // Scheduled check-in must NOT be used as actual check-in
+    assert.notEqual(formatActualCheckIn(items[0].actual_check_in), fd(items[0].check_in));
+
+    // Item 2: Checked-out reservation -> actual_check_in is '2026-11-10 14:15:00' -> '10 Nov, 2:15 PM'
+    assert.equal(items[1].status, 'checked_out');
+    assert.equal(formatActualCheckIn(items[1].actual_check_in), '10 Nov, 2:15 PM');
+    assert.equal(formatDateTime(items[1].actual_check_out), '12 Nov, 11:00 AM');
+    assert.equal(isCheckedIn(items[1].actual_check_in), true);
+
+    // Item 3: In-house reservation -> actual_check_in is '2026-11-18 13:00:00' -> '18 Nov, 1:00 PM'
+    assert.equal(items[2].status, 'in_house');
+    assert.equal(formatActualCheckIn(items[2].actual_check_in), '18 Nov, 1:00 PM');
+    assert.equal(isCheckedIn(items[2].actual_check_in), true);
+
+    // Item 4: Cancelled reservation -> actual_check_in is null -> "Not checked in"
+    assert.equal(items[3].status, 'cancelled');
+    assert.equal(formatActualCheckIn(items[3].actual_check_in), 'Not checked in');
+    assert.equal(isCheckedIn(items[3].actual_check_in), false);
+  });
+
+  it('6. displays "Not checked in" instead of "Invalid Date" on null, undefined, empty, and invalid date values', () => {
+    const invalidInputs = [
+      null,
+      undefined,
+      '',
+      '   ',
+      'null',
+      'undefined',
+      'Invalid Date',
+      '0000-00-00',
+      '0000-00-00 00:00:00',
+      'invalid-string',
+      '2026-13-45',
+    ];
+
+    for (const input of invalidInputs) {
+      const output = formatActualCheckIn(input);
+      assert.equal(output, 'Not checked in');
+      assert.equal(isCheckedIn(input), false);
+      assert.notEqual(output, 'Invalid Date');
+      assert.equal(output.includes('Invalid Date'), false);
+    }
   });
 });
