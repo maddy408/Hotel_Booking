@@ -41,6 +41,86 @@ const CHECKIN_TEMPLATE_VARIABLES = [
   { tag: '{{hotel_phone}}', desc: 'Hotel phone number' },
 ];
 
+export function validatePhoneNumber(phone) {
+  if (phone === null || phone === undefined || String(phone).trim() === '') {
+    return 'Phone number is required.';
+  }
+  const str = String(phone).trim();
+
+  let cleaned = str;
+  if (cleaned.startsWith('+91')) {
+    cleaned = cleaned.slice(3).trim();
+  } else if (cleaned.startsWith('+')) {
+    return 'Only Indian mobile numbers (+91) are supported.';
+  }
+
+  if (/[^\d\s\-]/.test(cleaned)) {
+    return 'Only numeric digits are allowed.';
+  }
+
+  const digits = cleaned.replace(/\D/g, '');
+
+  let normalized = digits;
+  if (normalized.length === 12 && normalized.startsWith('91')) {
+    normalized = normalized.slice(2);
+  } else if (normalized.length === 11 && normalized.startsWith('0')) {
+    normalized = normalized.slice(1);
+  }
+
+  if (normalized.length === 0) {
+    return 'Phone number is required.';
+  }
+
+  if (!/^[6-9]/.test(normalized)) {
+    return 'Indian mobile numbers must start with 6, 7, 8, or 9.';
+  }
+
+  if (normalized.length !== 10) {
+    return 'Mobile number must be exactly 10 digits.';
+  }
+
+  return null;
+}
+
+export function validateEmailAddress(email) {
+  if (email === null || email === undefined || String(email).trim() === '') {
+    return 'Email address is required.';
+  }
+  const str = String(email);
+
+  if (/\s/.test(str)) {
+    return 'Email address cannot contain spaces.';
+  }
+
+  const trimmed = str.trim();
+  if (!trimmed.includes('@') || trimmed.startsWith('@') || trimmed.endsWith('@')) {
+    return 'Please enter a valid email address (example: user@example.com).';
+  }
+
+  const parts = trimmed.split('@');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    return 'Please enter a valid email address (example: user@example.com).';
+  }
+
+  const domain = parts[1];
+  if (!domain.includes('.') || domain.startsWith('.') || domain.endsWith('.')) {
+    return 'Please enter a complete email domain (example: user@example.com).';
+  }
+
+  const domainParts = domain.split('.');
+  const tld = domainParts[domainParts.length - 1];
+  if (tld.length < 2) {
+    return 'Email domain extension must be at least 2 characters.';
+  }
+
+  const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+  if (!emailRegex.test(trimmed)) {
+    return 'Please enter a valid email address (example: user@example.com).';
+  }
+
+  return null;
+}
+
 export default function Settings() {
   const { data, isLoading } = useSettings();
   const updateHotel = useUpdateHotel();
@@ -51,6 +131,7 @@ export default function Settings() {
   const toast = useToast();
 
   const [hotel, setHotel] = useState(null);
+  const [errors, setErrors] = useState({ phone: '', email: '' });
   const [gst, setGst] = useState(null);
   const [checkoutHour, setCheckoutHour] = useState(null);
   const [whatsapp, setWhatsapp] = useState(null);
@@ -109,8 +190,66 @@ export default function Settings() {
     );
   }
 
+  const handlePhoneChange = (e) => {
+    const val = e.target.value;
+    setHotel((prev) => ({ ...prev, phone: val }));
+
+    const hasInvalidChars = /[^\d\s+\-]/.test(val) || (val.includes('+') && !val.startsWith('+'));
+    if (hasInvalidChars) {
+      setErrors((prev) => ({ ...prev, phone: 'Only numeric digits are allowed.' }));
+      return;
+    }
+
+    if (errors.phone) {
+      const err = validatePhoneNumber(val);
+      if (!err) {
+        setErrors((prev) => ({ ...prev, phone: '' }));
+      } else {
+        setErrors((prev) => ({ ...prev, phone: err }));
+      }
+    }
+  };
+
+  const handlePhoneBlur = () => {
+    const err = validatePhoneNumber(hotel?.phone);
+    setErrors((prev) => ({ ...prev, phone: err || '' }));
+  };
+
+  const handleEmailChange = (e) => {
+    const val = e.target.value;
+    setHotel((prev) => ({ ...prev, email: val }));
+
+    if (/\s/.test(val)) {
+      setErrors((prev) => ({ ...prev, email: 'Email address cannot contain spaces.' }));
+      return;
+    }
+
+    if (errors.email) {
+      const err = validateEmailAddress(val);
+      if (!err) {
+        setErrors((prev) => ({ ...prev, email: '' }));
+      }
+    }
+  };
+
+  const handleEmailBlur = () => {
+    const err = validateEmailAddress(hotel?.email);
+    setErrors((prev) => ({ ...prev, email: err || '' }));
+  };
+
   const saveHotel = async (e) => {
     e.preventDefault();
+    const phoneErr = validatePhoneNumber(hotel?.phone);
+    const emailErr = validateEmailAddress(hotel?.email);
+
+    if (phoneErr || emailErr) {
+      setErrors({
+        phone: phoneErr || '',
+        email: emailErr || '',
+      });
+      return;
+    }
+
     try {
       await updateHotel.mutateAsync(hotel);
       toast('Hotel details saved.');
@@ -265,13 +404,27 @@ export default function Settings() {
               <label htmlFor="s-address">Address</label>
               <input id="s-address" type="text" value={hotel.address || ''} onChange={(e) => setHotel({ ...hotel, address: e.target.value })} />
             </div>
-            <div className="f">
+            <div className={`f ${errors.phone ? 'bad' : ''}`}>
               <label htmlFor="s-phone">Phone</label>
-              <input id="s-phone" type="tel" value={hotel.phone || ''} onChange={(e) => setHotel({ ...hotel, phone: e.target.value })} />
+              <input
+                id="s-phone"
+                type="tel"
+                value={hotel.phone || ''}
+                onChange={handlePhoneChange}
+                onBlur={handlePhoneBlur}
+              />
+              {errors.phone && <span className="err">{errors.phone}</span>}
             </div>
-            <div className="f">
+            <div className={`f ${errors.email ? 'bad' : ''}`}>
               <label htmlFor="s-email">Email</label>
-              <input id="s-email" type="email" value={hotel.email || ''} onChange={(e) => setHotel({ ...hotel, email: e.target.value })} />
+              <input
+                id="s-email"
+                type="email"
+                value={hotel.email || ''}
+                onChange={handleEmailChange}
+                onBlur={handleEmailBlur}
+              />
+              {errors.email && <span className="err">{errors.email}</span>}
             </div>
           </div>
           <button className="btn dark" type="submit" disabled={updateHotel.isPending} style={{ alignSelf: 'flex-start' }}>

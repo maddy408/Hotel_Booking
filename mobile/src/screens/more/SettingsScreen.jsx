@@ -18,6 +18,86 @@ import { colors, fonts, radii } from '../../theme/theme';
 
 import BackButton from '../../components/ui/BackButton.jsx';
 
+export function validatePhoneNumber(phone) {
+  if (phone === null || phone === undefined || String(phone).trim() === '') {
+    return 'Phone number is required.';
+  }
+  const str = String(phone).trim();
+
+  let cleaned = str;
+  if (cleaned.startsWith('+91')) {
+    cleaned = cleaned.slice(3).trim();
+  } else if (cleaned.startsWith('+')) {
+    return 'Only Indian mobile numbers (+91) are supported.';
+  }
+
+  if (/[^\d\s\-]/.test(cleaned)) {
+    return 'Only numeric digits are allowed.';
+  }
+
+  const digits = cleaned.replace(/\D/g, '');
+
+  let normalized = digits;
+  if (normalized.length === 12 && normalized.startsWith('91')) {
+    normalized = normalized.slice(2);
+  } else if (normalized.length === 11 && normalized.startsWith('0')) {
+    normalized = normalized.slice(1);
+  }
+
+  if (normalized.length === 0) {
+    return 'Phone number is required.';
+  }
+
+  if (!/^[6-9]/.test(normalized)) {
+    return 'Indian mobile numbers must start with 6, 7, 8, or 9.';
+  }
+
+  if (normalized.length !== 10) {
+    return 'Mobile number must be exactly 10 digits.';
+  }
+
+  return null;
+}
+
+export function validateEmailAddress(email) {
+  if (email === null || email === undefined || String(email).trim() === '') {
+    return 'Email address is required.';
+  }
+  const str = String(email);
+
+  if (/\s/.test(str)) {
+    return 'Email address cannot contain spaces.';
+  }
+
+  const trimmed = str.trim();
+  if (!trimmed.includes('@') || trimmed.startsWith('@') || trimmed.endsWith('@')) {
+    return 'Please enter a valid email address (example: user@example.com).';
+  }
+
+  const parts = trimmed.split('@');
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    return 'Please enter a valid email address (example: user@example.com).';
+  }
+
+  const domain = parts[1];
+  if (!domain.includes('.') || domain.startsWith('.') || domain.endsWith('.')) {
+    return 'Please enter a complete email domain (example: user@example.com).';
+  }
+
+  const domainParts = domain.split('.');
+  const tld = domainParts[domainParts.length - 1];
+  if (tld.length < 2) {
+    return 'Email domain extension must be at least 2 characters.';
+  }
+
+  const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
+  if (!emailRegex.test(trimmed)) {
+    return 'Please enter a valid email address (example: user@example.com).';
+  }
+
+  return null;
+}
+
 export default function SettingsScreen({ navigation }) {
   const { data, isLoading, isError, error, refetch } = useSettings();
   const updateHotel = useUpdateHotel();
@@ -348,7 +428,7 @@ export default function SettingsScreen({ navigation }) {
               setHotel((p) => ({ ...p, name: v }));
             }}
           />
-          <FieldError error={errors.hotelName} />
+          <FieldError error={errors.hotelName}>{errors.hotelName}</FieldError>
         </View>
 
         <View onLayout={registerLayout('hotelPhone')} style={{ marginBottom: 8 }}>
@@ -360,11 +440,31 @@ export default function SettingsScreen({ navigation }) {
             keyboardType="phone-pad"
             value={hotel.phone}
             onChangeText={(v) => {
-              clearError('hotelPhone');
               setHotel((p) => ({ ...p, phone: v }));
+              const hasInvalidChars = /[^\d\s+\-]/.test(v) || (v.includes('+') && !v.startsWith('+'));
+              if (hasInvalidChars) {
+                setError('hotelPhone', 'Only numeric digits are allowed.');
+                return;
+              }
+              if (errors.hotelPhone) {
+                const err = validatePhoneNumber(v);
+                if (!err) {
+                  clearError('hotelPhone');
+                } else {
+                  setError('hotelPhone', err);
+                }
+              }
+            }}
+            onBlur={() => {
+              const err = validatePhoneNumber(hotel.phone);
+              if (err) {
+                setError('hotelPhone', err);
+              } else {
+                clearError('hotelPhone');
+              }
             }}
           />
-          <FieldError error={errors.hotelPhone} />
+          <FieldError error={errors.hotelPhone}>{errors.hotelPhone}</FieldError>
         </View>
 
         <View onLayout={registerLayout('hotelEmail')} style={{ marginBottom: 8 }}>
@@ -374,13 +474,31 @@ export default function SettingsScreen({ navigation }) {
             error={Boolean(errors.hotelEmail)}
             placeholder="Email"
             keyboardType="email-address"
+            autoCapitalize="none"
             value={hotel.email}
             onChangeText={(v) => {
-              clearError('hotelEmail');
               setHotel((p) => ({ ...p, email: v }));
+              if (/\s/.test(v)) {
+                setError('hotelEmail', 'Email address cannot contain spaces.');
+                return;
+              }
+              if (errors.hotelEmail) {
+                const err = validateEmailAddress(v);
+                if (!err) {
+                  clearError('hotelEmail');
+                }
+              }
+            }}
+            onBlur={() => {
+              const err = validateEmailAddress(hotel.email);
+              if (err) {
+                setError('hotelEmail', err);
+              } else {
+                clearError('hotelEmail');
+              }
             }}
           />
-          <FieldError error={errors.hotelEmail} />
+          <FieldError error={errors.hotelEmail}>{errors.hotelEmail}</FieldError>
         </View>
 
         <Text style={styles.label}>Address</Text>
@@ -398,8 +516,8 @@ export default function SettingsScreen({ navigation }) {
           onPress={async () => {
             const isValid = validate({
               hotelName: () => (!isFilled(hotel.name) ? 'Hotel name is required.' : null),
-              hotelPhone: () => (hotel.phone && !isValidPhone(hotel.phone) ? 'Please enter a valid mobile number.' : null),
-              hotelEmail: () => (hotel.email && !isValidEmail(hotel.email) ? 'Please enter a valid email address.' : null),
+              hotelPhone: () => validatePhoneNumber(hotel.phone),
+              hotelEmail: () => validateEmailAddress(hotel.email),
             });
             if (!isValid) return;
 
