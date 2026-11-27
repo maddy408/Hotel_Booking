@@ -5,7 +5,7 @@ import { FormErrorBanner, FormField, Input } from '../ui/Field.jsx';
 import Button from '../ui/Button.jsx';
 import { useGuest, useUpdateGuest, useDeleteGuest } from '../../api/guests';
 import { useToast } from '../ToastContext.jsx';
-import { useFormValidation, isValidEmail, validatePhone, isValidPhone, handlePhoneInputChange } from '../../lib/validation';
+import { useFormValidation, isValidEmail, validatePhone, isValidPhone, handlePhoneInputChange, getIdProofConfig, handleIdNumberInputChange, validateIdNumber } from '../../lib/validation';
 import { colors, fonts, radii } from '../../theme/theme';
 
 const ID_TYPES = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport', 'Other'];
@@ -81,11 +81,15 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
       if (email.trim() && !isValidEmail(email)) {
         errs.email = 'Please enter a valid email address.';
       }
-      if (idProofNumber.trim() && idProofNumber.trim().length < 4) {
-        errs.idProofNumber = 'ID number must be at least 4 characters.';
-      }
-      if (idProofNumber.trim() && !idProofType) {
-        errs.idProofNumber = 'Please select an ID proof type above.';
+      if (idProofNumber.trim()) {
+        if (!idProofType) {
+          errs.idProofNumber = 'Please select an ID proof type above.';
+        } else {
+          const idValidation = validateIdNumber(idProofNumber, idProofType, { isOptional: false });
+          if (!idValidation.isValid) {
+            errs.idProofNumber = idValidation.error;
+          }
+        }
       }
       if (isForeign && !nationality.trim()) {
         errs.nationality = 'Nationality is required for foreign guests.';
@@ -170,6 +174,9 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
     address !== (guest?.address || '') ||
     idProofNumber.trim() !== ''
   );
+
+  const idConfig = getIdProofConfig(idProofType);
+  const isSameAsSaved = Boolean(guest?.id_proof_last4 && (guest.id_proof_type === idProofType || guest.idProofType === idProofType));
 
   return (
     <Sheet onClose={onClose} hasUnsavedChanges={isFormDirty} scrollRef={scrollRef}>
@@ -284,7 +291,12 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
               <Pressable
                 key={type}
                 style={[styles.idChip, idProofType === type && styles.idChipActive]}
-                onPress={() => setIdProofType(type === idProofType ? '' : type)}
+                onPress={() => {
+                  const next = type === idProofType ? '' : type;
+                  setIdProofType(next);
+                  setIdProofNumber('');
+                  clearError('idProofNumber');
+                }}
               >
                 <Text style={[styles.idChipText, idProofType === type && styles.idChipTextActive]}>
                   {type}
@@ -298,17 +310,23 @@ export default function GuestEditSheet({ guestId, onClose, onSaved, onDeleted, o
         <FormField
           ref={registerContainer('idProofNumber')}
           onLayout={registerLayout('idProofNumber')}
-          label={`ID Proof Number ${guest?.id_proof_last4 ? `(Current: ••••${guest.id_proof_last4})` : ''}`}
+          label={`${idConfig.label} ${isSameAsSaved ? `(Current: ••••${guest.id_proof_last4})` : ''}`}
           error={errors.idProofNumber}
         >
           <Input
             ref={registerInput('idProofNumber')}
             value={idProofNumber}
+            keyboardType={idConfig.keyboardType}
+            maxLength={idConfig.maxLength}
+            autoCapitalize={idConfig.autoCapitalize}
+            autoCorrect={false}
+            style={idProofType !== 'Aadhaar' ? { textTransform: 'uppercase' } : undefined}
             onChangeText={(text) => {
-              setIdProofNumber(text);
+              const res = handleIdNumberInputChange(text, idProofType);
+              setIdProofNumber(res.value);
               clearError('idProofNumber');
             }}
-            placeholder="Enter ID number to update"
+            placeholder={isSameAsSaved ? 'Leave blank to keep current ID number' : idConfig.placeholder}
             error={errors.idProofNumber}
           />
         </FormField>

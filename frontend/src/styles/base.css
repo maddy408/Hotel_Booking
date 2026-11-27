@@ -622,6 +622,15 @@ main .inner {
   color: var(--color-danger);
 }
 
+.count.s-overdue {
+  background: #FFF1F2;
+  border-color: #FECDD3;
+}
+.count.s-overdue .count-arrow {
+  background: rgba(225, 29, 72, 0.14);
+  color: #E11D48;
+}
+
 .count[aria-pressed='true'] {
   border-color: var(--s);
   box-shadow: 0 0 0 2px var(--s), var(--shadow-card);

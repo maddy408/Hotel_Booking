@@ -196,18 +196,24 @@ export default function AllReferralsScreen({ navigation }) {
               <View style={{ flex: 1, marginRight: 8 }}>
                 {/* Referrer Info */}
                 <View style={styles.partyBox}>
-                  <Text style={styles.partyRole}>Referring Member</Text>
-                  <Pressable
-                    onPress={() => {
-                      if (item.referrer_id) {
+                  <Text style={styles.partyRole}>
+                    {item.referrer_id ? 'Referring Member' : 'Referring Person (Other)'}
+                  </Text>
+                  {item.referrer_id ? (
+                    <Pressable
+                      onPress={() => {
                         navigation.navigate('GuestDetails', { guestId: item.referrer_id });
-                      }
-                    }}
-                  >
-                    <Text style={styles.partyNameLink}>
-                      {item.referrer_name || '—'} ↗
+                      }}
+                    >
+                      <Text style={styles.partyNameLink}>
+                        {item.referrer_name || '—'} ↗
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>
+                      {item.referrer_name || '—'}
                     </Text>
-                  </Pressable>
+                  )}
                   <Text style={styles.monoText}>{item.referrer_phone || '—'}</Text>
                 </View>
 

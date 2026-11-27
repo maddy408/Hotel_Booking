@@ -10,7 +10,7 @@ import { useSettings } from '../../api/settings';
 import { useToast } from '../../context/ToastContext.jsx';
 import { fetchOccupantDocumentBlob } from '../../api/occupantDocuments';
 import { addDaysIso, estimateGstRate, formatGstBreakup, fd, formatCheckoutHour, inr, todayIso } from '../../lib/format';
-import { validatePhone, isValidPhone, handlePhoneInputChange, cleanPhone10 } from '../../lib/validation.js';
+import { validatePhone, isValidPhone, handlePhoneInputChange, cleanPhone10, getIdProofConfig, handleIdNumberInputChange, validateIdNumber } from '../../lib/validation.js';
 
 const IDS = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport'];
 const ADVANCE_REQUIRED_MSG = 'Please enter and collect the advance amount before check-in.';
@@ -71,6 +71,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
     register,
     watch,
     setValue,
+    clearErrors,
     handleSubmit,
     formState: { errors },
   } = useForm({
@@ -103,12 +104,17 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
 
   const phone = watch('phone');
   const name = watch('name');
+  const idType = watch('idType');
+  const idNo = watch('idNo');
   const days = watch('days');
   const rate = watch('rate');
   const advance = watch('advance');
   const persons = watch('persons');
   const pay = watch('pay');
   const [phoneError, setPhoneError] = useState('');
+
+  const isIdSaved = Boolean(matchedGuestId && lookup?.guest?.idProofType === idType);
+  const idConfig = getIdProofConfig(idType);
 
   const onPhoneChange = (e) => {
     const res = handlePhoneInputChange(e.target.value, phone || '');
@@ -1328,7 +1334,15 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
             </div>
             <div className="f">
               <label htmlFor="ci-idType">ID proof *</label>
-              <select id="ci-idType" {...register('idType')}>
+              <select
+                id="ci-idType"
+                {...register('idType', {
+                  onChange: () => {
+                    setValue('idNo', '');
+                    clearErrors('idNo');
+                  },
+                })}
+              >
                 {IDS.map((t) => (
                   <option key={t} value={t}>
                     {t}
@@ -1337,14 +1351,29 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
               </select>
             </div>
             <div className={`f ${errors.idNo ? 'bad' : ''}`}>
-              <label htmlFor="ci-idNo">ID number {!matchedGuestId && <i>*</i>}</label>
+              <label htmlFor="ci-idNo">{idConfig.label} {!isIdSaved && <i>*</i>}</label>
               <input
                 id="ci-idNo"
                 type="text"
-                placeholder={matchedGuestId ? 'Already saved' : ''}
-                {...register('idNo', { validate: (v) => !!matchedGuestId || (v || '').replace(/\s/g, '').length >= 4 })}
+                inputMode={idConfig.inputMode}
+                maxLength={idConfig.maxLength}
+                autoCapitalize={idConfig.autoCapitalize}
+                autoCorrect="off"
+                spellCheck="false"
+                style={{ textTransform: idType === 'Aadhaar' ? 'none' : 'uppercase' }}
+                placeholder={isIdSaved ? 'Already saved' : idConfig.placeholder}
+                {...register('idNo', {
+                  validate: (v) => {
+                    const res = validateIdNumber(v, idType, { isOptional: isIdSaved });
+                    return res.isValid || res.error;
+                  },
+                  onChange: (e) => {
+                    const res = handleIdNumberInputChange(e.target.value, idType);
+                    setValue('idNo', res.value, { shouldValidate: true });
+                  },
+                })}
               />
-              {errors.idNo && <span className="err">Enter ID number.</span>}
+              {errors.idNo && <span className="err">{errors.idNo.message || 'Enter ID number.'}</span>}
             </div>
             <div className="f">
               <label htmlFor="ci-city">From (city)</label>

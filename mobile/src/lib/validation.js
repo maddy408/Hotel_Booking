@@ -183,6 +183,204 @@ export function getRoomConfiguredRate(room, roomTypes = []) {
   return 0;
 }
 
+/**
+ * Configuration and metadata for ID proof types
+ */
+export const ID_PROOF_TYPES = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport'];
+
+export function getIdProofConfig(idType) {
+  const norm = String(idType || '').trim().toLowerCase();
+  if (norm === 'aadhaar') {
+    return {
+      type: 'Aadhaar',
+      label: 'Aadhaar Number',
+      placeholder: 'Enter 12-digit Aadhaar number',
+      keyboardType: 'numeric',
+      inputMode: 'numeric',
+      maxLength: 12,
+      autoCapitalize: 'none',
+      pattern: '[0-9]*',
+    };
+  }
+  if (norm === 'driving licence' || norm === 'driving license') {
+    return {
+      type: 'Driving Licence',
+      label: 'Driving Licence Number',
+      placeholder: 'e.g. MH0220110012345',
+      keyboardType: 'default',
+      inputMode: 'text',
+      maxLength: 20,
+      autoCapitalize: 'characters',
+    };
+  }
+  if (norm === 'voter id' || norm === 'voter') {
+    return {
+      type: 'Voter ID',
+      label: 'Voter ID Number',
+      placeholder: 'e.g. ABC1234567',
+      keyboardType: 'default',
+      inputMode: 'text',
+      maxLength: 16,
+      autoCapitalize: 'characters',
+    };
+  }
+  if (norm === 'passport') {
+    return {
+      type: 'Passport',
+      label: 'Passport Number',
+      placeholder: 'e.g. A1234567',
+      keyboardType: 'default',
+      inputMode: 'text',
+      maxLength: 12,
+      autoCapitalize: 'characters',
+    };
+  }
+  return {
+    type: idType || 'Other',
+    label: idType ? `${idType} Number` : 'ID Number',
+    placeholder: 'Enter ID number',
+    keyboardType: 'default',
+    inputMode: 'text',
+    maxLength: 30,
+    autoCapitalize: 'characters',
+  };
+}
+
+/**
+ * Real-time ID Number Input Formatter & Handler:
+ * - Aadhaar: allows digits only, max 12 digits. Non-digits rejected immediately.
+ * - Driving Licence: allows alphanumeric characters and hyphens/spaces, automatically uppercase.
+ * - Voter ID: allows alphanumeric characters, automatically uppercase. Non-alphanumeric rejected immediately.
+ * - Passport: allows alphanumeric characters, automatically uppercase. Non-alphanumeric rejected immediately.
+ * - Other: uppercase characters.
+ */
+export function handleIdNumberInputChange(input, idType) {
+  let raw = String(input ?? '');
+  const norm = String(idType || '').trim().toLowerCase();
+
+  if (raw === '') {
+    return { value: '', error: null, isValid: false };
+  }
+
+  if (norm === 'aadhaar') {
+    const digits = raw.replace(/\D/g, '').slice(0, 12);
+    return {
+      value: digits,
+      error: null,
+      isValid: digits.length === 12,
+    };
+  }
+
+  if (norm === 'driving licence' || norm === 'driving license') {
+    const cleaned = raw.replace(/[^A-Za-z0-9\s-]/g, '').toUpperCase().slice(0, 20);
+    const unspaced = cleaned.replace(/[\s-]/g, '');
+    return {
+      value: cleaned,
+      error: null,
+      isValid: unspaced.length >= 10,
+    };
+  }
+
+  if (norm === 'voter id' || norm === 'voter') {
+    const cleaned = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 16);
+    return {
+      value: cleaned,
+      error: null,
+      isValid: cleaned.length >= 10,
+    };
+  }
+
+  if (norm === 'passport') {
+    const cleaned = raw.replace(/[^A-Za-z0-9]/g, '').toUpperCase().slice(0, 12);
+    return {
+      value: cleaned,
+      error: null,
+      isValid: cleaned.length >= 6 && cleaned.length <= 9 && /^[A-Z]/.test(cleaned),
+    };
+  }
+
+  const val = raw.toUpperCase().slice(0, 30);
+  return {
+    value: val,
+    error: null,
+    isValid: val.trim().length >= 4,
+  };
+}
+
+/**
+ * Validates ID Proof number based on selected ID proof type.
+ *
+ * @param {string} value ID proof number to validate
+ * @param {string} idType Selected ID proof type ('Aadhaar', 'Driving Licence', etc.)
+ * @param {Object} [options]
+ * @param {boolean} [options.isOptional=false] If true, blank values are considered valid (e.g. existing saved ID)
+ * @returns {{ isValid: boolean, error: string|null }}
+ */
+export function validateIdNumber(value, idType, { isOptional = false } = {}) {
+  const norm = String(idType || '').trim().toLowerCase();
+  const raw = String(value ?? '').trim();
+
+  if (!raw) {
+    if (isOptional) {
+      return { isValid: true, error: null };
+    }
+    const config = getIdProofConfig(idType);
+    return { isValid: false, error: `Enter ${config.label.toLowerCase()}.` };
+  }
+
+  if (norm === 'aadhaar') {
+    if (!/^\d+$/.test(raw)) {
+      return { isValid: false, error: 'Aadhaar number must contain only numeric digits.' };
+    }
+    if (raw.length !== 12) {
+      return { isValid: false, error: 'Aadhaar number must be exactly 12 digits.' };
+    }
+    return { isValid: true, error: null };
+  }
+
+  if (norm === 'driving licence' || norm === 'driving license') {
+    const unspaced = raw.replace(/[\s-]/g, '');
+    if (!/^[A-Za-z0-9\s-]+$/.test(raw)) {
+      return { isValid: false, error: 'Enter a valid driving licence number (alphanumeric).' };
+    }
+    if (unspaced.length < 10) {
+      return { isValid: false, error: 'Driving licence number must be at least 10 characters.' };
+    }
+    return { isValid: true, error: null };
+  }
+
+  if (norm === 'voter id' || norm === 'voter') {
+    const cleaned = raw.replace(/\s/g, '');
+    if (!/^[A-Za-z0-9]+$/.test(cleaned)) {
+      return { isValid: false, error: 'Voter ID must contain only alphanumeric characters.' };
+    }
+    if (cleaned.length < 10) {
+      return { isValid: false, error: 'Voter ID must be at least 10 characters (e.g. ABC1234567).' };
+    }
+    return { isValid: true, error: null };
+  }
+
+  if (norm === 'passport') {
+    const cleaned = raw.replace(/\s/g, '');
+    if (!/^[A-Za-z0-9]+$/.test(cleaned)) {
+      return { isValid: false, error: 'Passport number must contain only alphanumeric characters.' };
+    }
+    if (!/^[A-Za-z]/.test(cleaned)) {
+      return { isValid: false, error: 'Passport number must start with a letter (e.g. A1234567).' };
+    }
+    if (cleaned.length < 6 || cleaned.length > 9) {
+      return { isValid: false, error: 'Passport number must be between 6 and 9 alphanumeric characters.' };
+    }
+    return { isValid: true, error: null };
+  }
+
+  const unspaced = raw.replace(/\s/g, '');
+  if (unspaced.length < 4) {
+    return { isValid: false, error: 'ID number must be at least 4 characters.' };
+  }
+  return { isValid: true, error: null };
+}
+
 /** Validate standard email format. */
 export function isValidEmail(email) {
   if (!email || typeof email !== 'string') return false;
@@ -324,6 +522,8 @@ export const FRIENDLY_FIELD_MESSAGES = {
   typeId: 'Please select a room type.',
   referredByGuestId: 'Please select an existing member as reference.',
   otherSource: 'Please enter person name for reference.',
+  idNo: 'Please enter a valid ID number.',
+  idProofNumber: 'Please enter a valid ID proof number.',
 };
 
 /**

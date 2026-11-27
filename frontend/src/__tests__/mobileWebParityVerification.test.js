@@ -90,4 +90,61 @@ describe('Mobile vs Web Feature Parity Verification Suite', () => {
     assert.ok(content.includes('totalBefore'), 'Must calculate totalBefore');
     assert.ok(content.includes('Discount cannot exceed the payable amount'), 'Must validate discount does not exceed payable amount');
   });
+
+  it('10. Rooms supports interactive calendar date selection, projected availability banner, and overdue status filter card', () => {
+    const roomsContent = fs.readFileSync(path.join(srcDir, 'pages', 'Rooms.jsx'), 'utf-8');
+    assert.ok(roomsContent.includes('RoomCalendar'), 'Rooms must render RoomCalendar');
+    assert.ok(roomsContent.includes('initialDate={selectedDateObj}'), 'RoomCalendar must receive initialDate');
+    assert.ok(roomsContent.includes('onDateSelect='), 'RoomCalendar must receive onDateSelect callback');
+    assert.ok(roomsContent.includes("f === 'overdue'"), 'Rooms must support overdue filter');
+    assert.ok(roomsContent.includes('isRoomOverdue'), 'Rooms must evaluate isRoomOverdue');
+    assert.ok(roomsContent.includes('Reset to Today'), 'Rooms must provide Reset to Today button when viewing other dates');
+    assert.ok(roomsContent.includes('computedRooms'), 'Rooms must compute projected status for selected dates');
+
+    const overdueLib = fs.readFileSync(path.join(srcDir, 'lib', 'overdue.js'), 'utf-8');
+    assert.ok(overdueLib.includes('export function isRoomOverdue'), 'Must export isRoomOverdue helper');
+    assert.ok(overdueLib.includes('getConfiguredCheckoutTime'), 'Must export getConfiguredCheckoutTime helper');
+  });
+
+  it('11. TodayCheckouts (Daily Operations) integrates StayDetailSheet and overdue late check-outs & late arrivals filters', () => {
+    const content = fs.readFileSync(path.join(srcDir, 'pages', 'TodayCheckouts.jsx'), 'utf-8');
+    assert.ok(content.includes('StayDetailSheet'), 'TodayCheckouts must import and render StayDetailSheet');
+    assert.ok(content.includes('Late Check-outs'), 'TodayCheckouts must provide Late Check-outs filter button');
+    assert.ok(content.includes('Late Arrivals'), 'TodayCheckouts must provide Late Arrivals filter button');
+    assert.ok(content.includes("activeSheet?.type === 'stay'"), 'TodayCheckouts must track activeSheet stay for sheet viewing');
+  });
+
+  it('12. Guests page provides status filter chips for all, in-house, booked, checked out, no-show, and cancelled', () => {
+    const content = fs.readFileSync(path.join(srcDir, 'pages', 'Guests.jsx'), 'utf-8');
+    assert.ok(content.includes('GUEST_STATUS_FILTERS'), 'Guests page must define GUEST_STATUS_FILTERS');
+    assert.ok(content.includes('in_house'), 'Guests filter must support in_house');
+    assert.ok(content.includes('booked'), 'Guests filter must support booked');
+    assert.ok(content.includes('checked_out'), 'Guests filter must support checked_out');
+    assert.ok(content.includes('no_show'), 'Guests filter must support no_show');
+    assert.ok(content.includes('cancelled'), 'Guests filter must support cancelled');
+    assert.ok(content.includes('statusFilter'), 'Guests page must track statusFilter state');
+  });
+
+  it('13. UserFormSheet allows editing username and optional password update on edit', () => {
+    const content = fs.readFileSync(path.join(srcDir, 'components', 'sheets', 'UserFormSheet.jsx'), 'utf-8');
+    assert.ok(!content.includes('disabled={isEdit}'), 'Username input must not be disabled on edit');
+    assert.ok(content.includes('Password (leave blank to keep current)'), 'Must allow optional password update on edit');
+    assert.ok(content.includes('updateUser.mutateAsync(payload)'), 'Must send updated fields to updateUser mutation');
+  });
+
+  it('14. Web connection and service worker configuration fixes net::ERR_CONNECTION_REFUSED', () => {
+    const viteConfig = fs.readFileSync(path.join(srcDir, '..', 'vite.config.js'), 'utf-8');
+    assert.ok(viteConfig.includes('http://127.0.0.1:8080'), 'Vite proxy target must point to active port 8080');
+    assert.ok(!viteConfig.includes('http://127.0.0.1:8099'), 'Vite proxy must not point to dead port 8099');
+
+    const swContent = fs.readFileSync(path.join(srcDir, '..', 'public', 'sw.js'), 'utf-8');
+    assert.ok(swContent.includes('kkk-lodge-v2'), 'Service worker cache name must be bumped to kkk-lodge-v2');
+    assert.ok(swContent.includes('url.origin !== self.location.origin'), 'Service worker must bypass cross-origin requests');
+    assert.ok(swContent.includes('/stays'), 'Service worker must bypass /stays endpoint');
+    assert.ok(swContent.includes('/guests'), 'Service worker must bypass /guests endpoint');
+    assert.ok(swContent.includes('/reports'), 'Service worker must bypass /reports endpoint');
+
+    const bookingsApi = fs.readFileSync(path.join(srcDir, 'api', 'bookings.js'), 'utf-8');
+    assert.ok(bookingsApi.includes("export * from './reservations.js'"), 'bookings.js must alias reservations.js');
+  });
 });

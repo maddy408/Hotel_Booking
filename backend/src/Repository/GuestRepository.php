@@ -726,6 +726,7 @@ final class GuestRepository
                 'id' => (int) $row['id'],
                 'name' => (string) $row['name'],
                 'phone' => (string) $row['phone'],
+                'type' => 'existing_member',
             ];
         }
 
@@ -743,6 +744,41 @@ final class GuestRepository
                 'id' => (int) $row2['id'],
                 'name' => (string) $row2['name'],
                 'phone' => (string) $row2['phone'],
+                'type' => 'existing_member',
+            ];
+        }
+
+        $stmt3 = $this->db->prepare(
+            "SELECT r.other_source
+             FROM reservations r
+             WHERE r.guest_id = :guest_id AND r.hotel_id = :hotel_id AND r.booking_source = 'Other' AND r.other_source IS NOT NULL AND TRIM(r.other_source) != ''
+             ORDER BY r.id DESC LIMIT 1"
+        );
+        $stmt3->execute(['guest_id' => $guestId, 'hotel_id' => $hotelId]);
+        $row3 = $stmt3->fetch(PDO::FETCH_ASSOC);
+        if ($row3 !== false && $row3 !== null && trim((string) $row3['other_source']) !== '') {
+            return [
+                'id' => null,
+                'name' => trim((string) $row3['other_source']),
+                'phone' => null,
+                'type' => 'other',
+            ];
+        }
+
+        $stmt4 = $this->db->prepare(
+            "SELECT s.other_source
+             FROM stays s
+             WHERE s.guest_id = :guest_id AND s.hotel_id = :hotel_id AND s.booking_source = 'Other' AND s.other_source IS NOT NULL AND TRIM(s.other_source) != ''
+             ORDER BY s.id DESC LIMIT 1"
+        );
+        $stmt4->execute(['guest_id' => $guestId, 'hotel_id' => $hotelId]);
+        $row4 = $stmt4->fetch(PDO::FETCH_ASSOC);
+        if ($row4 !== false && $row4 !== null && trim((string) $row4['other_source']) !== '') {
+            return [
+                'id' => null,
+                'name' => trim((string) $row4['other_source']),
+                'phone' => null,
+                'type' => 'other',
             ];
         }
 
@@ -826,6 +862,11 @@ final class GuestRepository
                 b.check_out_date AS scheduled_check_out,
                 b.status AS reservation_status,
                 b.booking_source,
+                b.other_source,
+                CASE 
+                    WHEN b.referred_by_guest_id IS NOT NULL THEN 'existing_member'
+                    ELSE 'other'
+                END AS referral_type,
                 b.advance_amount,
                 COALESCE((
                     SELECT SUM(CASE WHEN p.type = 'refund' THEN -p.amount ELSE p.amount END)
@@ -836,8 +877,14 @@ final class GuestRepository
                 g_referred.name AS referred_guest_name,
                 g_referred.phone AS referred_guest_phone,
                 b.referred_by_guest_id AS referrer_id,
-                g_referrer.name AS referrer_name,
-                g_referrer.phone AS referrer_phone,
+                CASE 
+                    WHEN b.referred_by_guest_id IS NOT NULL THEN g_referrer.name
+                    ELSE b.other_source
+                END AS referrer_name,
+                CASE 
+                    WHEN b.referred_by_guest_id IS NOT NULL THEN g_referrer.phone
+                    ELSE NULL
+                END AS referrer_phone,
                 COALESCE(s_room.room_no, r.room_no) AS room_no,
                 s.id AS stay_id,
                 s.status AS stay_status,
@@ -847,17 +894,73 @@ final class GuestRepository
                 s.updated_at AS actual_check_out_time
             FROM reservations b
             JOIN guests g_referred ON g_referred.id = b.guest_id
-            JOIN guests g_referrer ON g_referrer.id = b.referred_by_guest_id
+            LEFT JOIN guests g_referrer ON g_referrer.id = b.referred_by_guest_id
             LEFT JOIN rooms r ON r.id = b.room_id
             LEFT JOIN stays s ON s.id = (SELECT MAX(id) FROM stays WHERE reservation_id = b.id)
             LEFT JOIN rooms s_room ON s_room.id = s.room_id
             WHERE b.hotel_id = :hotel_id
-              AND b.referred_by_guest_id IS NOT NULL
-            ORDER BY b.created_at DESC, b.id DESC
+              AND (
+                b.referred_by_guest_id IS NOT NULL
+                OR (b.booking_source = 'Other' AND b.other_source IS NOT NULL AND TRIM(b.other_source) != '')
+              )
+
+            UNION ALL
+
+            SELECT 
+                NULL AS reservation_id,
+                CONCAT('STAY-', s.id) AS booking_code,
+                CONCAT('STAY-', s.id) AS booking_id,
+                s.created_at AS booking_date,
+                s.check_in_date AS scheduled_check_in,
+                s.checkout_planned AS scheduled_check_out,
+                NULL AS reservation_status,
+                s.booking_source,
+                s.other_source,
+                CASE 
+                    WHEN s.referred_by_guest_id IS NOT NULL THEN 'existing_member'
+                    ELSE 'other'
+                END AS referral_type,
+                0.00 AS advance_amount,
+                COALESCE((
+                    SELECT SUM(CASE WHEN p.type = 'refund' THEN -p.amount ELSE p.amount END)
+                    FROM payments p
+                    WHERE p.stay_id = s.id AND p.type IN ('advance', 'refund') AND p.status = 'successful'
+                ), 0) AS advance_paid,
+                s.guest_id AS referred_guest_id,
+                g_referred.name AS referred_guest_name,
+                g_referred.phone AS referred_guest_phone,
+                s.referred_by_guest_id AS referrer_id,
+                CASE 
+                    WHEN s.referred_by_guest_id IS NOT NULL THEN g_referrer.name
+                    ELSE s.other_source
+                END AS referrer_name,
+                CASE 
+                    WHEN s.referred_by_guest_id IS NOT NULL THEN g_referrer.phone
+                    ELSE NULL
+                END AS referrer_phone,
+                r.room_no AS room_no,
+                s.id AS stay_id,
+                s.status AS stay_status,
+                s.check_in_date AS actual_check_in_date,
+                s.created_at AS actual_check_in_time,
+                s.checkout_actual AS actual_check_out_date,
+                s.updated_at AS actual_check_out_time
+            FROM stays s
+            JOIN guests g_referred ON g_referred.id = s.guest_id
+            LEFT JOIN guests g_referrer ON g_referrer.id = s.referred_by_guest_id
+            LEFT JOIN rooms r ON r.id = s.room_id
+            WHERE s.hotel_id = :hotel_id_stay
+              AND s.reservation_id IS NULL
+              AND (
+                s.referred_by_guest_id IS NOT NULL
+                OR (s.booking_source = 'Other' AND s.other_source IS NOT NULL AND TRIM(s.other_source) != '')
+              )
+
+            ORDER BY booking_date DESC, reservation_id DESC, stay_id DESC
         ";
 
         $stmt = $this->db->prepare($sql);
-        $stmt->execute(['hotel_id' => $hotelId]);
+        $stmt->execute(['hotel_id' => $hotelId, 'hotel_id_stay' => $hotelId]);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         $totalBookings = count($rows);
@@ -935,6 +1038,13 @@ final class GuestRepository
             }
 
             $items[] = array_merge($row, [
+                'referrer_id' => $row['referrer_id'] !== null ? (int) $row['referrer_id'] : null,
+                'referrer_name' => $row['referrer_name'] !== null ? (string) $row['referrer_name'] : null,
+                'referrer_phone' => $row['referrer_phone'] !== null ? (string) $row['referrer_phone'] : null,
+                'referral_type' => (string) ($row['referral_type'] ?? ($row['referrer_id'] !== null ? 'existing_member' : 'other')),
+                'reservation_id' => $row['reservation_id'] !== null ? (int) $row['reservation_id'] : null,
+                'stay_id' => $row['stay_id'] !== null ? (int) $row['stay_id'] : null,
+                'room_no' => $row['room_no'] !== null ? (int) $row['room_no'] : null,
                 'status' => $status,
                 'status_code' => $statusCode,
                 'has_arrived' => $hasArrived,
@@ -981,6 +1091,14 @@ final class GuestRepository
             $filteredItems = array_filter($filteredItems, static function ($it) use ($refGuestLower) {
                 return str_contains(strtolower($it['referred_guest_name'] ?? ''), $refGuestLower)
                     || str_contains(strtolower($it['referred_guest_phone'] ?? ''), $refGuestLower);
+            });
+        }
+
+        $typeFilter = trim((string) ($filters['type'] ?? $filters['referral_type'] ?? ''));
+        if ($typeFilter !== '' && $typeFilter !== 'all') {
+            $typeFilterLower = strtolower($typeFilter);
+            $filteredItems = array_filter($filteredItems, static function ($it) use ($typeFilterLower) {
+                return strtolower($it['referral_type'] ?? '') === $typeFilterLower;
             });
         }
 

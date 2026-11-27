@@ -1,6 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useRooms } from '../api/rooms';
-import { todayIso, addDaysIso } from '../lib/format';
+import { useReservations } from '../api/reservations';
+import { useDoneStays } from '../api/stays';
+import { useSettings } from '../api/settings';
+import { isRoomOverdue } from '../lib/overdue';
+import { todayIso, fdWithYear, addDaysIso } from '../lib/format';
 import RoomTile from '../components/RoomTile.jsx';
 import CheckInSheet from '../components/sheets/CheckInSheet.jsx';
 import CheckoutSheet from '../components/sheets/CheckoutSheet.jsx';
@@ -12,8 +16,17 @@ import RoomDetailsSheet from '../components/sheets/RoomDetailsSheet.jsx';
 import StayDetailSheet from '../components/sheets/StayDetailSheet.jsx';
 import RoomCalendar from '../components/RoomCalendar.jsx';
 
-const LABEL = { free: 'Free', booked: 'Booked', occupied: 'Occupied', cleaning: 'Cleaning', repair: 'Repair' };
+const LABEL = { free: 'Free', booked: 'Booked', occupied: 'Occupied', cleaning: 'Cleaning', repair: 'Repair', overdue: 'Overdue' };
 const FLOOR_NAME = (f) => (Number(f) === 0 ? 'Ground floor' : `Floor ${f}`);
+
+function toIsoString(date) {
+  if (!date) return todayIso();
+  if (typeof date === 'string') return date.slice(0, 10);
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
 
 const COUNT_ICONS = {
   free: (
@@ -48,18 +61,171 @@ const COUNT_ICONS = {
       <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
     </svg>
   ),
+  overdue: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
+    </svg>
+  ),
 };
 
 export default function Rooms() {
   const { data, isLoading, isError, error, refetch } = useRooms();
+  const { data: reservations = [] } = useReservations();
+  const { data: doneStays = [] } = useDoneStays();
+  const { data: settingsData } = useSettings();
+
+  const [selectedDateObj, setSelectedDateObj] = useState(() => new Date());
   const [filter, setFilter] = useState('all');
   const [sheet, setSheet] = useState(null);
 
+  const baseRooms = data?.rooms || [];
+  const today = todayIso();
+  const selectedDateIso = toIsoString(selectedDateObj);
+  const isTodaySelected = selectedDateIso === today;
+
+  // Compute room status & tile metadata dynamically for selectedDateIso (matching mobile)
+  const rooms = useMemo(() => {
+    if (!baseRooms.length) return [];
+    let computedRooms;
+    if (isTodaySelected) {
+      computedRooms = baseRooms;
+    } else {
+      const isPast = selectedDateIso < today;
+
+      computedRooms = baseRooms.map((room) => {
+        const roomId = Number(room.id);
+
+        // 1. Check if occupied on selectedDateIso
+        let activeStay = null;
+
+        if (!isPast) {
+          if (room.status === 'occupied' && room.stayId) {
+            const inDate = room.checkInDate || today;
+            const outDate = room.checkoutPlanned || '9999-12-31';
+            if (inDate <= selectedDateIso && selectedDateIso < outDate) {
+              activeStay = {
+                stayId: room.stayId,
+                guestName: room.guestName,
+                persons: room.persons || 1,
+                checkoutPlanned: room.checkoutPlanned,
+              };
+            }
+          }
+        } else {
+          if (Array.isArray(doneStays)) {
+            const foundDone = doneStays.find((s) => {
+              if (Number(s.room_id) !== roomId) return false;
+              const inDate = (s.check_in_date || '').slice(0, 10);
+              const outDate = (s.checkout_actual || s.checkout_planned || '').slice(0, 10);
+              return inDate <= selectedDateIso && selectedDateIso < outDate;
+            });
+            if (foundDone) {
+              activeStay = {
+                stayId: foundDone.id,
+                guestName: foundDone.guest_name,
+                persons: foundDone.persons || 1,
+                checkoutPlanned: (foundDone.checkout_actual || foundDone.checkout_planned || '').slice(0, 10),
+              };
+            }
+          }
+
+          if (!activeStay && room.status === 'occupied' && room.stayId) {
+            const inDate = room.checkInDate || today;
+            const outDate = room.checkoutPlanned || '9999-12-31';
+            if (inDate <= selectedDateIso && selectedDateIso < outDate) {
+              activeStay = {
+                stayId: room.stayId,
+                guestName: room.guestName,
+                persons: room.persons || 1,
+                checkoutPlanned: room.checkoutPlanned,
+              };
+            }
+          }
+        }
+
+        if (activeStay) {
+          return {
+            ...room,
+            status: 'occupied',
+            stayId: activeStay.stayId,
+            guestName: activeStay.guestName,
+            persons: activeStay.persons,
+            checkoutPlanned: activeStay.checkoutPlanned,
+            hasPendingBooking: false,
+            pendingBooking: null,
+          };
+        }
+
+        // 2. Check reservations overlapping selectedDateIso
+        if (Array.isArray(reservations)) {
+          const matchingRes = reservations.find((res) => {
+            if (Number(res.room_id) !== roomId) return false;
+            if (res.status !== 'pending') return false;
+            const inDate = (res.check_in_date || '').slice(0, 10);
+            const outDate = (res.check_out_date || '').slice(0, 10);
+            return inDate <= selectedDateIso && selectedDateIso < outDate;
+          });
+
+          if (matchingRes) {
+            return {
+              ...room,
+              status: 'booked',
+              guestName: matchingRes.guest_name,
+              persons: matchingRes.persons || 1,
+              bookingId: matchingRes.id,
+              bookingCode: matchingRes.booking_code,
+              bookingCheckIn: matchingRes.check_in_date,
+              hasPendingBooking: true,
+              pendingBooking: {
+                id: matchingRes.id,
+                bookingCode: matchingRes.booking_code,
+                guestName: matchingRes.guest_name,
+                checkInDate: matchingRes.check_in_date,
+                checkOutDate: matchingRes.check_out_date,
+                persons: matchingRes.persons || 1,
+              },
+            };
+          }
+        }
+
+        // 3. Maintenance / Housekeeping
+        if (room.housekeepingStatus === 'repair') {
+          return {
+            ...room,
+            status: 'repair',
+            guestName: null,
+            persons: 0,
+            stayId: null,
+            hasPendingBooking: false,
+            pendingBooking: null,
+          };
+        }
+
+        return {
+          ...room,
+          status: 'free',
+          guestName: null,
+          persons: 0,
+          stayId: null,
+          hasPendingBooking: false,
+          pendingBooking: null,
+        };
+      });
+    }
+
+    return computedRooms.map((room) => ({
+      ...room,
+      isOverdue: isRoomOverdue(room, settingsData),
+    }));
+  }, [baseRooms, reservations, doneStays, selectedDateIso, today, isTodaySelected, settingsData]);
+
   const floors = useMemo(() => {
-    if (!data) return [];
-    const set = new Set(data.rooms.map((r) => r.floor));
+    if (!rooms.length) return [];
+    const set = new Set(rooms.map((r) => r.floor));
     return [...set].sort((a, b) => a - b);
-  }, [data]);
+  }, [rooms]);
 
   if (isLoading) {
     return (
@@ -95,16 +261,23 @@ export default function Rooms() {
     );
   }
 
-  const { rooms, counts } = data;
-  const today = todayIso();
   const overdueCount = rooms.filter((r) => r.status === 'occupied' && (r.isOverdue || (r.checkoutPlanned && r.checkoutPlanned.slice(0, 10) < today))).length;
-  const leaving = rooms.filter((r) => r.status === 'occupied' && (r.dueToday || (r.checkoutPlanned && r.checkoutPlanned.slice(0, 10) === today))).length;
-  const displayCounts = counts || { free: 0, booked: 0, occupied: 0, cleaning: 0, repair: 0 };
+  const leaving = rooms.filter((r) => r.status === 'occupied' && (r.dueToday || (r.checkoutPlanned && r.checkoutPlanned.slice(0, 10) === selectedDateIso))).length;
+
+  const displayCounts = useMemo(() => {
+    const c = { free: 0, booked: 0, occupied: 0, cleaning: 0, repair: 0, overdue: 0 };
+    rooms.forEach((r) => {
+      if (c[r.status] !== undefined) c[r.status]++;
+      if (r.isOverdue) c.overdue++;
+    });
+    return c;
+  }, [rooms]);
 
   const roomMatchesFilter = (r, f) => {
     if (f === 'all') return true;
     if (f === 'booked') return r.status === 'booked' || r.hasPendingBooking === true;
     if (f === 'occupied') return r.status === 'occupied';
+    if (f === 'overdue') return Boolean(r.isOverdue);
     return r.status === f;
   };
 
@@ -118,6 +291,7 @@ export default function Rooms() {
         : 'Ongoing stay',
     cleaning: 'Being cleaned',
     repair: 'Not usable',
+    overdue: 'Exceeded checkout',
   };
 
   const openRoom = (room) => {
@@ -157,7 +331,44 @@ export default function Rooms() {
         </button>
       </div>
 
-      {/* 2. Room Statistics (5 Status Cards) */}
+      {/* Date banner indicating dynamic view */}
+      <div
+        className="room-date-banner"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 16px',
+          marginTop: 12,
+          marginBottom: 12,
+          background: isTodaySelected ? 'var(--color-surface, #ffffff)' : '#FFFBEB',
+          border: `1px solid ${isTodaySelected ? 'var(--color-border, #EAE4EF)' : '#FCD34D'}`,
+          borderRadius: '8px',
+          flexWrap: 'wrap',
+          gap: '8px',
+        }}
+      >
+        <div>
+          <strong style={{ fontSize: '14px', color: isTodaySelected ? 'var(--color-heading, #1E1B4B)' : '#92400E' }}>
+            {isTodaySelected ? 'Today’s Room Status' : `Room Status: ${fdWithYear(selectedDateIso)}`}
+          </strong>
+          <div style={{ fontSize: '12px', color: 'var(--color-muted, #64748B)', marginTop: '2px' }}>
+            {isTodaySelected ? 'Real-time live status' : `${selectedDateIso < today ? 'Past' : 'Projected'} availability for selected date`}
+          </div>
+        </div>
+        {!isTodaySelected && (
+          <button
+            type="button"
+            className="btn sm"
+            style={{ fontSize: '12px', padding: '4px 10px', backgroundColor: '#F59E0B', color: '#ffffff', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+            onClick={() => setSelectedDateObj(new Date())}
+          >
+            Reset to Today
+          </button>
+        )}
+      </div>
+
+      {/* 2. Room Statistics (6 Status Cards) */}
       <div className="counts">
         {Object.keys(LABEL).map((k) => (
           <button
@@ -241,7 +452,10 @@ export default function Rooms() {
 
         {/* Calendar on the Right side of the Rooms Dashboard */}
         <aside className="rooms-calendar-column" aria-label="Monthly Calendar View">
-          <RoomCalendar />
+          <RoomCalendar
+            initialDate={selectedDateObj}
+            onDateSelect={(d) => setSelectedDateObj(d)}
+          />
         </aside>
       </div>
 

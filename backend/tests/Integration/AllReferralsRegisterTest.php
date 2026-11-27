@@ -487,4 +487,214 @@ final class AllReferralsRegisterTest extends TestCase
         }
         $this->assertTrue($foundUpcoming);
     }
+
+    public function testOtherPersonReferralBookingAppearsInAllReferralsWithFreeTextName(): void
+    {
+        // Create booking with Booking Source = Other and Person Name = Selvi
+        $res = $this->reservationService->create(
+            1,
+            $this->testRoomId,
+            $this->referredPhone,
+            'Ananya Referred',
+            '2026-12-28',
+            '2026-12-30',
+            1,
+            2000.0,
+            0.0,
+            'cash',
+            1,
+            null,
+            null,
+            'Other',
+            null,
+            'Selvi'
+        );
+        $resId = (int) $res['id'];
+        $this->createdReservationIds[] = $resId;
+
+        // Verify DB row
+        $dbRow = $this->reservationRepo->findWithDetails($resId);
+        $this->assertSame('Other', $dbRow['booking_source']);
+        $this->assertSame('Selvi', $dbRow['other_source']);
+        $this->assertNull($dbRow['referred_by_guest_id']);
+
+        // Query All Referrals via Controller
+        $req = $this->makeRequest('GET', '/guests/referrals');
+        $result = $this->guestController->allReferrals($req);
+
+        $found = null;
+        foreach ($result['items'] as $item) {
+            if ((int) ($item['reservation_id'] ?? 0) === $resId) {
+                $found = $item;
+                break;
+            }
+        }
+
+        $this->assertNotNull($found, 'Other-person referral booking must appear in All Referrals.');
+        $this->assertSame('Selvi', $found['referrer_name']);
+        $this->assertNull($found['referrer_id']);
+        $this->assertNull($found['referrer_phone']);
+        $this->assertSame('other', $found['referral_type']);
+        $this->assertSame('Other', $found['booking_source']);
+        $this->assertSame('Ananya Referred', $found['referred_guest_name']);
+        $this->assertSame($this->referredPhone, $found['referred_guest_phone']);
+        $this->assertSame('Upcoming', $found['status']);
+
+        // Test search by Other person name
+        $reqSearch = $this->makeRequest('GET', '/guests/referrals', ['search' => 'Selvi']);
+        $resSearch = $this->guestController->allReferrals($reqSearch);
+        $this->assertNotEmpty($resSearch['items']);
+        $this->assertSame('Selvi', $resSearch['items'][0]['referrer_name']);
+
+        // Test referrer_search
+        $reqRefSearch = $this->makeRequest('GET', '/guests/referrals', ['referrer_search' => 'Selvi']);
+        $resRefSearch = $this->guestController->allReferrals($reqRefSearch);
+        $this->assertNotEmpty($resRefSearch['items']);
+        $this->assertSame('Selvi', $resRefSearch['items'][0]['referrer_name']);
+
+        // Test type filter 'other'
+        $reqTypeOther = $this->makeRequest('GET', '/guests/referrals', ['type' => 'other']);
+        $resTypeOther = $this->guestController->allReferrals($reqTypeOther);
+        $this->assertNotEmpty($resTypeOther['items']);
+        foreach ($resTypeOther['items'] as $it) {
+            $this->assertSame('other', $it['referral_type']);
+        }
+    }
+
+    public function testDirectCheckInOtherPersonReferralAppearsInAllReferrals(): void
+    {
+        $rooms = $this->roomRepo->allForHotel(1);
+        $directRoomId = null;
+        foreach ($rooms as $r) {
+            if ($this->stayRepo->findInHouseByRoom((int) $r['id']) === null && ($r['housekeeping_status'] ?? '') !== 'repair') {
+                $directRoomId = (int) $r['id'];
+                break;
+            }
+        }
+        $this->assertNotNull($directRoomId, 'Must find a room for direct check-in.');
+        $this->db->prepare("UPDATE rooms SET housekeeping_status = 'ok' WHERE id = :id")->execute(['id' => $directRoomId]);
+
+        $directPhone = '944' . str_pad((string) mt_rand(1000000, 9999999), 7, '0', STR_PAD_LEFT);
+        $stay = $this->stayService->directCheckIn(
+            1,
+            $directRoomId,
+            $directPhone,
+            'Walkin Direct Guest',
+            'Aadhaar',
+            '999988887777',
+            'Tiruchi',
+            1,
+            2,
+            2000.0,
+            1000.0,
+            'cash',
+            1,
+            null,
+            'Other',
+            null,
+            'Ramesh Guide'
+        );
+        $stayId = (int) $stay['id'];
+        $this->createdStayIds[] = $stayId;
+        $guest = $this->guestRepo->findByPhone(1, $directPhone);
+        if ($guest !== null) {
+            $this->createdGuestIds[] = (int) $guest['id'];
+        }
+
+        // Verify database row
+        $stayRow = $this->stayRepo->findWithDetails($stayId);
+        $this->assertSame('Other', $stayRow['booking_source']);
+        $this->assertSame('Ramesh Guide', $stayRow['other_source']);
+        $this->assertNull($stayRow['referred_by_guest_id']);
+
+        // Query All Referrals via Controller
+        $req = $this->makeRequest('GET', '/guests/referrals');
+        $result = $this->guestController->allReferrals($req);
+
+        $found = null;
+        foreach ($result['items'] as $item) {
+            if ((int) ($item['stay_id'] ?? 0) === $stayId) {
+                $found = $item;
+                break;
+            }
+        }
+
+        $this->assertNotNull($found, 'Direct check-in Other referral must appear in All Referrals.');
+        $this->assertSame('Ramesh Guide', $found['referrer_name']);
+        $this->assertNull($found['referrer_id']);
+        $this->assertNull($found['referrer_phone']);
+        $this->assertSame('other', $found['referral_type']);
+        $this->assertSame('In-House', $found['status']);
+        $this->assertTrue($found['has_arrived']);
+        $this->assertSame('Walkin Direct Guest', $found['referred_guest_name']);
+    }
+
+    public function testBothExistingMemberAndOtherPersonReferralsCoexist(): void
+    {
+        // 1. Create Existing Member booking (referrer Suresh)
+        $b1 = $this->reservationService->create(
+            1,
+            $this->testRoomId,
+            $this->referredPhone,
+            'Ananya Referred',
+            '2027-01-10',
+            '2027-01-12',
+            1,
+            2000.0,
+            0.0,
+            'cash',
+            1,
+            null,
+            null,
+            'Reference – Existing Member',
+            $this->referrerGuestId,
+            null
+        );
+        $this->createdReservationIds[] = (int) $b1['id'];
+
+        // 2. Create Other person booking (referrer Selvi)
+        $b2 = $this->reservationService->create(
+            1,
+            $this->testRoomId,
+            $this->referredPhone,
+            'Ananya Referred',
+            '2027-01-15',
+            '2027-01-17',
+            1,
+            2000.0,
+            0.0,
+            'cash',
+            1,
+            null,
+            null,
+            'Other',
+            null,
+            'Selvi'
+        );
+        $this->createdReservationIds[] = (int) $b2['id'];
+
+        $req = $this->makeRequest('GET', '/guests/referrals');
+        $result = $this->guestController->allReferrals($req);
+
+        $foundMember = null;
+        $foundOther = null;
+        foreach ($result['items'] as $it) {
+            if ((int) ($it['reservation_id'] ?? 0) === (int) $b1['id']) {
+                $foundMember = $it;
+            }
+            if ((int) ($it['reservation_id'] ?? 0) === (int) $b2['id']) {
+                $foundOther = $it;
+            }
+        }
+
+        $this->assertNotNull($foundMember, 'Existing Member referral must be present.');
+        $this->assertSame('Suresh Referrer', $foundMember['referrer_name']);
+        $this->assertSame((int) $this->referrerGuestId, (int) $foundMember['referrer_id']);
+        $this->assertSame('existing_member', $foundMember['referral_type']);
+
+        $this->assertNotNull($foundOther, 'Other person referral must be present.');
+        $this->assertSame('Selvi', $foundOther['referrer_name']);
+        $this->assertNull($foundOther['referrer_id']);
+        $this->assertSame('other', $foundOther['referral_type']);
+    }
 }

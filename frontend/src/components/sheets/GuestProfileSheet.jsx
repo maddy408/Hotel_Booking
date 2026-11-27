@@ -5,7 +5,7 @@ import { useUploadIdImage, fetchIdImageBlobUrl } from '../../api/idImage';
 import { fetchOccupantDocumentBlob } from '../../api/occupantDocuments';
 import { useToast } from '../../context/ToastContext.jsx';
 import { fd } from '../../lib/format';
-import { validatePhone, handlePhoneInputChange } from '../../lib/validation.js';
+import { validatePhone, handlePhoneInputChange, getIdProofConfig, handleIdNumberInputChange, validateIdNumber } from '../../lib/validation.js';
 
 const ID_TYPES = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport', 'Other'];
 
@@ -111,6 +111,25 @@ export default function GuestProfileSheet({ guestId, initialEdit = false, onClos
     }
   };
 
+  const handleIdTypeChange = (newType) => {
+    setForm((prev) => ({
+      ...prev,
+      idProofType: newType,
+      idProofNumber: '',
+    }));
+    if (formErrors.idProofNumber) {
+      setFormErrors((prev) => ({ ...prev, idProofNumber: null }));
+    }
+  };
+
+  const handleIdNumberChange = (raw) => {
+    const res = handleIdNumberInputChange(raw, form.idProofType);
+    setForm((prev) => ({ ...prev, idProofNumber: res.value }));
+    if (formErrors.idProofNumber) {
+      setFormErrors((prev) => ({ ...prev, idProofNumber: null }));
+    }
+  };
+
   const validateForm = () => {
     const errs = {};
     if (!form.name.trim()) {
@@ -123,8 +142,15 @@ export default function GuestProfileSheet({ guestId, initialEdit = false, onClos
     if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       errs.email = 'Enter a valid email address.';
     }
-    if (form.idProofNumber.trim() && form.idProofNumber.trim().length < 4) {
-      errs.idProofNumber = 'ID number must be at least 4 characters.';
+    if (form.idProofNumber.trim()) {
+      if (!form.idProofType) {
+        errs.idProofNumber = 'Please select an ID proof type above.';
+      } else {
+        const idVal = validateIdNumber(form.idProofNumber, form.idProofType, { isOptional: false });
+        if (!idVal.isValid) {
+          errs.idProofNumber = idVal.error;
+        }
+      }
     }
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
@@ -156,6 +182,9 @@ export default function GuestProfileSheet({ guestId, initialEdit = false, onClos
       toast(err.message || 'Failed to update guest profile.');
     }
   };
+
+  const idConfig = getIdProofConfig(form.idProofType);
+  const isSameAsSaved = Boolean(guest?.idProofMasked && (guest.idProofType || guest.id_proof_type) === form.idProofType);
 
   return (
     <Sheet onClose={onClose}>
@@ -239,7 +268,7 @@ export default function GuestProfileSheet({ guestId, initialEdit = false, onClos
                 <select
                   id="gp-idtype"
                   value={form.idProofType}
-                  onChange={(e) => handleEditChange('idProofType', e.target.value)}
+                  onChange={(e) => handleIdTypeChange(e.target.value)}
                 >
                   {ID_TYPES.map((t) => (
                     <option key={t} value={t}>
@@ -263,14 +292,20 @@ export default function GuestProfileSheet({ guestId, initialEdit = false, onClos
 
             <div className={`f full ${formErrors.idProofNumber ? 'bad' : ''}`}>
               <label htmlFor="gp-idnum">
-                ID Proof Number {guest.idProofMasked ? <span className="muted mono">({guest.idProofMasked})</span> : null}
+                {idConfig.label} {isSameAsSaved ? <span className="muted mono">({guest.idProofMasked})</span> : null}
               </label>
               <input
                 id="gp-idnum"
                 type="text"
+                inputMode={idConfig.inputMode}
+                maxLength={idConfig.maxLength}
+                autoCapitalize={idConfig.autoCapitalize}
+                autoCorrect="off"
+                spellCheck="false"
+                style={{ textTransform: form.idProofType === 'Aadhaar' ? 'none' : 'uppercase' }}
                 value={form.idProofNumber}
-                onChange={(e) => handleEditChange('idProofNumber', e.target.value)}
-                placeholder={guest.idProofMasked ? 'Leave blank to keep existing ID number' : 'Enter ID proof number'}
+                onChange={(e) => handleIdNumberChange(e.target.value)}
+                placeholder={isSameAsSaved ? 'Leave blank to keep existing ID number' : idConfig.placeholder}
               />
               {formErrors.idProofNumber && <span className="err">{formErrors.idProofNumber}</span>}
               <small className="muted" style={{ marginTop: 4, display: 'block', fontSize: 11.5 }}>

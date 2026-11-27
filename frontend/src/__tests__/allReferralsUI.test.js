@@ -280,4 +280,104 @@ describe('All Referrals Register UI & State Rules', () => {
     assert.equal(filterByStatus(records, 'upcoming').length, 2);
     assert.equal(filterByStatus(records, 'cancelled').length, 1);
   });
+
+  // Test 7: Formatting and displaying Other Person referrals vs Existing Member referrals
+  it('7. formats and distinguishes Other Person referrals from Existing Member referrals', () => {
+    const memberItem = {
+      reservation_id: 101,
+      booking_code: 'BK-101',
+      referrer_id: 15,
+      referrer_name: 'Suresh Referrer',
+      referrer_phone: '9840123456',
+      referral_type: 'existing_member',
+      referred_guest_name: 'Ananya',
+    };
+
+    const otherItem = {
+      reservation_id: 102,
+      booking_code: 'BK-102',
+      referrer_id: null,
+      referrer_name: 'Selvi',
+      referrer_phone: null,
+      referral_type: 'other',
+      referred_guest_name: 'Gayu',
+    };
+
+    const getReferrerDisplay = (it) => {
+      if (it.referrer_id) {
+        return {
+          name: it.referrer_name,
+          phone: it.referrer_phone || '—',
+          isMember: true,
+          profileUrl: `/guests/${it.referrer_id}`,
+          tag: 'Member',
+        };
+      }
+      return {
+        name: it.referrer_name || '—',
+        phone: it.referrer_phone || '—',
+        isMember: false,
+        profileUrl: null,
+        tag: 'Other',
+      };
+    };
+
+    const memberDisplay = getReferrerDisplay(memberItem);
+    assert.equal(memberDisplay.name, 'Suresh Referrer');
+    assert.equal(memberDisplay.phone, '9840123456');
+    assert.equal(memberDisplay.isMember, true);
+    assert.equal(memberDisplay.profileUrl, '/guests/15');
+    assert.equal(memberDisplay.tag, 'Member');
+
+    const otherDisplay = getReferrerDisplay(otherItem);
+    assert.equal(otherDisplay.name, 'Selvi');
+    assert.equal(otherDisplay.phone, '—');
+    assert.equal(otherDisplay.isMember, false);
+    assert.equal(otherDisplay.profileUrl, null);
+    assert.equal(otherDisplay.tag, 'Other');
+  });
+
+  // Test 8: Safe action targets for bookings vs direct stays and members vs others
+  it('8. provides safe action targets without generating broken links for Other referrals', () => {
+    const bookingMember = { reservation_id: 201, stay_id: null, referrer_id: 5, referrer_name: 'Arjun' };
+    const bookingOther = { reservation_id: 202, stay_id: null, referrer_id: null, referrer_name: 'Selvi' };
+    const directStayOther = { reservation_id: null, stay_id: 301, referrer_id: null, referrer_name: 'Ramesh Guide' };
+
+    const getDetailAction = (it) => {
+      if (it.reservation_id) return { type: 'booking', id: it.reservation_id };
+      if (it.stay_id) return { type: 'stay', id: it.stay_id };
+      return null;
+    };
+
+    const getReferrerNavTarget = (it) => {
+      return it.referrer_id ? `/guests/${it.referrer_id}` : null;
+    };
+
+    assert.deepEqual(getDetailAction(bookingMember), { type: 'booking', id: 201 });
+    assert.deepEqual(getDetailAction(bookingOther), { type: 'booking', id: 202 });
+    assert.deepEqual(getDetailAction(directStayOther), { type: 'stay', id: 301 });
+
+    assert.equal(getReferrerNavTarget(bookingMember), '/guests/5');
+    assert.equal(getReferrerNavTarget(bookingOther), null);
+    assert.equal(getReferrerNavTarget(directStayOther), null);
+  });
+
+  // Test 9: Type filtering accurately isolates existing members vs other persons
+  it('9. filters referrals accurately by type (existing_member vs other)', () => {
+    const list = [
+      { id: 1, referral_type: 'existing_member', referrer_id: 10, referrer_name: 'Kalai' },
+      { id: 2, referral_type: 'other', referrer_id: null, referrer_name: 'Selvi' },
+      { id: 3, referral_type: 'other', referrer_id: null, referrer_name: 'Ramesh Guide' },
+      { id: 4, referral_type: 'existing_member', referrer_id: 12, referrer_name: 'Suresh' },
+    ];
+
+    const filterByType = (items, type) => {
+      if (type === 'all') return items;
+      return items.filter((it) => (it.referral_type || (it.referrer_id ? 'existing_member' : 'other')) === type);
+    };
+
+    assert.equal(filterByType(list, 'all').length, 4);
+    assert.equal(filterByType(list, 'existing_member').length, 2);
+    assert.equal(filterByType(list, 'other').length, 2);
+  });
 });

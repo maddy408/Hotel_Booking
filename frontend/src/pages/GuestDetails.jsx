@@ -567,38 +567,60 @@ export default function GuestDetails() {
               <span style={{ color: 'var(--color-muted)', fontWeight: 600 }}>Referred By:</span>
               {referredBy ? (
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    className="link"
-                    style={{
-                      fontWeight: 700,
-                      background: 'none',
-                      border: 'none',
-                      padding: 0,
-                      color: 'var(--color-primary, #70265F)',
-                      cursor: 'pointer',
-                      textDecoration: 'underline',
-                      fontSize: 'inherit',
-                    }}
-                    onClick={() => navigate(`/guests/${referredBy.id}`)}
-                    title="Open referrer guest details"
-                  >
-                    {referredBy.name}
-                  </button>
-                  <span className="mono" style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>
-                    {referredBy.phone}
-                  </span>
-                  <span className="muted" style={{ fontSize: 12 }}>
-                    (Guest #{referredBy.id})
-                  </span>
-                  <button
-                    type="button"
-                    className="btn sm"
-                    style={{ fontSize: 11, padding: '2px 8px', height: 'auto', marginLeft: 4 }}
-                    onClick={() => navigate(`/guests/${referredBy.id}`)}
-                  >
-                    View Profile
-                  </button>
+                  {referredBy.id ? (
+                    <>
+                      <button
+                        type="button"
+                        className="link"
+                        style={{
+                          fontWeight: 700,
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          color: 'var(--color-primary, #70265F)',
+                          cursor: 'pointer',
+                          textDecoration: 'underline',
+                          fontSize: 'inherit',
+                        }}
+                        onClick={() => navigate(`/guests/${referredBy.id}`)}
+                        title="Open referrer guest details"
+                      >
+                        {referredBy.name}
+                      </button>
+                      <span className="mono" style={{ color: 'var(--color-text-primary)', fontWeight: 600 }}>
+                        {referredBy.phone}
+                      </span>
+                      <span className="muted" style={{ fontSize: 12 }}>
+                        (Guest #{referredBy.id})
+                      </span>
+                      <button
+                        type="button"
+                        className="btn sm"
+                        style={{ fontSize: 11, padding: '2px 8px', height: 'auto', marginLeft: 4 }}
+                        onClick={() => navigate(`/guests/${referredBy.id}`)}
+                      >
+                        View Profile
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span style={{ fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                        {referredBy.name}
+                      </span>
+                      <span
+                        className="tag sm"
+                        style={{
+                          fontSize: 10,
+                          padding: '1px 6px',
+                          background: '#f8fafc',
+                          color: '#475569',
+                          borderColor: '#e2e8f0',
+                        }}
+                      >
+                        Other
+                      </span>
+                    </>
+                  )}
                 </div>
               ) : (
                 <span className="muted" style={{ fontStyle: 'normal' }}>
@@ -976,6 +998,11 @@ export default function GuestDetails() {
                             {isReference && (
                               <span style={{ fontSize: 11, color: 'var(--color-muted)' }}>
                                 Ref: {referrerDisplay}
+                              </span>
+                            )}
+                            {(!isReference && (b.booking_source === 'Other' || b.other_source)) && (
+                              <span style={{ fontSize: 11, color: 'var(--color-muted)' }}>
+                                Person: {b.other_source || '—'}
                               </span>
                             )}
                           </div>

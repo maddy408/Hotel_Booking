@@ -1,6 +1,9 @@
 import { loadTokens, saveTokens } from '../storage/secureStorage';
 
+export const PRODUCTION_API_URL = 'https://hotel-booking.ethiodeploy.app';
+
 function getExpoHostIp() {
+  if (typeof __DEV__ !== 'undefined' && !__DEV__) return null;
   try {
     const Constants = require('expo-constants')?.default || require('expo-constants');
     const hostUri =
@@ -21,35 +24,41 @@ function getExpoHostIp() {
 
 let activeBaseUrl = null;
 
+export function getCleanConfiguredUrl() {
+  const raw = (process.env.EXPO_PUBLIC_API_URL || '').trim();
+  if (!raw) return '';
+  return raw.replace(/\/+$/, '').replace(/\/api$/, '');
+}
+
 export function getCandidateBaseUrls() {
+  const configured = getCleanConfiguredUrl();
+  const isDev = typeof __DEV__ !== 'undefined' ? Boolean(__DEV__) : process.env.NODE_ENV !== 'production';
+
+  // In production builds (or when pointed at remote/production URL), use ONLY the production endpoint.
+  // Never include localhost, 127.0.0.1, or local LAN IPs in production.
+  if (!isDev) {
+    return [configured || PRODUCTION_API_URL];
+  }
+
+  // Development mode:
   const candidates = [];
-  const envUrl = (process.env.EXPO_PUBLIC_API_URL || '').trim().replace(/\/+$/, '');
-  if (envUrl && !envUrl.includes('hotel-booking.ethiodeploy.app')) {
-    candidates.push(envUrl);
-  }
-  const hostIp = getExpoHostIp();
-  if (hostIp) {
-    const expoUrl = `http://${hostIp}:8080`;
-    if (!candidates.includes(expoUrl)) candidates.push(expoUrl);
-  }
-  const fallbackList = [
-    'http://10.0.2.2:8080',      // Android emulator host loopback
-    'http://192.168.1.102:8080',  // Host Wi-Fi IP
-    'http://localhost:8080',      // Localhost / adb reverse
-    'http://127.0.0.1:8080',
-  ];
-  for (const url of fallbackList) {
-    if (!candidates.includes(url)) {
-      candidates.push(url);
+  if (configured) {
+    candidates.push(configured);
+  } else {
+    const hostIp = getExpoHostIp();
+    if (hostIp) {
+      candidates.push(`http://${hostIp}:8080`);
     }
+    candidates.push(PRODUCTION_API_URL);
   }
+
   return candidates;
 }
 
 export function resolveBaseUrl() {
   if (activeBaseUrl) return activeBaseUrl;
   const candidates = getCandidateBaseUrls();
-  return candidates[0] || 'http://192.168.1.102:8080';
+  return candidates[0] || PRODUCTION_API_URL;
 }
 
 export const BASE_URL = resolveBaseUrl();

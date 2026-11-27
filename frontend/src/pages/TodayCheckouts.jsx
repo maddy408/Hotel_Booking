@@ -5,6 +5,7 @@ import CheckInWhatsAppSheet from '../components/sheets/CheckInWhatsAppSheet.jsx'
 import CheckoutSheet from '../components/sheets/CheckoutSheet.jsx';
 import CheckInSheet from '../components/sheets/CheckInSheet.jsx';
 import BookingDetailSheet from '../components/sheets/BookingDetailSheet.jsx';
+import StayDetailSheet from '../components/sheets/StayDetailSheet.jsx';
 import GuestProfileSheet from '../components/sheets/GuestProfileSheet.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { fdWithYear } from '../lib/format';
@@ -66,8 +67,16 @@ export default function TodayCheckouts() {
   const filteredCheckins = useMemo(() => {
     const list = data?.checkins || [];
     return list.filter((item) => {
-      if (statusFilter !== 'all' && item.checkin_status !== statusFilter) {
-        return false;
+      if (statusFilter !== 'all') {
+        if (statusFilter === 'overdue') {
+          const isLate = Boolean(
+            item.is_overdue ||
+            (item.checkin_status === 'pending' && item.check_in_date && today && item.check_in_date < today)
+          );
+          if (!isLate) return false;
+        } else if (item.checkin_status !== statusFilter) {
+          return false;
+        }
       }
       if (!search.trim()) return true;
       const q = search.toLowerCase().trim();
@@ -78,13 +87,21 @@ export default function TodayCheckouts() {
         (item.booking_code && item.booking_code.toLowerCase().includes(q))
       );
     });
-  }, [data?.checkins, statusFilter, search]);
+  }, [data?.checkins, statusFilter, search, today]);
 
   const filteredCheckouts = useMemo(() => {
     const list = data?.checkouts || [];
     return list.filter((item) => {
-      if (statusFilter !== 'all' && item.checkout_status !== statusFilter) {
-        return false;
+      if (statusFilter !== 'all') {
+        if (statusFilter === 'overdue') {
+          const isLate = Boolean(
+            item.is_overdue ||
+            (item.checkout_status === 'pending' && item.checkout_planned && today && item.checkout_planned < today)
+          );
+          if (!isLate) return false;
+        } else if (item.checkout_status !== statusFilter) {
+          return false;
+        }
       }
       if (!search.trim()) return true;
       const q = search.toLowerCase().trim();
@@ -95,7 +112,7 @@ export default function TodayCheckouts() {
         (item.booking_code && item.booking_code.toLowerCase().includes(q))
       );
     });
-  }, [data?.checkouts, statusFilter, search]);
+  }, [data?.checkouts, statusFilter, search, today]);
 
   if (isLoading) {
     return (
@@ -294,6 +311,28 @@ export default function TodayCheckouts() {
                   Checked Out ({checkinStats.checked_out})
                 </button>
               )}
+              {activeTab === 'checkins' && (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-pressed={statusFilter === 'overdue'}
+                  onClick={() => setStatusFilter(statusFilter === 'overdue' ? 'all' : 'overdue')}
+                  style={{ color: statusFilter === 'overdue' ? undefined : (checkinStats.late_arrivals ?? checkinStats.overdue ?? 0) > 0 ? '#E11D48' : undefined }}
+                >
+                  Late Arrivals ({checkinStats.late_arrivals ?? checkinStats.overdue ?? (data?.checkins?.filter(c => c.is_overdue || (c.checkin_status === 'pending' && c.check_in_date < today)).length ?? 0)})
+                </button>
+              )}
+              {activeTab === 'checkouts' && (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-pressed={statusFilter === 'overdue'}
+                  onClick={() => setStatusFilter(statusFilter === 'overdue' ? 'all' : 'overdue')}
+                  style={{ color: statusFilter === 'overdue' ? undefined : (checkoutStats.late_checkouts ?? checkoutStats.overdue ?? 0) > 0 ? '#E11D48' : undefined }}
+                >
+                  Late Check-outs ({checkoutStats.late_checkouts ?? checkoutStats.overdue ?? (data?.checkouts?.filter(c => c.is_overdue || (c.checkout_status === 'pending' && c.checkout_planned < today)).length ?? 0)})
+                </button>
+              )}
             </div>
 
             <span className="muted" style={{ fontSize: 13 }}>
@@ -410,7 +449,6 @@ export default function TodayCheckouts() {
                                 setActiveSheet({
                                   type: 'whatsapp_checkin',
                                   payload: item,
-                                raid: item,
                                 })
                               }
                             >
@@ -608,7 +646,22 @@ export default function TodayCheckouts() {
                               </svg>
                             </button>
 
-                            {/* 2. Existing Bill Icon Action */}
+                            {/* 2. Stay Details Icon Action */}
+                            {item.stay_id && (
+                              <button
+                                type="button"
+                                className="tc-icon-btn tc-icon-booking"
+                                title="View Stay Details"
+                                aria-label="View Stay Details"
+                                onClick={() => setActiveSheet({ type: 'stay', payload: item.stay_id })}
+                              >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                                  <path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v9" />
+                                </svg>
+                              </button>
+                            )}
+
+                            {/* 3. Existing Bill Icon Action */}
                             {isCheckedOut ? (
                               <a
                                 href={item.stay_id ? `/print/invoice/${item.stay_id}` : '#'}
@@ -757,7 +810,31 @@ export default function TodayCheckouts() {
         />
       )}
 
-      {/* 6. Guest Profile Sheet */}
+      {/* 6. Stay Details Sheet */}
+      {activeSheet?.type === 'stay' && (
+        <StayDetailSheet
+          stayId={activeSheet.payload}
+          onClose={() => {
+            setActiveSheet(null);
+            refetch();
+          }}
+          onCheckout={(stayId) =>
+            setActiveSheet({
+              type: 'checkout',
+              payload: stayId,
+            })
+          }
+          onEarlyCheckout={(stayId) =>
+            setActiveSheet({
+              type: 'checkout',
+              payload: stayId,
+              initialMode: 'early',
+            })
+          }
+        />
+      )}
+
+      {/* 7. Guest Profile Sheet */}
       {activeSheet?.type === 'guest' && (
         <GuestProfileSheet
           guestId={activeSheet.payload}

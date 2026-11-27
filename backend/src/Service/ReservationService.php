@@ -866,7 +866,7 @@ final class ReservationService
         }
         $trimmed = trim($source);
         $normalized = str_replace(['–', '-'], '–', $trimmed);
-        if ($normalized === 'Reference – Existing Member') {
+        if ($normalized === 'Reference – Existing Member' || $trimmed === 'Reference' || str_starts_with($trimmed, 'Reference')) {
             return 'Reference – Existing Member';
         }
         if ($trimmed === 'Other') {

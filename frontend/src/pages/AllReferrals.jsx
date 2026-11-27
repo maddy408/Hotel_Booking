@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAllReferrals } from '../api/guests';
 import BookingDetailSheet from '../components/sheets/BookingDetailSheet.jsx';
+import StayDetailSheet from '../components/sheets/StayDetailSheet.jsx';
 import { fd } from '../lib/format';
 
 export default function AllReferrals() {
@@ -12,6 +13,7 @@ export default function AllReferrals() {
   const [referrerSearch, setReferrerSearch] = useState('');
   const [referredSearch, setReferredSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState('all'); // 'all' | 'existing_member' | 'other'
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [dateType, setDateType] = useState('booking'); // 'booking' | 'check_in'
@@ -82,7 +84,13 @@ export default function AllReferrals() {
         }
       }
 
-      // 5. Date filter
+      // 5. Referral Type filter
+      if (typeFilter !== 'all') {
+        const itemType = item.referral_type || (item.referrer_id ? 'existing_member' : 'other');
+        if (itemType !== typeFilter) return false;
+      }
+
+      // 6. Date filter
       if (dateFrom || dateTo) {
         const targetRaw = dateType === 'check_in' ? item.scheduled_check_in : item.booking_date;
         const targetDate = targetRaw ? targetRaw.substring(0, 10) : '';
@@ -93,7 +101,7 @@ export default function AllReferrals() {
 
       return true;
     });
-  }, [rawItems, search, referrerSearch, referredSearch, statusFilter, dateFrom, dateTo, dateType]);
+  }, [rawItems, search, referrerSearch, referredSearch, statusFilter, typeFilter, dateFrom, dateTo, dateType]);
 
   // Pagination calculation
   const totalItems = filteredItems.length;
@@ -107,6 +115,7 @@ export default function AllReferrals() {
     setReferrerSearch('');
     setReferredSearch('');
     setStatusFilter('all');
+    setTypeFilter('all');
     setDateFrom('');
     setDateTo('');
     setDateType('booking');
@@ -118,6 +127,7 @@ export default function AllReferrals() {
     referrerSearch.trim() !== '' ||
     referredSearch.trim() !== '' ||
     statusFilter !== 'all' ||
+    typeFilter !== 'all' ||
     dateFrom !== '' ||
     dateTo !== '';
 
@@ -447,6 +457,23 @@ export default function AllReferrals() {
               <option value="arrived">Arrived (In-House / Checked Out)</option>
             </select>
           </div>
+
+          {/* Referral Type Filter */}
+          <div style={{ minWidth: '140px' }}>
+            <select
+              value={typeFilter}
+              onChange={(e) => {
+                setTypeFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              style={{ width: '100%', fontSize: 12.5, height: '36px' }}
+              aria-label="Filter by referral type"
+            >
+              <option value="all">All Types</option>
+              <option value="existing_member">Existing Member</option>
+              <option value="other">Other Person</option>
+            </select>
+          </div>
         </div>
 
         {/* Date Filters Row */}
@@ -548,28 +575,62 @@ export default function AllReferrals() {
             </thead>
             <tbody>
               {paginatedItems.length > 0 ? (
-                paginatedItems.map((item) => (
-                  <tr key={item.reservation_id}>
+                paginatedItems.map((item, idx) => (
+                  <tr key={item.reservation_id ? `res-${item.reservation_id}` : (item.stay_id ? `stay-${item.stay_id}` : idx)}>
                     {/* Referrer Name */}
                     <td>
-                      <button
-                        type="button"
-                        className="link"
-                        style={{
-                          fontWeight: 700,
-                          background: 'none',
-                          border: 'none',
-                          padding: 0,
-                          color: 'var(--color-primary, #70265F)',
-                          cursor: 'pointer',
-                          textAlign: 'left',
-                          fontSize: 'inherit',
-                        }}
-                        onClick={() => navigate(`/guests/${item.referrer_id}`)}
-                        title={`Open referrer profile for ${item.referrer_name}`}
-                      >
-                        {item.referrer_name || '—'}
-                      </button>
+                      {item.referrer_id ? (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <button
+                            type="button"
+                            className="link"
+                            style={{
+                              fontWeight: 700,
+                              background: 'none',
+                              border: 'none',
+                              padding: 0,
+                              color: 'var(--color-primary, #70265F)',
+                              cursor: 'pointer',
+                              textAlign: 'left',
+                              fontSize: 'inherit',
+                            }}
+                            onClick={() => navigate(`/guests/${item.referrer_id}`)}
+                            title={`Open referrer profile for ${item.referrer_name}`}
+                          >
+                            {item.referrer_name || '—'}
+                          </button>
+                          <span
+                            className="tag sm"
+                            style={{
+                              fontSize: 10,
+                              padding: '1px 5px',
+                              background: '#eff6ff',
+                              color: '#1d4ed8',
+                              borderColor: '#bfdbfe',
+                            }}
+                          >
+                            Member
+                          </span>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 700, color: 'var(--color-heading, #1f2937)' }}>
+                            {item.referrer_name || '—'}
+                          </span>
+                          <span
+                            className="tag sm"
+                            style={{
+                              fontSize: 10,
+                              padding: '1px 5px',
+                              background: '#f8fafc',
+                              color: '#475569',
+                              borderColor: '#e2e8f0',
+                            }}
+                          >
+                            Other
+                          </span>
+                        </div>
+                      )}
                     </td>
 
                     {/* Referrer Mobile */}
@@ -620,10 +681,16 @@ export default function AllReferrals() {
                           textAlign: 'left',
                           fontSize: 12.5,
                         }}
-                        onClick={() => setSheet({ type: 'booking', id: item.reservation_id })}
-                        title={`Open details for booking ${item.booking_code}`}
+                        onClick={() => {
+                          if (item.reservation_id) {
+                            setSheet({ type: 'booking', id: item.reservation_id });
+                          } else if (item.stay_id) {
+                            setSheet({ type: 'stay', id: item.stay_id });
+                          }
+                        }}
+                        title={item.reservation_id ? `Open details for booking ${item.booking_code}` : `Open details for stay #${item.stay_id}`}
                       >
-                        {item.booking_code || `#${item.reservation_id}`}
+                        {item.booking_code || (item.reservation_id ? `#${item.reservation_id}` : `Stay #${item.stay_id}`)}
                       </button>
                     </td>
 
@@ -721,6 +788,12 @@ export default function AllReferrals() {
       {sheet?.type === 'booking' && (
         <BookingDetailSheet
           reservationId={sheet.id}
+          onClose={() => setSheet(null)}
+        />
+      )}
+      {sheet?.type === 'stay' && (
+        <StayDetailSheet
+          stayId={sheet.id}
           onClose={() => setSheet(null)}
         />
       )}

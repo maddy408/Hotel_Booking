@@ -13,7 +13,7 @@ import { useRooms, useHousekeepingAction } from '../../api/rooms';
 import { useSettings } from '../../api/settings';
 import { useToast } from '../ToastContext.jsx';
 import { addDaysIso, estimateGstRate, formatGstBreakup, fd, formatCheckoutHour, inr, todayIso } from '../../lib/format';
-import { useFormValidation, validatePhone, isValidPhone, handlePhoneInputChange, cleanPhone10 } from '../../lib/validation';
+import { useFormValidation, validatePhone, isValidPhone, handlePhoneInputChange, cleanPhone10, getIdProofConfig, handleIdNumberInputChange, validateIdNumber } from '../../lib/validation';
 import { colors, fonts, radii } from '../../theme/theme';
 
 const IDS = ['Aadhaar', 'Driving Licence', 'Voter ID', 'Passport'];
@@ -285,6 +285,15 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
   const total = roomAmt + gst;
   const adv = isFromReservation ? confirmedAdvance : (Number(advance) || 0);
 
+  const isIdSaved = Boolean(matchedGuestId && lookup?.guest?.idProofType === idType);
+  const idConfig = getIdProofConfig(idType);
+
+  const handleIdTypeChange = (newType) => {
+    setIdType(newType);
+    setIdNo('');
+    clearError('idNo');
+  };
+
   const isLateArrival = isFromReservation && (reservation?.check_in_date < todayIso() || reservation?.check_out_date <= todayIso());
   const lateArrivalConflict = isLateArrival
     ? allReservations.find((r) => r.id !== reservation?.id && Number(r.room_id) === Number(reservation?.room_id || currentRoom?.id) && r.status === 'pending' && r.check_in_date < out && todayIso() < r.check_out_date)
@@ -447,6 +456,10 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
       if (!name.trim()) {
         validationErrs.name = 'Enter guest name.';
       }
+      const idValidation = validateIdNumber(idNo, idType, { isOptional: isIdSaved });
+      if (!idValidation.isValid) {
+        validationErrs.idNo = idValidation.error;
+      }
       if (bookingSource === 'Reference – Existing Member' && (!referredByGuestId || referredByGuestId <= 0)) {
         validationErrs.source = 'Please select an existing member as reference.';
       }
@@ -500,7 +513,7 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
       setErrors(validationErrs);
       scrollToFirstError(validationErrs);
 
-      const topMsg = validationErrs.room || validationErrs.persons || validationErrs.phone || validationErrs.name || validationErrs.occupants || validationErrs.documents || validationErrs.advance;
+      const topMsg = validationErrs.room || validationErrs.persons || validationErrs.phone || validationErrs.name || validationErrs.idNo || validationErrs.occupants || validationErrs.documents || validationErrs.advance;
       if (topMsg) toast(topMsg);
 
       if (!hasOccErrors && !validationErrs.phone && !validationErrs.name && !validationErrs.advance && !validationErrs.room && !validationErrs.persons && !allOccupantsHaveIdProof) {
@@ -802,23 +815,29 @@ export default function CheckInSheet({ room, reservation, onClose, triggerAdvanc
 
             <View style={styles.fieldWrap}>
               <Text style={styles.label}>ID proof *</Text>
-              <Segmented options={IDS} value={idType} onChange={setIdType} />
+              <Segmented options={IDS} value={idType} onChange={handleIdTypeChange} />
             </View>
 
             <FormField
               ref={registerContainer('idNo')}
               onLayout={registerLayout('idNo')}
-              label={`ID number ${!matchedGuestId ? '*' : ''}`}
+              label={`${idConfig.label} ${!isIdSaved ? '*' : ''}`}
               error={errors.idNo}
             >
               <Input
                 ref={registerInput('idNo')}
                 value={idNo}
+                keyboardType={idConfig.keyboardType}
+                maxLength={idConfig.maxLength}
+                autoCapitalize={idConfig.autoCapitalize}
+                autoCorrect={false}
+                style={idType !== 'Aadhaar' ? { textTransform: 'uppercase' } : undefined}
                 onChangeText={(v) => {
-                  setIdNo(v);
+                  const res = handleIdNumberInputChange(v, idType);
+                  setIdNo(res.value);
                   clearError('idNo');
                 }}
-                placeholder={matchedGuestId ? 'Already saved' : ''}
+                placeholder={isIdSaved ? 'Already saved' : idConfig.placeholder}
                 error={errors.idNo}
               />
             </FormField>

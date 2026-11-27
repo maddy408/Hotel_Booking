@@ -7,16 +7,34 @@ import NewBookingSheet from '../components/sheets/NewBookingSheet.jsx';
 import CheckoutSheet from '../components/sheets/CheckoutSheet.jsx';
 import BookingDetailSheet from '../components/sheets/BookingDetailSheet.jsx';
 
+export const GUEST_STATUS_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'in_house', label: 'In-House' },
+  { key: 'booked', label: 'Booked' },
+  { key: 'checked_out', label: 'Checked Out' },
+  { key: 'no_show', label: 'No-Show' },
+  { key: 'cancelled', label: 'Cancelled' },
+];
+
 export default function Guests() {
   const navigate = useNavigate();
   const [q, setQ] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const { data: guests, isLoading, isError, error, refetch } = useGuests(q);
   const { data: roomsData } = useRooms();
   const [sheet, setSheet] = useState(null);
   const [expandedOccupantsGuestId, setExpandedOccupantsGuestId] = useState(null);
 
   const sortedGuests = useMemo(() => {
-    return [...(guests || [])].sort((a, b) => {
+    const list = (guests || []).filter((g) => {
+      if (statusFilter !== 'all') {
+        const key = g.statusKey || g.status_key || (g.status || '').toLowerCase().replace(/[\s-]/g, '_');
+        if (key !== statusFilter) return false;
+      }
+      return true;
+    });
+
+    return list.sort((a, b) => {
       const dateA = a.created_at || a.createdAt || '';
       const dateB = b.created_at || b.createdAt || '';
       if (dateA && dateB && dateA !== dateB) {
@@ -24,7 +42,7 @@ export default function Guests() {
       }
       return (Number(b.id) || 0) - (Number(a.id) || 0);
     });
-  }, [guests]);
+  }, [guests, statusFilter]);
 
   // Close occupant popover when clicking anywhere outside
   useEffect(() => {
@@ -437,6 +455,26 @@ export default function Guests() {
             All Referrals
           </button>
         </div>
+      </div>
+
+      {/* Status Filter Chips */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', borderBottom: '1px solid var(--color-border)', flexWrap: 'wrap' }}>
+        <div className="seg" role="tablist" aria-label="Status Filter">
+          {GUEST_STATUS_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              className={statusFilter === f.key ? 'active' : ''}
+              aria-pressed={statusFilter === f.key}
+              onClick={() => setStatusFilter(f.key)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <span className="muted" style={{ fontSize: '13px', marginLeft: 'auto' }}>
+          Showing {sortedGuests.length} of {guests?.length ?? 0} guests
+        </span>
       </div>
 
       {isLoading ? (

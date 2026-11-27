@@ -27,17 +27,44 @@ export default function UserFormSheet({ user, onClose }) {
 
   const save = async (e) => {
     e.preventDefault();
+    const trimmedName = (form.name || '').trim();
+    const trimmedUsername = (form.username || '').trim();
+    const trimmedPassword = form.password?.trim();
+
     try {
       if (isEdit) {
-        await updateUser.mutateAsync({ id: user.id, name: form.name, email: form.email || null, phone: form.phone || null, role: form.role, isActive: form.isActive });
-        toast('User updated.');
-      } else {
-        if (form.password.length < 8) {
+        if (trimmedPassword && trimmedPassword.length < 8) {
           toast('Password must be at least 8 characters.');
           return;
         }
-        await createUser.mutateAsync({ name: form.name, username: form.username, email: form.email || null, phone: form.phone || null, role: form.role, password: form.password });
-        toast(`User ${form.username} created.`);
+        const payload = {
+          id: user.id,
+          name: trimmedName,
+          username: trimmedUsername,
+          email: form.email?.trim() || null,
+          phone: form.phone?.trim() || null,
+          role: form.role,
+          isActive: form.isActive,
+        };
+        if (trimmedPassword) {
+          payload.password = trimmedPassword;
+        }
+        await updateUser.mutateAsync(payload);
+        toast('User updated.');
+      } else {
+        if (!trimmedPassword || trimmedPassword.length < 8) {
+          toast('Password must be at least 8 characters.');
+          return;
+        }
+        await createUser.mutateAsync({
+          name: trimmedName,
+          username: trimmedUsername,
+          email: form.email?.trim() || null,
+          phone: form.phone?.trim() || null,
+          role: form.role,
+          password: trimmedPassword,
+        });
+        toast(`User ${trimmedUsername} created.`);
       }
       onClose();
     } catch (err) {
@@ -86,7 +113,7 @@ export default function UserFormSheet({ user, onClose }) {
           </div>
           <div className="f">
             <label htmlFor="u-username">Username *</label>
-            <input id="u-username" type="text" required disabled={isEdit} value={form.username} onChange={(e) => set('username', e.target.value)} />
+            <input id="u-username" type="text" required value={form.username} onChange={(e) => set('username', e.target.value)} />
           </div>
           <div className="f">
             <label htmlFor="u-email">Email</label>
@@ -108,12 +135,20 @@ export default function UserFormSheet({ user, onClose }) {
               )}
             </select>
           </div>
-          {!isEdit && (
-            <div className="f full">
-              <label htmlFor="u-password">Password *</label>
-              <input id="u-password" type="password" required minLength={8} value={form.password} onChange={(e) => set('password', e.target.value)} />
-            </div>
-          )}
+          <div className="f full">
+            <label htmlFor="u-password">
+              {isEdit ? 'Password (leave blank to keep current)' : 'Password *'}
+            </label>
+            <input
+              id="u-password"
+              type="password"
+              required={!isEdit}
+              minLength={8}
+              placeholder={isEdit ? 'Leave blank to keep current' : 'Min 8 characters'}
+              value={form.password}
+              onChange={(e) => set('password', e.target.value)}
+            />
+          </div>
           {isEdit && (
             <div className="f full">
               <label>Active</label>
